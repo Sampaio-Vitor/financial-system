@@ -328,11 +328,11 @@ export default function DesejadosPage() {
         )}
       </div>
 
-      {/* Section 3: Asset Catalog */}
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
+      {/* Section 3: Assets by class */}
+      <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
-            Catalogo de Ativos ({assets.length})
+            Ativos ({assets.length})
           </h2>
           <button
             onClick={() => setShowAssetForm(true)}
@@ -352,34 +352,43 @@ export default function DesejadosPage() {
           />
         )}
 
-        {(["STOCK", "ACAO", "FII", "RF"] as AssetType[]).map((cls) => {
-          const clsAssets = groupedAssets[cls] || [];
-          if (clsAssets.length === 0) return null;
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {(["STOCK", "ACAO", "FII", "RF"] as AssetType[]).map((cls) => {
+            const clsAssets = groupedAssets[cls] || [];
 
-          return (
-            <div key={cls} className="mb-4">
-              <h3 className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 mt-3">
-                {CLASS_LABELS[cls]} ({clsAssets.length})
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {clsAssets.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-sm group"
-                  >
-                    <span className="font-medium">{a.ticker}</span>
-                    <button
-                      onClick={() => handleDeleteAsset(a.id, a.ticker)}
-                      className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
+            return (
+              <div
+                key={cls}
+                className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 flex flex-col"
+              >
+                <h3 className="text-xs font-semibold text-[var(--color-text-muted)] mb-3 flex items-center justify-between">
+                  <span>{CLASS_LABELS[cls]}</span>
+                  <span className="text-[var(--color-text-muted)]">{clsAssets.length}</span>
+                </h3>
+                <div className="h-48 overflow-y-auto space-y-1 pr-1">
+                  {clsAssets.length === 0 ? (
+                    <p className="text-xs text-[var(--color-text-muted)] text-center py-4">Nenhum ativo</p>
+                  ) : (
+                    clsAssets.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-[var(--color-bg-main)] text-sm group transition-colors"
+                      >
+                        <span className="font-medium">{a.ticker}</span>
+                        <button
+                          onClick={() => handleDeleteAsset(a.id, a.ticker)}
+                          className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
