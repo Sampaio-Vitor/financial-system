@@ -2,16 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
-import { Asset } from "@/types";
+import { Asset, PositionsResponse, PositionItem } from "@/types";
 import { X } from "lucide-react";
 
 interface PurchaseFormProps {
+  mode?: "compra" | "venda";
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
+export default function PurchaseForm({ mode = "compra", onClose, onSaved }: PurchaseFormProps) {
+  const isVenda = mode === "venda";
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [ownedPositions, setOwnedPositions] = useState<PositionItem[]>([]);
   const [assetId, setAssetId] = useState<number | "">("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [quantity, setQuantity] = useState("");
@@ -21,8 +24,34 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch<Asset[]>("/assets").then(setAssets).catch(() => {});
-  }, []);
+    if (isVenda) {
+      // Fetch positions for all variable income classes
+      Promise.all([
+        apiFetch<PositionsResponse>("/portfolio/STOCK").catch(() => null),
+        apiFetch<PositionsResponse>("/portfolio/ACAO").catch(() => null),
+        apiFetch<PositionsResponse>("/portfolio/FII").catch(() => null),
+      ]).then(([stocks, acoes, fiis]) => {
+        const all: PositionItem[] = [];
+        if (stocks) all.push(...stocks.positions);
+        if (acoes) all.push(...acoes.positions);
+        if (fiis) all.push(...fiis.positions);
+        setOwnedPositions(all);
+        // Also create Asset-like entries for the dropdown
+        const assetList: Asset[] = all.map((p) => ({
+          id: p.asset_id,
+          ticker: p.ticker,
+          type: p.type,
+          description: p.description,
+          current_price: p.current_price,
+          price_updated_at: null,
+          created_at: "",
+        }));
+        setAssets(assetList);
+      });
+    } else {
+      apiFetch<Asset[]>("/assets").then(setAssets).catch(() => {});
+    }
+  }, [isVenda]);
 
   const filteredAssets = assets.filter(
     (a) =>
@@ -31,6 +60,7 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
   );
 
   const selectedAsset = assets.find((a) => a.id === assetId);
+  const selectedPosition = ownedPositions.find((p) => p.asset_id === assetId);
   const total =
     quantity && unitPrice ? (parseFloat(quantity) * parseFloat(unitPrice)).toFixed(2) : "0.00";
 
@@ -46,6 +76,12 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
     e.preventDefault();
     if (!assetId || !quantity || !unitPrice) return;
 
+    const qty = parseFloat(quantity);
+    if (isVenda && selectedPosition && qty > selectedPosition.quantity) {
+      setError(`Quantidade excede a posicao atual (${selectedPosition.quantity})`);
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
@@ -55,7 +91,7 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
         body: JSON.stringify({
           asset_id: assetId,
           purchase_date: date,
-          quantity: parseFloat(quantity),
+          quantity: isVenda ? -qty : qty,
           unit_price: parseFloat(unitPrice),
         }),
       });
@@ -71,7 +107,9 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">Registrar Aporte</h2>
+          <h2 className="text-lg font-bold">
+            {isVenda ? "Registrar Venda" : "Registrar Aporte"}
+          </h2>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
             <X size={20} />
           </button>
@@ -87,7 +125,7 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
                 setSearch(e.target.value);
                 setAssetId("");
               }}
-              placeholder="Buscar por ticker ou nome..."
+              placeholder={isVenda ? "Buscar ativo que voce possui..." : "Buscar por ticker ou nome..."}
               className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
             />
             {search && !selectedAsset && (
@@ -100,10 +138,19 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
                     className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--color-bg-card)] flex justify-between"
                   >
                     <span className="font-medium">{a.ticker}</span>
-                    <span className="text-[var(--color-text-muted)]">{a.description}</span>
+                    <span className="text-[var(--color-text-muted)]">
+                      {isVenda
+                        ? `${ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0} cotas`
+                        : a.description}
+                    </span>
                   </button>
                 ))}
               </div>
+            )}
+            {isVenda && selectedPosition && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                Posicao atual: {selectedPosition.quantity} cotas
+              </p>
             )}
           </div>
 
@@ -124,6 +171,7 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
               <input
                 type="number"
                 step="any"
+                min="0.01"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
@@ -131,7 +179,9 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Preco Unitario (R$)</label>
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+                {isVenda ? "Preco de Venda (R$)" : "Preco Unitario (R$)"}
+              </label>
               <input
                 type="number"
                 step="any"
@@ -152,9 +202,17 @@ export default function PurchaseForm({ onClose, onSaved }: PurchaseFormProps) {
           <button
             type="submit"
             disabled={submitting || !assetId}
-            className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className={`w-full py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-opacity ${
+              isVenda
+                ? "bg-[var(--color-negative)] text-white"
+                : "bg-[var(--color-accent)] text-white"
+            }`}
           >
-            {submitting ? "Salvando..." : "Registrar Aporte"}
+            {submitting
+              ? "Salvando..."
+              : isVenda
+                ? "Registrar Venda"
+                : "Registrar Aporte"}
           </button>
         </form>
       </div>

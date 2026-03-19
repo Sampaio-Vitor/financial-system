@@ -7,7 +7,7 @@ from app.dependencies import get_current_user
 from app.models.asset import Asset
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user import User
-from app.schemas.fixed_income import FixedIncomeCreate, FixedIncomeUpdate, FixedIncomeResponse
+from app.schemas.fixed_income import FixedIncomeCreate, FixedIncomeUpdate, FixedIncomeResgate, FixedIncomeResponse
 
 router = APIRouter()
 
@@ -101,6 +101,44 @@ async def update_fixed_income(
     if fi.applied_value and fi.current_balance:
         fi.yield_value = fi.current_balance - fi.applied_value
         fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
+
+    await db.commit()
+    result = await db.execute(select(FixedIncomePosition).where(FixedIncomePosition.id == fi.id))
+    return _to_response(result.scalar_one())
+
+
+@router.post("/{fi_id}/resgate", response_model=FixedIncomeResponse | None)
+async def resgate_fixed_income(
+    fi_id: int,
+    data: FixedIncomeResgate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(FixedIncomePosition).where(FixedIncomePosition.id == fi_id, FixedIncomePosition.user_id == user.id)
+    )
+    fi = result.scalar_one_or_none()
+    if not fi:
+        raise HTTPException(status_code=404, detail="Fixed income position not found")
+
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Valor de resgate deve ser positivo")
+
+    if data.amount > fi.current_balance:
+        raise HTTPException(status_code=400, detail="Valor de resgate excede o saldo atual")
+
+    if data.amount >= fi.current_balance:
+        # Total redemption: delete position
+        await db.delete(fi)
+        await db.commit()
+        return None
+
+    # Partial redemption
+    ratio = data.amount / fi.current_balance
+    fi.applied_value -= fi.applied_value * ratio
+    fi.current_balance -= data.amount
+    fi.yield_value = fi.current_balance - fi.applied_value
+    fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
 
     await db.commit()
     result = await db.execute(select(FixedIncomePosition).where(FixedIncomePosition.id == fi.id))

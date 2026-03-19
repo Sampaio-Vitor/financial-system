@@ -14,6 +14,9 @@ export default function RendaFixaPage() {
     current_balance: string;
   }>({ applied_value: "", current_balance: "" });
   const [saving, setSaving] = useState(false);
+  const [resgateId, setResgateId] = useState<number | null>(null);
+  const [resgateAmount, setResgateAmount] = useState("");
+  const [resgateSubmitting, setResgateSubmitting] = useState(false);
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -58,6 +61,33 @@ export default function RendaFixaPage() {
       alert(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resgatePosition = positions.find((p) => p.id === resgateId);
+
+  const handleResgate = async () => {
+    if (!resgateId || !resgateAmount) return;
+    const amount = parseFloat(resgateAmount.replace(/\./g, "").replace(",", "."));
+    if (isNaN(amount) || amount <= 0) return;
+
+    if (resgatePosition && amount >= Number(resgatePosition.current_balance)) {
+      if (!confirm("Valor igual ou superior ao saldo atual. Isso ira remover a posicao. Continuar?")) return;
+    }
+
+    setResgateSubmitting(true);
+    try {
+      await apiFetch(`/fixed-income/${resgateId}/resgate`, {
+        method: "POST",
+        body: JSON.stringify({ amount }),
+      });
+      setResgateId(null);
+      setResgateAmount("");
+      fetchPositions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao resgatar");
+    } finally {
+      setResgateSubmitting(false);
     }
   };
 
@@ -172,16 +202,24 @@ export default function RendaFixaPage() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => startEdit(p)}
-                            className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
-                            title="Editar"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                              <path d="m15 5 4 4"/>
-                            </svg>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => { setResgateId(p.id); setResgateAmount(""); }}
+                              className="text-xs text-[var(--color-negative)] hover:underline"
+                            >
+                              Resgatar
+                            </button>
+                            <button
+                              onClick={() => startEdit(p)}
+                              className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                              title="Editar"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                <path d="m15 5 4 4"/>
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -205,6 +243,48 @@ export default function RendaFixaPage() {
           </div>
         )}
       </div>
+      {/* Resgate modal */}
+      {resgateId !== null && resgatePosition && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
+            <h2 className="text-lg font-bold mb-1">Resgatar</h2>
+            <p className="text-sm text-[var(--color-text-muted)] mb-4">
+              {resgatePosition.ticker} — Saldo atual: {formatBRL(resgatePosition.current_balance)}
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+                  Valor do Resgate (R$)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={resgateAmount}
+                  onChange={(e) => setResgateAmount(e.target.value)}
+                  placeholder="0,00"
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleResgate}
+                  disabled={resgateSubmitting || !resgateAmount}
+                  className="flex-1 py-2 rounded-lg bg-[var(--color-negative)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {resgateSubmitting ? "Resgatando..." : "Confirmar Resgate"}
+                </button>
+                <button
+                  onClick={() => setResgateId(null)}
+                  className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg-main)] transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,6 +24,10 @@ class FixedIncomeUpdate(BaseModel):
     maturity_date: date | None = None
 
 
+class FixedIncomeResgate(BaseModel):
+    amount: Decimal
+
+
 class FixedIncomeResponse(BaseModel):
     id: int
     asset_id: int
