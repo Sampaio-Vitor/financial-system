@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatBRL, getCurrentMonth } from "@/lib/format";
+import { getCurrentMonth } from "@/lib/format";
 import { MonthlyOverview } from "@/types";
 import MonthNavigator from "@/components/month-navigator";
 import SummaryCards from "@/components/summary-cards";
@@ -11,12 +11,19 @@ import PatrimonioChart from "@/components/patrimonio-chart";
 import MonthTransactions from "@/components/month-transactions";
 import MonthlySnapshotsTable from "@/components/monthly-snapshots-table";
 import SnapshotAssetsTable from "@/components/snapshot-assets-table";
+import DetailDrawer from "@/components/detail-drawer";
 import PriceUpdateButton from "@/components/price-update-button";
 
 export default function CarteiraOverview() {
   const [month, setMonth] = useState(getCurrentMonth());
   const [data, setData] = useState<MonthlyOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+
+  // Reset expanded card when month changes
+  useEffect(() => {
+    setExpandedCard(null);
+  }, [month]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -84,58 +91,25 @@ export default function CarteiraOverview() {
         </div>
       </div>
 
-      <SummaryCards
-        cards={[
-          { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
-          { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl" },
-          { label: "Resgates do Mês", value: data.resgates_do_mes, format: "brl" },
-          { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
-          { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
-        ]}
-      />
-
-      {/* Reserva card */}
-      {data.reserva_financeira != null && (
-        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)] tracking-tight">
-              Reserva Financeira
-            </h3>
-            <span className="text-lg font-bold">{formatBRL(data.reserva_financeira)}</span>
-          </div>
-          {data.reserva_target != null && (
-            <div>
-              <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)] mb-1">
-                <span>
-                  {Math.min(
-                    (data.reserva_financeira / data.reserva_target) * 100,
-                    100
-                  ).toFixed(1)}
-                  % da meta
-                </span>
-                <span>
-                  {formatBRL(data.reserva_financeira)} / {formatBRL(data.reserva_target)}
-                </span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-[var(--color-bg-main)]">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(
-                      (data.reserva_financeira / data.reserva_target) * 100,
-                      100
-                    )}%`,
-                    backgroundColor:
-                      data.reserva_financeira >= data.reserva_target
-                        ? "var(--color-positive)"
-                        : "#06b6d4",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      <div>
+        <SummaryCards
+          cards={[
+            { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
+            { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl", expandable: true },
+            { label: "Resgates do Mês", value: data.resgates_do_mes, format: "brl", expandable: true },
+            { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
+            { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
+          ]}
+          expandedCard={expandedCard}
+          onToggleCard={(label) => setExpandedCard((prev) => (prev === label ? null : label))}
+        />
+        {expandedCard === "Aportes do Mês" && (
+          <DetailDrawer type="aportes" data={data} />
+        )}
+        {expandedCard === "Resgates do Mês" && (
+          <DetailDrawer type="resgates" data={data} />
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AllocationBreakdown items={data.allocation_breakdown} patrimonioTotal={data.patrimonio_total} reservaFinanceira={data.reserva_financeira} reservaTarget={data.reserva_target} />

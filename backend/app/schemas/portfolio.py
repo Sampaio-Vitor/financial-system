@@ -1,9 +1,17 @@
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
 
 from app.models.asset import AssetType
 from app.schemas.purchase import PurchaseResponse
+
+
+class FixedIncomeTransactionItem(BaseModel):
+    ticker: str
+    description: str
+    date: date
+    amount: Decimal
 
 
 class PositionItem(BaseModel):
@@ -49,6 +57,10 @@ class MonthlyOverview(BaseModel):
     allocation_breakdown: list[ClassSummary]
     daily_patrimonio: list[DailyPatrimonio]
     transactions: list[PurchaseResponse]
+    fi_aportes: list[FixedIncomeTransactionItem]
+    fi_redemptions: list[FixedIncomeTransactionItem]
+    reserva_depositos: Decimal
+    reserva_resgates: Decimal
 
 
 class PositionsResponse(BaseModel):
