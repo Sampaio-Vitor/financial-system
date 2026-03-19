@@ -1,4 +1,4 @@
-import { formatBRL, formatPercent } from "@/lib/format";
+import { formatBRL } from "@/lib/format";
 import { ClassSummary } from "@/types";
 import { TrendingUp, Building2, Landmark, PiggyBank } from "lucide-react";
 
@@ -61,7 +61,7 @@ export default function AllocationBreakdown({ items }: AllocationBreakdownProps)
                           : "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
                       }`}
                     >
-                      {formatPercent(item.pct)}
+                      {Number(item.pct).toFixed(1)}%
                     </span>
                   </div>
                 </div>
@@ -77,7 +77,7 @@ export default function AllocationBreakdown({ items }: AllocationBreakdownProps)
                     />
                   </div>
                   <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">
-                    de {formatPercent(item.target_pct)}
+                    meta {Number(item.target_pct).toFixed(0)}%
                   </span>
                 </div>
               </div>
