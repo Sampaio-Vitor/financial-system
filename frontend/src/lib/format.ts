@@ -1,23 +1,29 @@
 export function formatBRL(value: number | null | undefined): string {
   if (value == null) return "—";
+  const num = Number(value);
+  if (isNaN(num)) return "—";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(value);
+  }).format(num);
 }
 
 export function formatUSD(value: number | null | undefined): string {
   if (value == null) return "—";
+  const num = Number(value);
+  if (isNaN(num)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-  }).format(value);
+  }).format(num);
 }
 
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return "—";
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
+  const num = Number(value);
+  if (isNaN(num)) return "—";
+  const sign = num >= 0 ? "+" : "";
+  return `${sign}${num.toFixed(2)}%`;
 }
 
 export function formatQuantity(value: number | null | undefined): string {
