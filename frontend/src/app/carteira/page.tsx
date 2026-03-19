@@ -135,7 +135,7 @@ export default function CarteiraOverview() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AllocationBreakdown items={data.allocation_breakdown} />
+        <AllocationBreakdown items={data.allocation_breakdown} patrimonioTotal={data.patrimonio_total} reservaFinanceira={data.reserva_financeira} reservaTarget={data.reserva_target} />
         <PatrimonioChart data={data.daily_patrimonio} month={month} />
       </div>
 
