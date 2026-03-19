@@ -45,6 +45,7 @@ export default function RendaFixaPage() {
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data Aplicacao</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor Aplicado</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rendimento</th>
@@ -57,6 +58,9 @@ export default function RendaFixaPage() {
                   <tr key={p.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
                     <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
                     <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.description}</td>
+                    <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                      {new Date(p.start_date + "T00:00:00").toLocaleDateString("pt-BR")}
+                    </td>
                     <td className="px-3 py-2.5">{formatBRL(p.applied_value)}</td>
                     <td className="px-3 py-2.5">{formatBRL(p.current_balance)}</td>
                     <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatBRL(p.yield_value)}</td>
@@ -71,7 +75,7 @@ export default function RendaFixaPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                  <td className="px-3 py-2.5" colSpan={2}>TOTAL</td>
+                  <td className="px-3 py-2.5" colSpan={3}>TOTAL</td>
                   <td className="px-3 py-2.5">{formatBRL(totalApplied)}</td>
                   <td className="px-3 py-2.5">{formatBRL(totalBalance)}</td>
                   <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatBRL(totalYield)}</td>

@@ -222,6 +222,7 @@ async def get_positions_by_class(
                 ticker=fi.asset.ticker if fi.asset else "RF",
                 description=fi.description,
                 type=AssetType.RF,
+                first_date=fi.start_date.isoformat(),
                 quantity=Decimal("1"),
                 total_cost=fi.applied_value,
                 avg_price=fi.applied_value,
@@ -253,6 +254,7 @@ async def get_positions_by_class(
             Asset.current_price,
             func.sum(Purchase.quantity).label("total_qty"),
             func.sum(Purchase.total_value).label("total_cost"),
+            func.min(Purchase.purchase_date).label("first_date"),
         )
         .join(Asset, Purchase.asset_id == Asset.id)
         .where(Purchase.user_id == user.id, Asset.type == asset_class)
@@ -265,7 +267,7 @@ async def get_positions_by_class(
     total_market = Decimal("0")
 
     for row in result.all():
-        asset_id, ticker, desc, a_type, price, qty, cost = row
+        asset_id, ticker, desc, a_type, price, qty, cost, first_date = row
         avg_price = cost / qty if qty else Decimal("0")
         market_value = price * qty if price and qty else None
         pnl = (market_value - cost) if market_value else None
@@ -276,6 +278,7 @@ async def get_positions_by_class(
             ticker=ticker,
             description=desc,
             type=a_type,
+            first_date=first_date.isoformat() if first_date else None,
             quantity=qty,
             total_cost=cost,
             avg_price=round(avg_price, 4),
