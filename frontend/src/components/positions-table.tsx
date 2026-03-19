@@ -55,10 +55,10 @@ export default function PositionsTable({
   );
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--color-border)]">
+          <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-main)]/30">
             {colHeader("Ticker", "ticker")}
             <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
               Descricao

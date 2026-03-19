@@ -28,48 +28,54 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-main)]">
-      <div className="w-full max-w-sm bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-8">
-        <h1 className="text-2xl font-bold text-center mb-2">Carteira de Investimentos</h1>
-        <p className="text-[var(--color-text-secondary)] text-center mb-8 text-sm">
-          Entre para gerenciar sua carteira
-        </p>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-main)] p-4">
+      <div className="w-full max-w-md bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 shadow-lg">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--color-text-primary)] mb-2">
+            Carteira de Investimentos
+          </h1>
+          <p className="text-[var(--color-text-muted)] text-sm font-medium">
+            Entre para gerenciar seu portfólio
+          </p>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
-              Usuario
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
+              Usuário
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+              className="w-full px-4 py-2.5 rounded-xl bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] transition-all"
               required
             />
           </div>
 
-          <div>
-            <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
               Senha
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+              className="w-full px-4 py-2.5 rounded-xl bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] transition-all"
               required
             />
           </div>
 
           {error && (
-            <p className="text-[var(--color-negative)] text-sm">{error}</p>
+            <div className="p-3 rounded-xl bg-[var(--color-negative)]/10 border border-[var(--color-negative)]/20">
+              <p className="text-[var(--color-negative)] text-sm font-medium text-center">{error}</p>
+            </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="w-full py-3 rounded-xl bg-[var(--color-accent)] text-white font-semibold hover:bg-[var(--color-accent)]/90 disabled:opacity-50 transition-colors mt-2 shadow-sm"
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>

@@ -22,9 +22,9 @@ interface AllocationBreakdownProps {
 
 export default function AllocationBreakdown({ items }: AllocationBreakdownProps) {
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
-      <h3 className="text-sm font-semibold mb-4 text-[var(--color-text-secondary)]">
-        Alocacao por Classe
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+      <h3 className="text-base font-semibold mb-6 text-[var(--color-text-primary)] tracking-tight">
+        Alocação por Classe
       </h3>
 
       <div className="space-y-4">

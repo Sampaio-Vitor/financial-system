@@ -38,18 +38,21 @@ export default function CarteiraOverview() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Painel</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
-        <div className="animate-pulse space-y-4">
-          <div className="grid grid-cols-4 gap-4">
+        <div className="animate-pulse space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-24 rounded-xl bg-[var(--color-bg-card)]" />
+              <div key={i} className="h-[104px] rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
             ))}
           </div>
-          <div className="h-64 rounded-xl bg-[var(--color-bg-card)]" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="h-72 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
+            <div className="h-72 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
+          </div>
         </div>
       </div>
     );
@@ -57,20 +60,22 @@ export default function CarteiraOverview() {
 
   if (!data) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Painel</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
-        <p className="text-[var(--color-text-muted)]">Erro ao carregar dados</p>
+        <div className="p-8 text-center bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)]">
+          <p className="text-[var(--color-text-muted)] font-medium">Erro ao carregar dados do portfólio.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Painel</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
         <div className="flex items-center gap-4">
           {isCurrentMonth && <PriceUpdateButton onComplete={fetchData} />}
           <MonthNavigator month={month} onChange={setMonth} />
@@ -79,10 +84,10 @@ export default function CarteiraOverview() {
 
       <SummaryCards
         cards={[
-          { label: "Patrimonio Total", value: data.patrimonio_total, format: "brl" },
-          { label: "Aportes do Mes", value: data.aportes_do_mes, format: "brl" },
-          { label: "Variacao do Mes", value: data.variacao_mes, format: "brl", colorBySign: true },
-          { label: "Variacao (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
+          { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
+          { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl" },
+          { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
+          { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
         ]}
       />
 

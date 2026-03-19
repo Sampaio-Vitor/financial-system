@@ -19,21 +19,21 @@ interface PatrimonioChartProps {
 export default function PatrimonioChart({ data, month }: PatrimonioChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
-        <h3 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-4">
-          Evolucao do Patrimonio
+      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+        <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-6 tracking-tight">
+          Evolução do Patrimônio
         </h3>
-        <div className="h-48 flex items-center justify-center text-[var(--color-text-muted)] text-sm">
-          Dados de evolucao diaria nao disponiveis para {month}
+        <div className="h-48 flex items-center justify-center text-[var(--color-text-muted)] text-sm font-medium">
+          Dados de evolução diária não disponíveis para {month}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
-      <h3 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-4">
-        Evolucao do Patrimonio
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+      <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-6 tracking-tight">
+        Evolução do Patrimônio
       </h3>
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
