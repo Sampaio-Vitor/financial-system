@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base
-from app.routers import auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing
+from app.routers import auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve
 
 
 @asynccontextmanager
@@ -33,6 +33,7 @@ app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"]
 app.include_router(prices.router, prefix="/api/prices", tags=["prices"])
 app.include_router(allocation.router, prefix="/api/allocation-targets", tags=["allocation"])
 app.include_router(rebalancing.router, prefix="/api/rebalancing", tags=["rebalancing"])
+app.include_router(financial_reserve.router, prefix="/api/financial-reserves", tags=["financial-reserves"])
 
 
 @app.get("/api/health")

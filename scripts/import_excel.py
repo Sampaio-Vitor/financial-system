@@ -17,6 +17,7 @@ from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
+from app.models.financial_reserve import FinancialReserveEntry
 
 EXCEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "carteira_investimentos (8).xlsx")
 
@@ -62,6 +63,11 @@ async def import_all():
         # 5. Import USD/BRL rate from 'Posicao' sheet
         await _import_settings(db, wb["Posicao"], user.id)
         print("Imported USD/BRL rate")
+
+        # 6. Import financial reserve from 'Posicao' sheet
+        reserve_imported = await _import_financial_reserve(db, wb["Posicao"], user.id)
+        if reserve_imported:
+            print("Imported financial reserve entry")
 
         await db.commit()
         print("\nImport complete!")
@@ -265,6 +271,31 @@ async def _import_settings(db, ws, user_id: int):
             rate_updated_at=datetime.utcnow(),
         )
         db.add(settings)
+
+
+async def _import_financial_reserve(db, ws, user_id: int) -> bool:
+    # Row 89, column E (5) in the Posicao sheet contains the reserve value
+    value = ws.cell(row=89, column=5).value
+    if not value:
+        print("  Warning: No financial reserve value found at Posicao!E89")
+        return False
+
+    # Check if a reserve entry already exists for this user
+    existing = await db.execute(
+        select(FinancialReserveEntry).where(FinancialReserveEntry.user_id == user_id).limit(1)
+    )
+    if existing.scalar_one_or_none():
+        return False
+
+    entry = FinancialReserveEntry(
+        user_id=user_id,
+        amount=Decimal(str(value)),
+        note="Importado da planilha",
+        recorded_at=datetime.utcnow(),
+    )
+    db.add(entry)
+    await db.flush()
+    return True
 
 
 if __name__ == "__main__":

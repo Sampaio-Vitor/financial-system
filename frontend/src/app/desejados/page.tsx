@@ -23,10 +23,10 @@ export default function DesejadosPage() {
   const [targets, setTargets] = useState<AllocationTarget[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [editTargets, setEditTargets] = useState<Record<AssetType, string>>({
-    STOCK: "30",
-    ACAO: "30",
-    FII: "10",
-    RF: "30",
+    STOCK: "25",
+    ACAO: "25",
+    FII: "25",
+    RF: "25",
   });
   const [contribution, setContribution] = useState("50000");
   const [topN, setTopN] = useState("10");

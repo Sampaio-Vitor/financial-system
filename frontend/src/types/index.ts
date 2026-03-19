@@ -51,9 +51,28 @@ export interface DailyPatrimonio {
   value: number;
 }
 
+export interface FinancialReserveEntry {
+  id: number;
+  amount: number;
+  note: string | null;
+  recorded_at: string;
+}
+
+export interface FinancialReserveMonthValue {
+  month: string;
+  amount: number | null;
+  entry: FinancialReserveEntry | null;
+}
+
+export interface FinancialReserveTarget {
+  target_amount: number | null;
+}
+
 export interface MonthlyOverview {
   month: string;
   patrimonio_total: number;
+  reserva_financeira: number | null;
+  reserva_target: number | null;
   total_invested: number;
   aportes_do_mes: number;
   variacao_mes: number;
