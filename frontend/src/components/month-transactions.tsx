@@ -22,9 +22,9 @@ interface MonthTransactionsProps {
 
 export default function MonthTransactions({ transactions }: MonthTransactionsProps) {
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
-      <h3 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-4">
-        Aportes do Periodo
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+      <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-6 tracking-tight">
+        Aportes do Período
       </h3>
 
       {transactions.length === 0 ? (
