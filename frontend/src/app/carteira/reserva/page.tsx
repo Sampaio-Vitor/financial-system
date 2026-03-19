@@ -16,6 +16,8 @@ export default function ReservaPage() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [resgateAmount, setResgateAmount] = useState("");
+  const [savingResgate, setSavingResgate] = useState(false);
   const [targetData, setTargetData] = useState<FinancialReserveTarget | null>(null);
   const [editTarget, setEditTarget] = useState("");
   const [savingTarget, setSavingTarget] = useState(false);
@@ -92,6 +94,36 @@ export default function ReservaPage() {
       // ignore
     } finally {
       setSavingTarget(false);
+    }
+  };
+
+  const handleResgate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(resgateAmount.replace(/\./g, "").replace(",", "."));
+    if (isNaN(parsed) || parsed <= 0) return;
+
+    const current = monthData?.amount ?? 0;
+    if (parsed > current) {
+      alert("Valor de resgate excede o saldo atual da reserva.");
+      return;
+    }
+
+    setSavingResgate(true);
+    try {
+      const newAmount = current - parsed;
+      await apiFetch("/financial-reserves", {
+        method: "POST",
+        body: JSON.stringify({
+          amount: newAmount,
+          note: `Resgate de R$ ${parsed.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+        }),
+      });
+      setResgateAmount("");
+      await fetchData();
+    } catch {
+      // ignore
+    } finally {
+      setSavingResgate(false);
     }
   };
 
@@ -252,6 +284,41 @@ export default function ReservaPage() {
             {saving ? "Salvando..." : "Salvar"}
           </button>
         </form>
+      </div>
+
+      {/* Resgate form */}
+      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
+        <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
+          Registrar Resgate
+        </h2>
+        <form onSubmit={handleResgate} className="flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+              Valor a resgatar (R$)
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={resgateAmount}
+              onChange={(e) => setResgateAmount(e.target.value)}
+              placeholder="5.000,00"
+              required
+              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-negative)]/50"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={savingResgate || !resgateAmount}
+            className="px-5 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {savingResgate ? "Resgatando..." : "Resgatar"}
+          </button>
+        </form>
+        {currentValue != null && (
+          <p className="text-xs text-[var(--color-text-muted)] mt-2">
+            Saldo atual: {formatBRL(currentValue)}
+          </p>
+        )}
       </div>
 
       {/* History table */}

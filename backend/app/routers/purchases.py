@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -60,6 +60,19 @@ async def create_purchase(
     asset = await db.execute(select(Asset).where(Asset.id == data.asset_id))
     if not asset.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Validate sale: quantity negative means selling
+    if data.quantity < 0:
+        pos_result = await db.execute(
+            select(func.sum(Purchase.quantity))
+            .where(Purchase.user_id == user.id, Purchase.asset_id == data.asset_id)
+        )
+        current_qty = pos_result.scalar() or 0
+        if abs(data.quantity) > current_qty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quantidade de venda ({abs(data.quantity)}) excede a posicao atual ({current_qty})",
+            )
 
     total_value = data.quantity * data.unit_price
     purchase = Purchase(

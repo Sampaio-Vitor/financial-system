@@ -10,6 +10,7 @@ export default function AportesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [formMode, setFormMode] = useState<"compra" | "venda">("compra");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<{
     purchase_date: string;
@@ -80,16 +81,25 @@ export default function AportesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">Historico de Aportes</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          Registrar Aporte
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setFormMode("compra"); setShowForm(true); }}
+            className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Registrar Aporte
+          </button>
+          <button
+            onClick={() => { setFormMode("venda"); setShowForm(true); }}
+            className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Registrar Venda
+          </button>
+        </div>
       </div>
 
       {showForm && (
         <PurchaseForm
+          mode={formMode}
           onClose={() => setShowForm(false)}
           onSaved={() => {
             setShowForm(false);
@@ -120,8 +130,10 @@ export default function AportesPage() {
                 </tr>
               </thead>
               <tbody>
-                {purchases.map((p) => (
-                  <tr key={p.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
+                {purchases.map((p) => {
+                  const isSale = p.quantity < 0;
+                  return (
+                  <tr key={p.id} className={`border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50 ${isSale ? "bg-[var(--color-negative)]/5" : ""}`}>
                     {editingId === p.id ? (
                       <>
                         <td className="px-3 py-1.5">
@@ -178,11 +190,22 @@ export default function AportesPage() {
                         <td className="px-3 py-2.5">
                           {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
                         </td>
-                        <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
+                        <td className="px-3 py-2.5 font-medium">
+                          {p.ticker}
+                          {isSale && (
+                            <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
+                              VENDA
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
-                        <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
+                        <td className={`px-3 py-2.5 ${isSale ? "text-[var(--color-negative)]" : ""}`}>
+                          {formatQuantity(p.quantity)}
+                        </td>
                         <td className="px-3 py-2.5">{formatBRL(p.unit_price)}</td>
-                        <td className="px-3 py-2.5 font-medium">{formatBRL(p.total_value)}</td>
+                        <td className={`px-3 py-2.5 font-medium ${isSale ? "text-[var(--color-negative)]" : ""}`}>
+                          {formatBRL(p.total_value)}
+                        </td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
@@ -210,7 +233,8 @@ export default function AportesPage() {
                       </>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
