@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
+from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.user import User
@@ -25,10 +26,28 @@ class RebalancingService:
         self.user = user
 
     async def calculate(self, contribution: Decimal, top_n: int) -> RebalancingResponse:
-        # Get current values per class
+        # Get current values per class (investments only)
         class_values = await self._get_class_values()
-        patrimonio_atual = sum(class_values.values())
+        investable_total = sum(class_values.values())
+
+        # Financial reserve
+        reserva_valor = await self._get_reserve_value()
+        reserva_target = await self._get_reserve_target()
+        reserva_gap = (reserva_target - reserva_valor) if reserva_target else None
+
+        # Patrimonio includes reserve
+        patrimonio_atual = investable_total + reserva_valor
+
+        # Reserve is top priority: fill reserve gap first
+        reserve_allocation = Decimal("0")
+        if reserva_gap and reserva_gap > 0:
+            reserve_allocation = min(reserva_gap, contribution)
+        remaining_contribution = contribution - reserve_allocation
+
         patrimonio_pos_aporte = patrimonio_atual + contribution
+
+        # Investable portion after contribution (excluding reserve)
+        investable_pos_aporte = investable_total + remaining_contribution
 
         # Get targets
         targets = await self._get_targets()
@@ -36,15 +55,15 @@ class RebalancingService:
         # Get USD/BRL rate
         usd_brl = await self._get_usd_brl()
 
-        # Calculate class-level gaps
+        # Calculate class-level gaps (targets apply to investable portion)
         class_breakdown = []
         class_gaps: dict[AssetType, Decimal] = {}
 
         for asset_class in AssetType:
             target_pct = targets.get(asset_class, Decimal("0"))
-            target_value = patrimonio_pos_aporte * target_pct
+            target_value = investable_pos_aporte * target_pct
             current_value = class_values[asset_class]
-            current_pct = (current_value / patrimonio_atual) if patrimonio_atual else Decimal("0")
+            current_pct = (current_value / investable_total) if investable_total else Decimal("0")
             gap = target_value - current_value
             gap_pct = (gap / target_value) if target_value else Decimal("0")
             class_gaps[asset_class] = gap
@@ -63,14 +82,14 @@ class RebalancingService:
                 status=status,
             ))
 
-        # Distribute contribution proportionally to positive gaps
+        # Distribute remaining contribution (after reserve) proportionally to positive gaps
         positive_gaps = {k: v for k, v in class_gaps.items() if v > 0}
         total_positive_gap = sum(positive_gaps.values())
 
         class_allocations: dict[AssetType, Decimal] = {}
         if total_positive_gap > 0:
             for asset_class, gap in positive_gaps.items():
-                class_allocations[asset_class] = contribution * gap / total_positive_gap
+                class_allocations[asset_class] = remaining_contribution * gap / total_positive_gap
 
         # Get per-asset details for variable income classes
         asset_plan = []
@@ -86,7 +105,7 @@ class RebalancingService:
 
             # Equal weight within class (matching spreadsheet approach)
             n_assets = len(assets_in_class)
-            target_per_asset = patrimonio_pos_aporte * targets.get(asset_class, Decimal("0")) / n_assets
+            target_per_asset = investable_pos_aporte * targets.get(asset_class, Decimal("0")) / n_assets
 
             # Calculate per-asset gaps and sort by gap descending
             asset_gaps = []
@@ -97,7 +116,7 @@ class RebalancingService:
 
             asset_gaps.sort(key=lambda x: x[3], reverse=True)
 
-            # Distribute class contribution equally among top N positive-gap assets
+            # Distribute class contribution among top N positive-gap assets
             positive_asset_gaps = [a for a in asset_gaps if a[3] > 0]
             top_assets = positive_asset_gaps[:top_n]
 
@@ -127,6 +146,9 @@ class RebalancingService:
             contribution=contribution,
             patrimonio_atual=round(patrimonio_atual, 2),
             patrimonio_pos_aporte=round(patrimonio_pos_aporte, 2),
+            reserva_valor=round(reserva_valor, 2),
+            reserva_target=round(reserva_target, 2) if reserva_target else None,
+            reserva_gap=round(reserva_gap, 2) if reserva_gap else None,
             class_breakdown=class_breakdown,
             asset_plan=asset_plan,
             total_planned=round(total_planned, 2),
@@ -157,6 +179,23 @@ class RebalancingService:
         values[AssetType.RF] = fi_result.scalar() or Decimal("0")
 
         return values
+
+    async def _get_reserve_value(self) -> Decimal:
+        result = await self.db.execute(
+            select(FinancialReserveEntry)
+            .where(FinancialReserveEntry.user_id == self.user.id)
+            .order_by(FinancialReserveEntry.recorded_at.desc())
+            .limit(1)
+        )
+        entry = result.scalar_one_or_none()
+        return entry.amount if entry else Decimal("0")
+
+    async def _get_reserve_target(self) -> Decimal | None:
+        result = await self.db.execute(
+            select(FinancialReserveTarget).where(FinancialReserveTarget.user_id == self.user.id)
+        )
+        target = result.scalar_one_or_none()
+        return target.target_amount if target else None
 
     async def _get_targets(self) -> dict[AssetType, Decimal]:
         result = await self.db.execute(

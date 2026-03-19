@@ -137,6 +137,9 @@ export interface RebalancingResponse {
   contribution: number;
   patrimonio_atual: number;
   patrimonio_pos_aporte: number;
+  reserva_valor: number;
+  reserva_target: number | null;
+  reserva_gap: number | null;
   class_breakdown: ClassRebalancing[];
   asset_plan: AssetRebalancing[];
   total_planned: number;

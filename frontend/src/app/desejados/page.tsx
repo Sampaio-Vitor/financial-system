@@ -211,6 +211,40 @@ export default function DesejadosPage() {
               Pos-Aporte: {formatBRL(rebalancing.patrimonio_pos_aporte)}
             </div>
 
+            {/* Reserve priority alert */}
+            {rebalancing.reserva_gap != null && rebalancing.reserva_gap > 0 && (
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+                <div className="shrink-0 w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                  <span className="text-cyan-400 text-lg font-bold">!</span>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-cyan-400">Reserva Financeira (Prioridade)</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    Atual: {formatBRL(rebalancing.reserva_valor)} |
+                    Meta: {formatBRL(rebalancing.reserva_target!)} |
+                    Aportar na reserva: <span className="font-bold text-cyan-400">{formatBRL(Math.min(rebalancing.reserva_gap, rebalancing.contribution))}</span>
+                  </p>
+                  {rebalancing.reserva_gap >= rebalancing.contribution ? (
+                    <p className="text-xs text-[var(--color-warning)] mt-1">
+                      Todo o aporte vai para a reserva. Faltam {formatBRL(rebalancing.reserva_gap - rebalancing.contribution)} apos este aporte.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                      Restante para investimentos: {formatBRL(rebalancing.contribution - rebalancing.reserva_gap)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {rebalancing.reserva_target != null && rebalancing.reserva_gap != null && rebalancing.reserva_gap <= 0 && (
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--color-positive)]/10 border border-[var(--color-positive)]/20">
+                <p className="text-xs text-[var(--color-positive)] font-medium">
+                  Reserva completa ({formatBRL(rebalancing.reserva_valor)} / {formatBRL(rebalancing.reserva_target)}) — todo o aporte vai para investimentos.
+                </p>
+              </div>
+            )}
+
             {/* Class breakdown */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
