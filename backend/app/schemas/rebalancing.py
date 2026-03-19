@@ -32,6 +32,9 @@ class RebalancingResponse(BaseModel):
     contribution: Decimal
     patrimonio_atual: Decimal
     patrimonio_pos_aporte: Decimal
+    reserva_valor: Decimal
+    reserva_target: Decimal | None
+    reserva_gap: Decimal | None
     class_breakdown: list[ClassRebalancing]
     asset_plan: list[AssetRebalancing]
     total_planned: Decimal
