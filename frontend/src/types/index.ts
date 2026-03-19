@@ -77,6 +77,18 @@ export interface FinancialReserveTarget {
   target_amount: number | null;
 }
 
+export interface FixedIncomeInterest {
+  id: number;
+  fixed_income_id: number | null;
+  ticker: string;
+  description: string;
+  reference_month: string;
+  previous_balance: number;
+  new_balance: number;
+  interest_amount: number;
+  created_at: string;
+}
+
 export interface FixedIncomeTransactionItem {
   ticker: string;
   description: string;
@@ -100,6 +112,7 @@ export interface MonthlyOverview {
   transactions: Purchase[];
   fi_aportes: FixedIncomeTransactionItem[];
   fi_redemptions: FixedIncomeTransactionItem[];
+  fi_interest: FixedIncomeTransactionItem[];
   reserva_depositos: number;
   reserva_resgates: number;
 }
