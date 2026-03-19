@@ -58,11 +58,11 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
   }
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
-      <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-4 tracking-tight">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm min-h-0 flex flex-col h-full">
+      <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-4 tracking-tight shrink-0">
         Fechamento por Ativo
       </h3>
-      <div className="overflow-x-auto">
+      <div className="overflow-auto flex-1">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border)]">

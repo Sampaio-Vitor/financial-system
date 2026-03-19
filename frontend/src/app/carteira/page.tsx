@@ -2,61 +2,40 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { getCurrentMonth } from "@/lib/format";
+import { formatBRL } from "@/lib/format";
 import { MonthlyOverview } from "@/types";
-import MonthNavigator from "@/components/month-navigator";
-import SummaryCards from "@/components/summary-cards";
 import AllocationBreakdown from "@/components/allocation-breakdown";
-import PatrimonioChart from "@/components/patrimonio-chart";
-import MonthlySnapshotsTable from "@/components/monthly-snapshots-table";
-import SnapshotAssetsTable from "@/components/snapshot-assets-table";
-import DetailDrawer from "@/components/detail-drawer";
+import ChartTabs from "@/components/chart-tabs";
 import PriceUpdateButton from "@/components/price-update-button";
 
-export default function CarteiraOverview() {
-  const [month, setMonth] = useState(getCurrentMonth());
+export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedCard, setExpandedCard] = useState<string | null>(null);
-
-  // Reset expanded card when month changes
-  useEffect(() => {
-    setExpandedCard(null);
-  }, [month]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const overview = await apiFetch<MonthlyOverview>(
-        `/portfolio/overview?month=${month}`
-      );
+      const overview = await apiFetch<MonthlyOverview>("/portfolio/overview");
       setData(overview);
     } catch {
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const isCurrentMonth = month === getCurrentMonth();
-
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
-          <MonthNavigator month={month} onChange={setMonth} />
+          <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
         </div>
         <div className="animate-pulse space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-[104px] rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
-            ))}
-          </div>
+          <div className="h-28 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="h-72 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
             <div className="h-72 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
@@ -70,8 +49,7 @@ export default function CarteiraOverview() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
-          <MonthNavigator month={month} onChange={setMonth} />
+          <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
         </div>
         <div className="p-8 text-center bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)]">
           <p className="text-[var(--color-text-muted)] font-medium">Erro ao carregar dados do portfólio.</p>
@@ -83,41 +61,31 @@ export default function CarteiraOverview() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
-        <div className="flex items-center gap-4">
-          {isCurrentMonth && <PriceUpdateButton onComplete={fetchData} />}
-          <MonthNavigator month={month} onChange={setMonth} minMonth={data.min_month} />
-        </div>
+        <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
+        <PriceUpdateButton onComplete={fetchData} />
       </div>
 
-      <div>
-        <SummaryCards
-          cards={[
-            { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
-            { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl", expandable: true },
-            { label: "Resgates do Mês", value: data.resgates_do_mes, format: "brl", expandable: true },
-            { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
-            { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
-          ]}
-          expandedCard={expandedCard}
-          onToggleCard={(label) => setExpandedCard((prev) => (prev === label ? null : label))}
-        />
-        {expandedCard === "Aportes do Mês" && (
-          <DetailDrawer type="aportes" data={data} />
-        )}
-        {expandedCard === "Resgates do Mês" && (
-          <DetailDrawer type="resgates" data={data} />
-        )}
+      {/* Hero: Patrimônio Total */}
+      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 shadow-sm">
+        <p className="text-sm font-medium text-[var(--color-text-secondary)] mb-1">Patrimônio Total</p>
+        <p className="text-4xl font-extrabold tracking-tight text-[var(--color-text-primary)]">
+          {formatBRL(data.patrimonio_total)}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AllocationBreakdown items={data.allocation_breakdown} patrimonioTotal={data.patrimonio_total} reservaFinanceira={data.reserva_financeira} reservaTarget={data.reserva_target} />
-        <PatrimonioChart />
+        <AllocationBreakdown
+          items={data.allocation_breakdown}
+          patrimonioTotal={data.patrimonio_total}
+          reservaFinanceira={data.reserva_financeira}
+          reservaTarget={data.reserva_target}
+        />
+        <ChartTabs
+          allocationItems={data.allocation_breakdown}
+          patrimonioTotal={data.patrimonio_total}
+          reservaFinanceira={data.reserva_financeira}
+        />
       </div>
-
-      <MonthlySnapshotsTable />
-
-      <SnapshotAssetsTable month={month} />
     </div>
   );
 }
