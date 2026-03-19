@@ -64,11 +64,14 @@ async def _get_class_values(
         if price and qty:
             values[asset_type] += price * qty
 
-    # Fixed income: sum current_balance (no date filtering — balances are current)
-    fi_result = await db.execute(
+    # Fixed income: sum current_balance for positions that existed before cutoff
+    fi_query = (
         select(func.sum(FixedIncomePosition.current_balance))
         .where(FixedIncomePosition.user_id == user.id)
     )
+    if cutoff:
+        fi_query = fi_query.where(FixedIncomePosition.start_date < cutoff)
+    fi_result = await db.execute(fi_query)
     rf_total = fi_result.scalar() or Decimal("0")
     values[AssetType.RF] = rf_total
 
@@ -133,10 +136,10 @@ async def get_overview(
     )
     total_invested = invested_result.scalar() or Decimal("0")
 
-    # Add fixed income applied values
+    # Add fixed income applied values (only positions that existed before month_end)
     fi_invested = await db.execute(
         select(func.sum(FixedIncomePosition.applied_value))
-        .where(FixedIncomePosition.user_id == user.id)
+        .where(FixedIncomePosition.user_id == user.id, FixedIncomePosition.start_date < month_end)
     )
     total_invested += fi_invested.scalar() or Decimal("0")
 
