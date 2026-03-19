@@ -1,11 +1,23 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Trash2, Pencil } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { apiFetch } from "@/lib/api";
 import { formatBRL, getCurrentMonth } from "@/lib/format";
 import { FinancialReserveEntry, FinancialReserveMonthValue, FinancialReserveTarget } from "@/types";
 import MonthNavigator from "@/components/month-navigator";
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function ReservaPage() {
   const [month, setMonth] = useState(getCurrentMonth());
@@ -15,12 +27,23 @@ export default function ReservaPage() {
 
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
   const [resgateAmount, setResgateAmount] = useState("");
+  const [resgateDate, setResgateDate] = useState(todayStr());
   const [savingResgate, setSavingResgate] = useState(false);
   const [targetData, setTargetData] = useState<FinancialReserveTarget | null>(null);
   const [editTarget, setEditTarget] = useState("");
   const [savingTarget, setSavingTarget] = useState(false);
+
+  // Inline editing state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<{
+    recorded_at: string;
+    amount: string;
+    note: string;
+  }>({ recorded_at: "", amount: "", note: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -34,7 +57,7 @@ export default function ReservaPage() {
       setHistory(hist);
       setTargetData(target);
       if (target.target_amount != null) {
-        setEditTarget(target.target_amount.toString());
+        setEditTarget(parseFloat(target.target_amount.toString()).toString());
       }
     } catch {
       setMonthData(null);
@@ -57,10 +80,15 @@ export default function ReservaPage() {
     try {
       await apiFetch("/financial-reserves", {
         method: "POST",
-        body: JSON.stringify({ amount: parsed, note: note || null }),
+        body: JSON.stringify({
+          amount: parsed,
+          note: note || null,
+          recorded_at: date ? `${date}T00:00:00` : null,
+        }),
       });
       setAmount("");
       setNote("");
+      setDate(todayStr());
       await fetchData();
     } catch {
       // ignore
@@ -116,14 +144,53 @@ export default function ReservaPage() {
         body: JSON.stringify({
           amount: newAmount,
           note: `Resgate de R$ ${parsed.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+          recorded_at: resgateDate ? `${resgateDate}T00:00:00` : null,
         }),
       });
       setResgateAmount("");
+      setResgateDate(todayStr());
       await fetchData();
     } catch {
       // ignore
     } finally {
       setSavingResgate(false);
+    }
+  };
+
+  const startEdit = (entry: FinancialReserveEntry) => {
+    setEditingId(entry.id);
+    const num = parseFloat(entry.amount.toString());
+    setEditData({
+      recorded_at: new Date(entry.recorded_at).toISOString().slice(0, 10),
+      amount: num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      note: entry.note || "",
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveEdit = async (id: number) => {
+    const parsed = parseFloat(editData.amount.replace(/\./g, "").replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return;
+
+    setSavingEdit(true);
+    try {
+      await apiFetch(`/financial-reserves/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          amount: parsed,
+          note: editData.note || null,
+          recorded_at: `${editData.recorded_at}T00:00:00`,
+        }),
+      });
+      setEditingId(null);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -138,6 +205,24 @@ export default function ReservaPage() {
   const minMonth = history.length > 0
     ? new Date(history[history.length - 1].recorded_at).toISOString().slice(0, 7)
     : null;
+
+  // Chart data: last entry per month, sorted chronologically
+  const chartData = useMemo(() => {
+    if (history.length === 0) return [];
+    const byMonth = new Map<string, number>();
+    // history is sorted desc, so iterate in reverse to keep last entry per month
+    for (let i = history.length - 1; i >= 0; i--) {
+      const e = history[i];
+      const m = new Date(e.recorded_at).toISOString().slice(0, 7);
+      byMonth.set(m, parseFloat(e.amount.toString()));
+    }
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([m, value]) => ({
+        month: m.slice(5) + "/" + m.slice(0, 4), // "MM/YYYY"
+        value,
+      }));
+  }, [history]);
 
   if (loading) {
     return (
@@ -158,167 +243,224 @@ export default function ReservaPage() {
         <MonthNavigator month={month} onChange={setMonth} />
       </div>
 
-      {/* Current value + progress card */}
+      {/* Unified card: Current value + progress + target setting */}
       <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
-        <div className="flex items-start justify-between mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-6">
+          {/* Left: value + progress */}
           <div>
             <p className="text-sm font-medium text-[var(--color-text-muted)] mb-1">
               Valor da Reserva
             </p>
-            <p className="text-3xl font-extrabold tracking-tight">
+            <p className="text-3xl font-extrabold tracking-tight mb-4">
               {currentValue != null ? formatBRL(currentValue) : "—"}
             </p>
-          </div>
-          {targetAmount != null && (
-            <div className="text-right">
-              <p className="text-sm font-medium text-[var(--color-text-muted)] mb-1">
-                Meta
-              </p>
-              <p className="text-xl font-bold text-[var(--color-text-secondary)]">
-                {formatBRL(targetAmount)}
-              </p>
-            </div>
-          )}
-        </div>
 
-        {targetAmount != null && (
-          <div className="mb-2">
-            <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)] mb-1">
-              <span>{progressPct.toFixed(1)}% da meta</span>
-              <span>
-                {currentValue != null ? formatBRL(currentValue) : "R$ 0"} / {formatBRL(targetAmount)}
-              </span>
+            {targetAmount != null && (
+              <div className="mb-2">
+                <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)] mb-1">
+                  <span>{progressPct.toFixed(1)}% da meta</span>
+                  <span>
+                    {currentValue != null ? formatBRL(currentValue) : "R$ 0"} / {formatBRL(targetAmount)}
+                  </span>
+                </div>
+                <div className="w-full h-3 rounded-full bg-[var(--color-bg-main)]">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${progressPct}%`,
+                      backgroundColor: progressPct >= 100 ? "var(--color-positive)" : "#06b6d4",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {monthData?.entry && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-2">
+                Atualizado em{" "}
+                {new Date(monthData.entry.recorded_at).toLocaleDateString("pt-BR")}
+              </p>
+            )}
+          </div>
+
+          {/* Right: target setting */}
+          <div className="md:border-l md:border-[var(--color-border)] md:pl-6 flex flex-col justify-center">
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3">
+              Meta da Reserva
+            </h2>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-[var(--color-text-muted)]">
+                Valor alvo (R$)
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editTarget}
+                onChange={(e) => setEditTarget(e.target.value)}
+                placeholder="50000"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
+              />
+              <button
+                onClick={handleSaveTarget}
+                disabled={savingTarget || !editTarget}
+                className="w-full px-5 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {savingTarget ? "Salvando..." : "Definir Meta"}
+              </button>
             </div>
-            <div className="w-full h-3 rounded-full bg-[var(--color-bg-main)]">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${progressPct}%`,
-                  backgroundColor: progressPct >= 100 ? "var(--color-positive)" : "#06b6d4",
-                }}
+          </div>
+        </div>
+      </div>
+
+      {/* Evolution chart */}
+      {chartData.length >= 2 && (
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
+            Evolucao da Reserva
+          </h2>
+          <div className="h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={{ stroke: "#2a2d3a" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1e2130",
+                    border: "1px solid #2a2d3a",
+                    borderRadius: "8px",
+                    color: "#f8fafc",
+                    fontSize: "12px",
+                  }}
+                  formatter={(v: number) => [formatBRL(v), "Reserva"]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#06b6d4"
+                  strokeWidth={2}
+                  dot={{ r: 4, fill: "#06b6d4" }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Forms side by side: Registrar Novo Valor + Registrar Resgate */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Register new value */}
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 flex flex-col">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
+            Registrar Novo Valor
+          </h2>
+          <form onSubmit={handleSave} className="flex flex-col flex-1 gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+                  Valor (R$)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="37.778,67"
+                  required
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+                Nota (opcional)
+              </label>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Ex: Deposito, Rendimentos..."
+                className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
               />
             </div>
-          </div>
-        )}
-
-        {monthData?.entry && (
-          <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            Atualizado em{" "}
-            {new Date(monthData.entry.recorded_at).toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </p>
-        )}
-      </div>
-
-      {/* Target setting */}
-      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
-        <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
-          Meta da Reserva
-        </h2>
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
-              Valor alvo (R$)
-            </label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={editTarget}
-              onChange={(e) => setEditTarget(e.target.value)}
-              placeholder="50000"
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
-            />
-          </div>
-          <button
-            onClick={handleSaveTarget}
-            disabled={savingTarget || !editTarget}
-            className="px-5 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {savingTarget ? "Salvando..." : "Definir Meta"}
-          </button>
+            <button
+              type="submit"
+              disabled={saving || !amount}
+              className="w-full mt-auto px-5 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+          </form>
         </div>
-      </div>
 
-      {/* Edit form */}
-      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
-        <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
-          Registrar Novo Valor
-        </h2>
-        <form onSubmit={handleSave} className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
-              Valor (R$)
-            </label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="37.778,67"
-              required
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
-            />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
-              Nota (opcional)
-            </label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Ex: Deposito, Resgate..."
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saving || !amount}
-            className="px-5 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {saving ? "Salvando..." : "Salvar"}
-          </button>
-        </form>
-      </div>
-
-      {/* Resgate form */}
-      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
-        <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
-          Registrar Resgate
-        </h2>
-        <form onSubmit={handleResgate} className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
-              Valor a resgatar (R$)
-            </label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={resgateAmount}
-              onChange={(e) => setResgateAmount(e.target.value)}
-              placeholder="5.000,00"
-              required
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-negative)]/50"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={savingResgate || !resgateAmount}
-            className="px-5 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {savingResgate ? "Resgatando..." : "Resgatar"}
-          </button>
-        </form>
-        {currentValue != null && (
-          <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            Saldo atual: {formatBRL(currentValue)}
-          </p>
-        )}
+        {/* Resgate form */}
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 flex flex-col">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">
+            Registrar Resgate
+          </h2>
+          <form onSubmit={handleResgate} className="flex flex-col flex-1 gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+                  Valor a resgatar (R$)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={resgateAmount}
+                  onChange={(e) => setResgateAmount(e.target.value)}
+                  placeholder="5.000,00"
+                  required
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-negative)]/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={resgateDate}
+                  onChange={(e) => setResgateDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-negative)]/50"
+                />
+              </div>
+            </div>
+            {currentValue != null && (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Saldo atual: {formatBRL(currentValue)}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={savingResgate || !resgateAmount}
+              className="w-full mt-auto px-5 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {savingResgate ? "Resgatando..." : "Resgatar"}
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* History table */}
@@ -339,6 +481,9 @@ export default function ReservaPage() {
                     Data
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Operacao
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
                     Valor
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
@@ -350,37 +495,108 @@ export default function ReservaPage() {
                 </tr>
               </thead>
               <tbody>
-                {history.map((entry) => (
-                  <tr
-                    key={entry.id}
-                    className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
-                  >
-                    <td className="px-3 py-2.5">
-                      {new Date(entry.recorded_at).toLocaleDateString("pt-BR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="px-3 py-2.5 font-medium">
-                      {formatBRL(entry.amount)}
-                    </td>
-                    <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
-                      {entry.note || "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <button
-                        onClick={() => handleDelete(entry.id)}
-                        className="p-1 rounded-lg text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                        title="Excluir"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {history.map((entry, idx) => {
+                  // history is sorted desc; previous chronological entry is idx+1
+                  const prevEntry = idx < history.length - 1 ? history[idx + 1] : null;
+                  const currentAmt = Number(entry.amount);
+                  const prevAmt = prevEntry ? Number(prevEntry.amount) : 0;
+                  const diff = currentAmt - prevAmt;
+                  const isResgate = diff < 0;
+
+                  return (
+                    <tr
+                      key={entry.id}
+                      className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
+                    >
+                      {editingId === entry.id ? (
+                        <>
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="date"
+                              value={editData.recorded_at}
+                              onChange={(e) => setEditData({ ...editData, recorded_at: e.target.value })}
+                              className="w-36 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5" />
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={editData.amount}
+                              onChange={(e) => setEditData({ ...editData, amount: e.target.value })}
+                              className="w-32 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="text"
+                              value={editData.note}
+                              onChange={(e) => setEditData({ ...editData, note: e.target.value })}
+                              className="w-full px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => saveEdit(entry.id)}
+                                disabled={savingEdit}
+                                className="text-xs text-[var(--color-positive)] hover:underline disabled:opacity-50"
+                              >
+                                {savingEdit ? "..." : "Salvar"}
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="text-xs text-[var(--color-text-muted)] hover:underline"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2.5">
+                            {new Date(entry.recorded_at).toLocaleDateString("pt-BR")}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              isResgate
+                                ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
+                                : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
+                            }`}>
+                              {isResgate ? "RESGATE" : "APORTE"}
+                            </span>
+                          </td>
+                          <td className={`px-3 py-2.5 font-medium ${isResgate ? "text-[var(--color-negative)]" : "text-[var(--color-positive)]"}`}>
+                            {isResgate ? "- " : "+ "}{formatBRL(Math.abs(diff))}
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                            {entry.note || "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => startEdit(entry)}
+                                className="p-1 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
+                                title="Editar"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(entry.id)}
+                                className="p-1 rounded-lg text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                                title="Excluir"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

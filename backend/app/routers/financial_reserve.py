@@ -11,6 +11,7 @@ from app.models.financial_reserve import FinancialReserveEntry, FinancialReserve
 from app.models.user import User
 from app.schemas.financial_reserve import (
     FinancialReserveCreate,
+    FinancialReserveUpdate,
     FinancialReserveResponse,
     FinancialReserveMonthValue,
     FinancialReserveTargetUpdate,
@@ -35,7 +36,7 @@ async def get_reserve_for_month(
             FinancialReserveEntry.user_id == user_id,
             FinancialReserveEntry.recorded_at < month_end,
         )
-        .order_by(FinancialReserveEntry.recorded_at.desc())
+        .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()
@@ -69,7 +70,7 @@ async def list_reserve_history(
     result = await db.execute(
         select(FinancialReserveEntry)
         .where(FinancialReserveEntry.user_id == user.id)
-        .order_by(FinancialReserveEntry.recorded_at.desc())
+        .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
     )
     return [FinancialReserveResponse.model_validate(e) for e in result.scalars().all()]
 
@@ -84,6 +85,7 @@ async def create_reserve_entry(
         user_id=user.id,
         amount=data.amount,
         note=data.note,
+        recorded_at=data.recorded_at or datetime.utcnow(),
     )
     db.add(entry)
     await db.commit()
@@ -123,6 +125,35 @@ async def set_reserve_target(
     await db.commit()
     await db.refresh(target)
     return FinancialReserveTargetResponse(target_amount=target.target_amount)
+
+
+@router.put("/{entry_id}", response_model=FinancialReserveResponse)
+async def update_reserve_entry(
+    entry_id: int,
+    data: FinancialReserveUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(FinancialReserveEntry).where(
+            FinancialReserveEntry.id == entry_id,
+            FinancialReserveEntry.user_id == user.id,
+        )
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Reserve entry not found")
+
+    if data.amount is not None:
+        entry.amount = data.amount
+    if data.note is not None:
+        entry.note = data.note
+    if data.recorded_at is not None:
+        entry.recorded_at = data.recorded_at
+
+    await db.commit()
+    await db.refresh(entry)
+    return FinancialReserveResponse.model_validate(entry)
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
