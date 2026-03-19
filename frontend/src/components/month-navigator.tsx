@@ -6,17 +6,20 @@ import { getMonthLabel, getPrevMonth, getNextMonth, getCurrentMonth } from "@/li
 interface MonthNavigatorProps {
   month: string;
   onChange: (month: string) => void;
+  minMonth?: string | null;
 }
 
-export default function MonthNavigator({ month, onChange }: MonthNavigatorProps) {
+export default function MonthNavigator({ month, onChange, minMonth }: MonthNavigatorProps) {
   const currentMonth = getCurrentMonth();
   const isCurrentMonth = month === currentMonth;
+  const isAtMin = !!minMonth && month <= minMonth;
 
   return (
     <div className="flex items-center gap-3">
       <button
         onClick={() => onChange(getPrevMonth(month))}
-        className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)] transition-colors"
+        disabled={isAtMin}
+        className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
         <ChevronLeft size={18} />
       </button>

@@ -70,6 +70,7 @@ export interface FinancialReserveTarget {
 
 export interface MonthlyOverview {
   month: string;
+  min_month: string | null;
   patrimonio_total: number;
   reserva_financeira: number | null;
   reserva_target: number | null;

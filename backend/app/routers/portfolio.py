@@ -91,6 +91,13 @@ async def get_overview(
     else:
         month_end = date(year, m + 1, 1)
 
+    # Earliest purchase date (for calendar floor)
+    min_date_result = await db.execute(
+        select(func.min(Purchase.purchase_date)).where(Purchase.user_id == user.id)
+    )
+    min_date = min_date_result.scalar()
+    min_month = min_date.strftime("%Y-%m") if min_date else None
+
     # Get purchases for this month
     purchases_result = await db.execute(
         select(Purchase)
@@ -175,6 +182,7 @@ async def get_overview(
 
     return MonthlyOverview(
         month=month,
+        min_month=min_month,
         patrimonio_total=round(patrimonio_total, 4),
         reserva_financeira=round(reserva_financeira, 4) if reserva_financeira else None,
         reserva_target=round(reserva_target, 4) if reserva_target else None,

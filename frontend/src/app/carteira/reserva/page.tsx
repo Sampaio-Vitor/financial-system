@@ -102,12 +102,17 @@ export default function ReservaPage() {
       ? Math.min((currentValue / targetAmount) * 100, 100)
       : 0;
 
+  // Derive min month from oldest history entry (history is sorted desc)
+  const minMonth = history.length > 0
+    ? new Date(history[history.length - 1].recorded_at).toISOString().slice(0, 7)
+    : null;
+
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Reserva Financeira</h1>
-          <MonthNavigator month={month} onChange={setMonth} />
+          <MonthNavigator month={month} onChange={setMonth} minMonth={minMonth} />
         </div>
         <div className="animate-pulse h-64 rounded-xl bg-[var(--color-bg-card)]" />
       </div>
