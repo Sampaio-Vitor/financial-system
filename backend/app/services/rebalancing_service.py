@@ -82,8 +82,8 @@ class RebalancingService:
                 status=status,
             ))
 
-        # Collect all per-asset gaps across variable income classes
-        all_asset_candidates: list[tuple[str, AssetType, Decimal, Decimal, Decimal, Decimal]] = []
+        # Collect per-asset gaps grouped by class, sorted by gap desc within each
+        candidates_by_class: dict[AssetType, list[tuple[str, AssetType, Decimal, Decimal, Decimal, Decimal]]] = {}
         for asset_class in (AssetType.STOCK, AssetType.ACAO, AssetType.FII):
             assets_in_class = await self._get_assets_with_values(asset_class)
             if not assets_in_class:
@@ -93,15 +93,39 @@ class RebalancingService:
             n_assets = len(assets_in_class)
             target_per_asset = investable_pos_aporte * targets.get(asset_class, Decimal("0")) / n_assets
 
+            class_candidates = []
             for ticker, current_val in assets_in_class.items():
                 gap = target_per_asset - current_val
                 gap_pct = (gap / target_per_asset * 100) if target_per_asset else Decimal("0")
                 if gap > 0:
-                    all_asset_candidates.append((ticker, asset_class, current_val, target_per_asset, gap, gap_pct))
+                    class_candidates.append((ticker, asset_class, current_val, target_per_asset, gap, gap_pct))
 
-        # Sort globally by gap descending and pick top N
-        all_asset_candidates.sort(key=lambda x: x[4], reverse=True)
-        top_assets = all_asset_candidates[:top_n]
+            if class_candidates:
+                class_candidates.sort(key=lambda x: x[4], reverse=True)
+                candidates_by_class[asset_class] = class_candidates
+
+        # Round-robin across classes (ordered by total class gap desc) to pick top_n
+        class_order = sorted(
+            candidates_by_class.keys(),
+            key=lambda c: class_gaps.get(c, Decimal("0")),
+            reverse=True,
+        )
+        top_assets: list[tuple[str, AssetType, Decimal, Decimal, Decimal, Decimal]] = []
+        class_idx = {c: 0 for c in class_order}
+        while len(top_assets) < top_n and class_order:
+            picked_this_round = False
+            for cls in list(class_order):
+                if len(top_assets) >= top_n:
+                    break
+                idx = class_idx[cls]
+                if idx < len(candidates_by_class[cls]):
+                    top_assets.append(candidates_by_class[cls][idx])
+                    class_idx[cls] = idx + 1
+                    picked_this_round = True
+                else:
+                    class_order.remove(cls)
+            if not picked_this_round:
+                break
 
         # Distribute remaining_contribution proportionally to selected assets' gaps
         asset_plan = []
