@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { Asset, PositionsResponse, PositionItem } from "@/types";
-import { X } from "lucide-react";
+import { formatBRL } from "@/lib/format";
+import { X, Search, ChevronDown } from "lucide-react";
+import TickerLogo from "@/components/ticker-logo";
 
 interface PurchaseFormProps {
   mode?: "compra" | "venda";
@@ -55,6 +57,20 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
     }
   }, [isVenda]);
 
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   const filteredAssets = assets.filter(
     (a) =>
       a.ticker.toLowerCase().includes(search.toLowerCase()) ||
@@ -64,13 +80,14 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const selectedAsset = assets.find((a) => a.id === assetId);
   const selectedPosition = ownedPositions.find((p) => p.asset_id === assetId);
   const total =
-    quantity && unitPrice ? (parseFloat(quantity) * parseFloat(unitPrice)).toFixed(2) : "0.00";
+    quantity && unitPrice ? parseFloat(quantity) * parseFloat(unitPrice) : 0;
 
   const handleSelectAsset = (asset: Asset) => {
     setAssetId(asset.id);
     setSearch(asset.ticker);
+    setDropdownOpen(false);
     if (asset.current_price) {
-      setUnitPrice(asset.current_price.toString());
+      setUnitPrice(Number(asset.current_price).toFixed(2));
     }
   };
 
@@ -118,35 +135,60 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+          <div ref={dropdownRef}>
             <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ativo</label>
-            <select
-              value={assetId}
-              onChange={(e) => {
-                const id = e.target.value ? Number(e.target.value) : "";
-                setAssetId(id);
-                if (id) {
-                  const asset = assets.find((a) => a.id === id);
-                  if (asset) {
-                    setSearch(asset.ticker);
-                    if (asset.current_price) setUnitPrice(asset.current_price.toString());
-                  }
-                }
-              }}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-            >
-              <option value="">Selecione um ativo</option>
-              {assets.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.ticker} — {isVenda
-                    ? `${ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0} cotas`
-                    : a.description}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Buscar por ticker ou nome..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setDropdownOpen(true);
+                    if (!e.target.value) {
+                      setAssetId("");
+                      setUnitPrice("");
+                    }
+                  }}
+                  onFocus={() => setDropdownOpen(true)}
+                  className="w-full pl-9 pr-8 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              </div>
+              {dropdownOpen && (
+                <div className="absolute z-10 mt-1 w-full bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {filteredAssets.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-[var(--color-text-muted)] text-center">
+                      Nenhum ativo encontrado
+                    </div>
+                  ) : (
+                    filteredAssets.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => handleSelectAsset(a)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[var(--color-bg-main)] transition-colors ${
+                          assetId === a.id ? "bg-[var(--color-accent)]/10" : ""
+                        }`}
+                      >
+                        <TickerLogo ticker={a.ticker} type={a.type} size={20} />
+                        <span className="font-medium">{a.ticker}</span>
+                        <span className="text-[var(--color-text-muted)] text-xs truncate">
+                          {isVenda
+                            ? `${Number(ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0).toFixed(2)} cotas`
+                            : a.description}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             {isVenda && selectedPosition && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                Posicao atual: {selectedPosition.quantity} cotas
+                Posicao atual: {Number(selectedPosition.quantity).toFixed(2)} cotas
               </p>
             )}
           </div>
@@ -167,7 +209,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Quantidade</label>
               <input
                 type="number"
-                step="any"
+                step="0.01"
                 min="0.01"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
@@ -181,7 +223,8 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
               </label>
               <input
                 type="number"
-                step="any"
+                step="0.01"
+                min="0.01"
                 value={unitPrice}
                 onChange={(e) => setUnitPrice(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
@@ -191,7 +234,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
           </div>
 
           <div className="text-sm text-[var(--color-text-secondary)]">
-            Total: <span className="font-bold text-[var(--color-text-primary)]">R$ {total}</span>
+            Total: <span className="font-bold text-[var(--color-text-primary)]">{formatBRL(total)}</span>
           </div>
 
           {error && <p className="text-sm text-[var(--color-negative)]">{error}</p>}
