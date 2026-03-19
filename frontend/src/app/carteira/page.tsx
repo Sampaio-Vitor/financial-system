@@ -8,7 +8,6 @@ import MonthNavigator from "@/components/month-navigator";
 import SummaryCards from "@/components/summary-cards";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import PatrimonioChart from "@/components/patrimonio-chart";
-import MonthTransactions from "@/components/month-transactions";
 import MonthlySnapshotsTable from "@/components/monthly-snapshots-table";
 import SnapshotAssetsTable from "@/components/snapshot-assets-table";
 import DetailDrawer from "@/components/detail-drawer";
@@ -119,8 +118,6 @@ export default function CarteiraOverview() {
       <MonthlySnapshotsTable />
 
       <SnapshotAssetsTable month={month} />
-
-      <MonthTransactions transactions={data.transactions} />
     </div>
   );
 }
