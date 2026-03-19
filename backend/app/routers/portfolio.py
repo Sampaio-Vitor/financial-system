@@ -128,7 +128,7 @@ async def get_overview(
         .order_by(Purchase.purchase_date.desc())
     )
     month_purchases = purchases_result.scalars().all()
-    aportes_do_mes = sum(p.total_value for p in month_purchases)
+    aportes_do_mes = sum(p.total_value for p in month_purchases if p.quantity > 0)
 
     # Add fixed income positions started this month
     fi_aportes = await db.execute(
