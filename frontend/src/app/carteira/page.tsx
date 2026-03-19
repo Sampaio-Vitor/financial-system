@@ -78,7 +78,7 @@ export default function CarteiraOverview() {
         <h1 className="text-2xl font-extrabold tracking-tight">Painel</h1>
         <div className="flex items-center gap-4">
           {isCurrentMonth && <PriceUpdateButton onComplete={fetchData} />}
-          <MonthNavigator month={month} onChange={setMonth} />
+          <MonthNavigator month={month} onChange={setMonth} minMonth={data.min_month} />
         </div>
       </div>
 
