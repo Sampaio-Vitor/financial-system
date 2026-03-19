@@ -82,64 +82,46 @@ class RebalancingService:
                 status=status,
             ))
 
-        # Distribute remaining contribution (after reserve) proportionally to positive gaps
-        positive_gaps = {k: v for k, v in class_gaps.items() if v > 0}
-        total_positive_gap = sum(positive_gaps.values())
-
-        class_allocations: dict[AssetType, Decimal] = {}
-        if total_positive_gap > 0:
-            for asset_class, gap in positive_gaps.items():
-                class_allocations[asset_class] = remaining_contribution * gap / total_positive_gap
-
-        # Get per-asset details for variable income classes
-        asset_plan = []
+        # Collect all per-asset gaps across variable income classes
+        all_asset_candidates: list[tuple[str, AssetType, Decimal, Decimal, Decimal, Decimal]] = []
         for asset_class in (AssetType.STOCK, AssetType.ACAO, AssetType.FII):
-            if asset_class not in class_allocations:
-                continue
-
-            class_contribution = class_allocations[asset_class]
             assets_in_class = await self._get_assets_with_values(asset_class)
-
             if not assets_in_class:
                 continue
 
-            # Equal weight within class (matching spreadsheet approach)
+            # Equal weight within class
             n_assets = len(assets_in_class)
             target_per_asset = investable_pos_aporte * targets.get(asset_class, Decimal("0")) / n_assets
 
-            # Calculate per-asset gaps and sort by gap descending
-            asset_gaps = []
             for ticker, current_val in assets_in_class.items():
                 gap = target_per_asset - current_val
                 gap_pct = (gap / target_per_asset * 100) if target_per_asset else Decimal("0")
-                asset_gaps.append((ticker, current_val, target_per_asset, gap, gap_pct))
+                if gap > 0:
+                    all_asset_candidates.append((ticker, asset_class, current_val, target_per_asset, gap, gap_pct))
 
-            asset_gaps.sort(key=lambda x: x[3], reverse=True)
+        # Sort globally by gap descending and pick top N
+        all_asset_candidates.sort(key=lambda x: x[4], reverse=True)
+        top_assets = all_asset_candidates[:top_n]
 
-            # Distribute class contribution among top N positive-gap assets
-            positive_asset_gaps = [a for a in asset_gaps if a[3] > 0]
-            top_assets = positive_asset_gaps[:top_n]
+        # Distribute remaining_contribution proportionally to selected assets' gaps
+        asset_plan = []
+        total_gap_top = sum(a[4] for a in top_assets)
+        if top_assets and total_gap_top > 0:
+            for ticker, asset_class, current_val, target_val, gap, gap_pct in top_assets:
+                amount = remaining_contribution * gap / total_gap_top
+                amount_usd = (amount / usd_brl) if usd_brl and asset_class == AssetType.STOCK else None
 
-            if top_assets:
-                total_gap_top = sum(a[3] for a in top_assets)
-                for ticker, current_val, target_val, gap, gap_pct in top_assets:
-                    # Proportional to gap
-                    amount = class_contribution * gap / total_gap_top if total_gap_top else Decimal("0")
-                    amount_usd = (amount / usd_brl) if usd_brl and asset_class == AssetType.STOCK else None
+                asset_plan.append(AssetRebalancing(
+                    ticker=ticker,
+                    asset_class=asset_class,
+                    current_value=round(current_val, 2),
+                    target_value=round(target_val, 2),
+                    gap=round(gap, 2),
+                    gap_pct=round(gap_pct, 2),
+                    amount_to_invest=round(amount, 2),
+                    amount_to_invest_usd=round(amount_usd, 2) if amount_usd else None,
+                ))
 
-                    asset_plan.append(AssetRebalancing(
-                        ticker=ticker,
-                        asset_class=asset_class,
-                        current_value=round(current_val, 2),
-                        target_value=round(target_val, 2),
-                        gap=round(gap, 2),
-                        gap_pct=round(gap_pct, 2),
-                        amount_to_invest=round(amount, 2),
-                        amount_to_invest_usd=round(amount_usd, 2) if amount_usd else None,
-                    ))
-
-        # Sort asset plan by gap descending
-        asset_plan.sort(key=lambda a: a.gap, reverse=True)
         total_planned = sum(a.amount_to_invest for a in asset_plan)
 
         return RebalancingResponse(
