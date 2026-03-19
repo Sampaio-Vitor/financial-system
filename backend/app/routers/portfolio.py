@@ -13,7 +13,6 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveTarget
-from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.routers.financial_reserve import get_reserve_for_month
 from app.schemas.portfolio import (
@@ -159,55 +158,22 @@ async def get_overview(
 
     patrimonio_total = sum(class_values.values()) + (reserva_financeira or Decimal("0"))
 
-    # Previous month's snapshot for month-over-month variation
+    # Month-over-month variation: compute previous month's patrimonio on-the-fly
+    prev_class_values = await _get_class_values(db, user, cutoff=month_start)
     if m == 1:
-        prev_month_str = f"{year - 1}-12"
+        prev_year, prev_m = year - 1, 12
     else:
-        prev_month_str = f"{year}-{m - 1:02d}"
+        prev_year, prev_m = year, m - 1
+    prev_reserve_entry = await get_reserve_for_month(db, user.id, prev_year, prev_m)
+    prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve_entry.amount if prev_reserve_entry else Decimal("0"))
 
-    prev_snap_result = await db.execute(
-        select(MonthlySnapshot).where(
-            MonthlySnapshot.user_id == user.id,
-            MonthlySnapshot.month == prev_month_str,
-        )
-    )
-    prev_snapshot = prev_snap_result.scalar_one_or_none()
-
-    if prev_snapshot:
-        variacao_mes = patrimonio_total - prev_snapshot.total_patrimonio
-        variacao_mes_pct = (variacao_mes / prev_snapshot.total_patrimonio * 100) if prev_snapshot.total_patrimonio else Decimal("0")
+    if prev_patrimonio > 0:
+        variacao_mes = patrimonio_total - prev_patrimonio
+        variacao_mes_pct = (variacao_mes / prev_patrimonio * 100)
     else:
-        # No previous snapshot: first month or no data — variation is zero
+        # No previous patrimonio: first month with data
         variacao_mes = Decimal("0")
         variacao_mes_pct = Decimal("0")
-
-    # Auto-save/update snapshot for the viewed month
-    existing_snap = await db.execute(
-        select(MonthlySnapshot).where(
-            MonthlySnapshot.user_id == user.id,
-            MonthlySnapshot.month == month,
-        )
-    )
-    snap = existing_snap.scalar_one_or_none()
-    if snap:
-        snap.total_patrimonio = patrimonio_total
-        snap.total_invested = total_invested
-        snap.total_pnl = patrimonio_total - total_invested
-        snap.pnl_pct = ((patrimonio_total - total_invested) / total_invested * 100) if total_invested else Decimal("0")
-        snap.aportes_do_mes = aportes_do_mes
-        snap.snapshot_at = now
-    else:
-        snap = MonthlySnapshot(
-            user_id=user.id,
-            month=month,
-            total_patrimonio=patrimonio_total,
-            total_invested=total_invested,
-            total_pnl=patrimonio_total - total_invested,
-            pnl_pct=((patrimonio_total - total_invested) / total_invested * 100) if total_invested else Decimal("0"),
-            aportes_do_mes=aportes_do_mes,
-        )
-        db.add(snap)
-    await db.commit()
 
     # Allocation targets
     targets = await _get_targets(db, user)
