@@ -12,15 +12,27 @@ import {
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, turnstileToken?: string) => Promise<void>;
+  register: (username: string, password: string, turnstileToken?: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   login: async () => {},
+  register: async () => {},
   logout: () => {},
 });
+
+function extractErrorMessage(data: Record<string, unknown>, fallback: string): string {
+  const detail = data.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const msg = detail[0].msg as string;
+    return msg?.replace(/^Value error, /, "") || fallback;
+  }
+  return fallback;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -30,16 +42,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(!!token);
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, turnstileToken?: string) => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: "Login failed" }));
-      throw new Error(err.detail || "Login failed");
+      const err = await res.json().catch(() => ({ detail: "Falha no login" }));
+      throw new Error(extractErrorMessage(err, "Falha no login"));
+    }
+
+    const data = await res.json();
+    localStorage.setItem("token", data.access_token);
+    setIsAuthenticated(true);
+  }, []);
+
+  const register = useCallback(async (username: string, password: string, turnstileToken?: string) => {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Falha no registro" }));
+      throw new Error(extractErrorMessage(err, "Falha no registro"));
     }
 
     const data = await res.json();
@@ -55,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return createElement(
     AuthContext.Provider,
-    { value: { isAuthenticated, login, logout } },
+    { value: { isAuthenticated, login, register, logout } },
     children
   );
 }

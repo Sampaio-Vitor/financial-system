@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.database import engine, Base
+from app.limiter import limiter
 from app.routers import auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots
 
 
@@ -16,6 +19,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Carteira de Investimentos API", version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+
+
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Muitas tentativas. Tente novamente em alguns minutos."},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
