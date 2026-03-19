@@ -30,8 +30,8 @@ export function formatQuantity(value: number | null | undefined): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 8,
-  }).format(value);
+    maximumFractionDigits: 2,
+  }).format(Number(value));
 }
 
 export function getMonthLabel(month: string): string {

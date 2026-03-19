@@ -10,7 +10,7 @@ import Link from "next/link";
 
 export default function PlanejadorAportePage() {
   const [targets, setTargets] = useState<AllocationTarget[]>([]);
-  const [contribution, setContribution] = useState("50000");
+  const [contribution, setContribution] = useState("50.000,00");
   const [topN, setTopN] = useState("10");
   const [rebalancing, setRebalancing] = useState<RebalancingResponse | null>(
     null
@@ -29,10 +29,24 @@ export default function PlanejadorAportePage() {
     fetchTargets();
   }, [fetchTargets]);
 
+  const parseBRL = (v: string) =>
+    Number(v.replace(/\./g, "").replace(",", ".")) || 0;
+
+  const formatInputBRL = (v: string) => {
+    const digits = v.replace(/\D/g, "");
+    if (!digits) return "";
+    const num = Number(digits) / 100;
+    return num.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   const handleCalculate = async () => {
     try {
+      const raw = parseBRL(contribution);
       const data = await apiFetch<RebalancingResponse>(
-        `/rebalancing?contribution=${contribution}&top_n=${topN}`
+        `/rebalancing?contribution=${raw}&top_n=${topN}`
       );
       setRebalancing(data);
     } catch (err) {
@@ -78,12 +92,18 @@ export default function PlanejadorAportePage() {
             <label className="block text-xs text-[var(--color-text-muted)] mb-1">
               Aporte deste mês (R$)
             </label>
-            <input
-              type="number"
-              value={contribution}
-              onChange={(e) => setContribution(e.target.value)}
-              className="w-40 px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-            />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] text-sm">
+                R$
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={contribution}
+                onChange={(e) => setContribution(formatInputBRL(e.target.value))}
+                className="w-48 pl-10 pr-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-xs text-[var(--color-text-muted)] mb-1">

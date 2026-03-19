@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/lib/api";
-import { Purchase } from "@/types";
+import { AssetType, Purchase } from "@/types";
 import { formatBRL, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 import TickerLogo from "@/components/ticker-logo";
+
+type OperationFilter = "todos" | "compras" | "vendas";
 
 export default function AportesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -19,6 +21,42 @@ export default function AportesPage() {
     unit_price: string;
   }>({ purchase_date: "", quantity: "", unit_price: "" });
   const [saving, setSaving] = useState(false);
+
+  // Filters
+  const [filterType, setFilterType] = useState<AssetType | "">("");
+  const [filterTicker, setFilterTicker] = useState("");
+  const [filterOperation, setFilterOperation] = useState<OperationFilter>("todos");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+
+  const dateFromRef = useRef<HTMLInputElement>(null);
+  const dateToRef = useRef<HTMLInputElement>(null);
+
+  const hasActiveFilters = filterType !== "" || filterTicker !== "" || filterOperation !== "todos" || filterDateFrom !== "" || filterDateTo !== "";
+
+  const clearFilters = () => {
+    setFilterType("");
+    setFilterTicker("");
+    setFilterOperation("todos");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+  };
+
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter((p) => {
+      if (filterType && p.asset_type !== filterType) return false;
+      if (filterTicker && !p.ticker?.toLowerCase().includes(filterTicker.toLowerCase())) return false;
+      if (filterOperation === "compras" && p.quantity < 0) return false;
+      if (filterOperation === "vendas" && p.quantity >= 0) return false;
+      if (filterDateFrom && p.purchase_date < filterDateFrom) return false;
+      if (filterDateTo && p.purchase_date > filterDateTo) return false;
+      return true;
+    });
+  }, [purchases, filterType, filterTicker, filterOperation, filterDateFrom, filterDateTo]);
+
+  const filteredTotal = useMemo(() => {
+    return filteredPurchases.reduce((sum, p) => sum + p.total_value, 0);
+  }, [filteredPurchases]);
 
   const fetchPurchases = useCallback(async () => {
     try {
@@ -49,8 +87,8 @@ export default function AportesPage() {
     setEditingId(p.id);
     setEditData({
       purchase_date: p.purchase_date,
-      quantity: String(p.quantity),
-      unit_price: String(p.unit_price),
+      quantity: Number(p.quantity).toFixed(2),
+      unit_price: Number(p.unit_price).toFixed(2),
     });
   };
 
@@ -109,12 +147,93 @@ export default function AportesPage() {
         />
       )}
 
+      {/* Filters */}
+      {!loading && purchases.length > 0 && (
+        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--color-text-muted)]">Tipo</label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as AssetType | "")}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
+              >
+                <option value="">Todos</option>
+                <option value="STOCK">Stocks</option>
+                <option value="ACAO">Acoes</option>
+                <option value="FII">FIIs</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--color-text-muted)]">Ticker</label>
+              <input
+                type="text"
+                placeholder="Buscar ticker..."
+                value={filterTicker}
+                onChange={(e) => setFilterTicker(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--color-text-muted)]">Operacao</label>
+              <select
+                value={filterOperation}
+                onChange={(e) => setFilterOperation(e.target.value as OperationFilter)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
+              >
+                <option value="todos">Todas</option>
+                <option value="compras">Compras</option>
+                <option value="vendas">Vendas</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1 cursor-pointer" onClick={() => dateFromRef.current?.showPicker()}>
+              <label className="text-xs text-[var(--color-text-muted)]">De</label>
+              <input
+                ref={dateFromRef}
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full cursor-pointer"
+              />
+            </div>
+            <div className="flex flex-col gap-1 cursor-pointer" onClick={() => dateToRef.current?.showPicker()}>
+              <label className="text-xs text-[var(--color-text-muted)]">Ate</label>
+              <input
+                ref={dateToRef}
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full cursor-pointer"
+              />
+            </div>
+          </div>
+          {hasActiveFilters && (
+            <div className="mt-3 pt-3 border-t border-[var(--color-border)]/50 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+              <div className="flex items-center gap-4">
+                <span>{filteredPurchases.length} de {purchases.length} registros</span>
+                <span>Total filtrado: <span className="font-medium text-[var(--color-text-primary)]">{formatBRL(filteredTotal)}</span></span>
+              </div>
+              <button
+                onClick={clearFilters}
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         {loading ? (
           <div className="animate-pulse h-64" />
         ) : purchases.length === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">
             Nenhum aporte registrado.
+          </p>
+        ) : filteredPurchases.length === 0 ? (
+          <p className="text-[var(--color-text-muted)] text-center py-8">
+            Nenhum resultado para os filtros selecionados.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -131,7 +250,7 @@ export default function AportesPage() {
                 </tr>
               </thead>
               <tbody>
-                {purchases.map((p) => {
+                {filteredPurchases.map((p) => {
                   const isSale = p.quantity < 0;
                   return (
                   <tr key={p.id} className={`border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50 ${isSale ? "bg-[var(--color-negative)]/5" : ""}`}>
@@ -155,7 +274,7 @@ export default function AportesPage() {
                         <td className="px-3 py-1.5">
                           <input
                             type="number"
-                            step="any"
+                            step="0.01"
                             value={editData.quantity}
                             onChange={(e) => setEditData({ ...editData, quantity: e.target.value })}
                             className="w-24 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
@@ -164,7 +283,7 @@ export default function AportesPage() {
                         <td className="px-3 py-1.5">
                           <input
                             type="number"
-                            step="any"
+                            step="0.01"
                             value={editData.unit_price}
                             onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })}
                             className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
