@@ -13,13 +13,14 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
-from app.models.financial_reserve import FinancialReserveTarget
+from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.user import User
 from app.routers.financial_reserve import get_reserve_for_month
 from app.schemas.portfolio import (
     MonthlyOverview,
     ClassSummary,
     DailyPatrimonio,
+    FixedIncomeTransactionItem,
     PositionsResponse,
     PositionItem,
 )
@@ -164,7 +165,7 @@ async def get_overview(
     )
     resgates_do_mes += fi_resgates.scalar() or Decimal("0")
 
-    # Add reserve increase for the month (current - previous)
+    # Reserve: track gross deposits/withdrawals from individual entries
     reserve_entry = await get_reserve_for_month(db, user.id, year, m)
     reserva_financeira = reserve_entry.amount if reserve_entry else None
     if m == 1:
@@ -172,12 +173,34 @@ async def get_overview(
     else:
         prev_year_r, prev_m_r = year, m - 1
     prev_reserve = await get_reserve_for_month(db, user.id, prev_year_r, prev_m_r)
-    reserva_aporte = (reserva_financeira or Decimal("0")) - (prev_reserve.amount if prev_reserve else Decimal("0"))
-    if reserva_aporte > 0:
-        aportes_do_mes += reserva_aporte
-    elif reserva_aporte < 0:
-        # 3) Resgate de reserva (diminuiu vs mês anterior)
-        resgates_do_mes += abs(reserva_aporte)
+
+    # Get ALL reserve entries in this month to compute gross movements
+    month_start_dt = datetime(year, m, 1)
+    month_end_dt = datetime(year + 1, 1, 1) if m == 12 else datetime(year, m + 1, 1)
+    all_reserve_entries = await db.execute(
+        select(FinancialReserveEntry)
+        .where(
+            FinancialReserveEntry.user_id == user.id,
+            FinancialReserveEntry.recorded_at >= month_start_dt,
+            FinancialReserveEntry.recorded_at < month_end_dt,
+        )
+        .order_by(FinancialReserveEntry.recorded_at.asc(), FinancialReserveEntry.id.asc())
+    )
+    reserve_entries_month = all_reserve_entries.scalars().all()
+
+    reserva_depositos = Decimal("0")
+    reserva_resgates = Decimal("0")
+    prev_amount = prev_reserve.amount if prev_reserve else Decimal("0")
+    for entry in reserve_entries_month:
+        delta = entry.amount - prev_amount
+        if delta > 0:
+            reserva_depositos += delta
+        elif delta < 0:
+            reserva_resgates += abs(delta)
+        prev_amount = entry.amount
+
+    aportes_do_mes += reserva_depositos
+    resgates_do_mes += reserva_resgates
 
     # Get total invested (all purchases up to end of month)
     invested_result = await db.execute(
@@ -236,6 +259,44 @@ async def get_overview(
             gap=round(target_pct - pct, 2),
         ))
 
+    # RF aportes detail (positions started this month)
+    fi_aportes_detail = await db.execute(
+        select(FixedIncomePosition)
+        .where(
+            FixedIncomePosition.user_id == user.id,
+            FixedIncomePosition.start_date >= month_start,
+            FixedIncomePosition.start_date < month_end,
+        )
+    )
+    fi_aportes_list = [
+        FixedIncomeTransactionItem(
+            ticker=fi.asset.ticker if fi.asset else "RF",
+            description=fi.description,
+            date=fi.start_date,
+            amount=fi.applied_value,
+        )
+        for fi in fi_aportes_detail.scalars().all()
+    ]
+
+    # RF redemptions detail
+    fi_resgates_detail = await db.execute(
+        select(FixedIncomeRedemption)
+        .where(
+            FixedIncomeRedemption.user_id == user.id,
+            FixedIncomeRedemption.redemption_date >= month_start,
+            FixedIncomeRedemption.redemption_date < month_end,
+        )
+    )
+    fi_redemptions_list = [
+        FixedIncomeTransactionItem(
+            ticker=fi.ticker,
+            description=fi.description,
+            date=fi.redemption_date,
+            amount=fi.amount,
+        )
+        for fi in fi_resgates_detail.scalars().all()
+    ]
+
     # Transactions for the month
     transactions = [
         PurchaseResponse(
@@ -266,6 +327,10 @@ async def get_overview(
         allocation_breakdown=allocation,
         daily_patrimonio=[],  # Simplified: would need historical price data for daily tracking
         transactions=transactions,
+        fi_aportes=fi_aportes_list,
+        fi_redemptions=fi_redemptions_list,
+        reserva_depositos=round(reserva_depositos, 4),
+        reserva_resgates=round(reserva_resgates, 4),
     )
 
 

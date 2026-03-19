@@ -77,6 +77,13 @@ export interface FinancialReserveTarget {
   target_amount: number | null;
 }
 
+export interface FixedIncomeTransactionItem {
+  ticker: string;
+  description: string;
+  date: string;
+  amount: number;
+}
+
 export interface MonthlyOverview {
   month: string;
   min_month: string | null;
@@ -91,6 +98,10 @@ export interface MonthlyOverview {
   allocation_breakdown: ClassSummary[];
   daily_patrimonio: DailyPatrimonio[];
   transactions: Purchase[];
+  fi_aportes: FixedIncomeTransactionItem[];
+  fi_redemptions: FixedIncomeTransactionItem[];
+  reserva_depositos: number;
+  reserva_resgates: number;
 }
 
 export interface PositionItem {
