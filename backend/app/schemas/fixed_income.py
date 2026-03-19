@@ -40,6 +40,30 @@ class FixedIncomeRedemptionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FixedIncomeInterestEntry(BaseModel):
+    fixed_income_id: int
+    new_balance: Decimal
+
+
+class FixedIncomeInterestBulkCreate(BaseModel):
+    reference_month: str  # "YYYY-MM" format
+    entries: list[FixedIncomeInterestEntry]
+
+
+class FixedIncomeInterestResponse(BaseModel):
+    id: int
+    fixed_income_id: int | None
+    ticker: str
+    description: str
+    reference_month: date
+    previous_balance: Decimal
+    new_balance: Decimal
+    interest_amount: Decimal
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class FixedIncomeResponse(BaseModel):
     id: int
     asset_id: int

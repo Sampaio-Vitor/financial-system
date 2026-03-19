@@ -10,6 +10,7 @@ from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
+from app.models.fixed_income_interest import FixedIncomeInterest
 from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
@@ -165,6 +166,17 @@ async def get_overview(
     )
     resgates_do_mes += fi_resgates.scalar() or Decimal("0")
 
+    # 3) Juros RF no mes
+    fi_juros = await db.execute(
+        select(func.sum(FixedIncomeInterest.interest_amount))
+        .where(
+            FixedIncomeInterest.user_id == user.id,
+            FixedIncomeInterest.reference_month >= month_start,
+            FixedIncomeInterest.reference_month < month_end,
+        )
+    )
+    aportes_do_mes += fi_juros.scalar() or Decimal("0")
+
     # Reserve: track gross deposits/withdrawals from individual entries
     reserve_entry = await get_reserve_for_month(db, user.id, year, m)
     reserva_financeira = reserve_entry.amount if reserve_entry else None
@@ -297,6 +309,25 @@ async def get_overview(
         for fi in fi_resgates_detail.scalars().all()
     ]
 
+    # RF interest detail
+    fi_interest_detail = await db.execute(
+        select(FixedIncomeInterest)
+        .where(
+            FixedIncomeInterest.user_id == user.id,
+            FixedIncomeInterest.reference_month >= month_start,
+            FixedIncomeInterest.reference_month < month_end,
+        )
+    )
+    fi_interest_list = [
+        FixedIncomeTransactionItem(
+            ticker=fi.ticker,
+            description=fi.description,
+            date=fi.reference_month,
+            amount=fi.interest_amount,
+        )
+        for fi in fi_interest_detail.scalars().all()
+    ]
+
     # Transactions for the month
     transactions = [
         PurchaseResponse(
@@ -329,6 +360,7 @@ async def get_overview(
         transactions=transactions,
         fi_aportes=fi_aportes_list,
         fi_redemptions=fi_redemptions_list,
+        fi_interest=fi_interest_list,
         reserva_depositos=round(reserva_depositos, 4),
         reserva_resgates=round(reserva_resgates, 4),
     )
