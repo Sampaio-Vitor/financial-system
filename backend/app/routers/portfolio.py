@@ -12,7 +12,9 @@ from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
+from app.models.financial_reserve import FinancialReserveTarget
 from app.models.user import User
+from app.routers.financial_reserve import get_reserve_for_month
 from app.schemas.portfolio import (
     MonthlyOverview,
     ClassSummary,
@@ -119,7 +121,19 @@ async def get_overview(
 
     # Current values per class
     class_values = await _get_class_values(db, user)
-    patrimonio_total = sum(class_values.values())
+
+    # Financial reserve (separate from asset classes)
+    reserve_entry = await get_reserve_for_month(db, user.id, year, m)
+    reserva_financeira = reserve_entry.amount if reserve_entry else None
+
+    # Reserve target
+    target_result = await db.execute(
+        select(FinancialReserveTarget).where(FinancialReserveTarget.user_id == user.id)
+    )
+    reserve_target = target_result.scalar_one_or_none()
+    reserva_target = reserve_target.target_amount if reserve_target else None
+
+    patrimonio_total = sum(class_values.values()) + (reserva_financeira or Decimal("0"))
 
     # P&L
     variacao_mes = patrimonio_total - total_invested
@@ -162,6 +176,8 @@ async def get_overview(
     return MonthlyOverview(
         month=month,
         patrimonio_total=round(patrimonio_total, 4),
+        reserva_financeira=round(reserva_financeira, 4) if reserva_financeira else None,
+        reserva_target=round(reserva_target, 4) if reserva_target else None,
         total_invested=round(total_invested, 4),
         aportes_do_mes=round(aportes_do_mes, 4),
         variacao_mes=round(variacao_mes, 4),

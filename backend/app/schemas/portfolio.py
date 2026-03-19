@@ -37,6 +37,8 @@ class DailyPatrimonio(BaseModel):
 class MonthlyOverview(BaseModel):
     month: str
     patrimonio_total: Decimal
+    reserva_financeira: Decimal | None
+    reserva_target: Decimal | None
     total_invested: Decimal
     aportes_do_mes: Decimal
     variacao_mes: Decimal

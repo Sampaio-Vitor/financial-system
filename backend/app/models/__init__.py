@@ -5,6 +5,7 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.monthly_snapshot import MonthlySnapshot
+from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 
 __all__ = [
     "User",
@@ -14,4 +15,6 @@ __all__ = [
     "AllocationTarget",
     "UserSettings",
     "MonthlySnapshot",
+    "FinancialReserveEntry",
+    "FinancialReserveTarget",
 ]
