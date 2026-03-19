@@ -192,11 +192,12 @@ async def get_overview(
     # Allocation targets
     targets = await _get_targets(db, user)
 
-    # Build allocation breakdown
+    # Build allocation breakdown (percentages relative to investable patrimony, excluding reserve)
+    patrimonio_investivel = sum(class_values.values())
     allocation = []
     for asset_class in AssetType:
         value = class_values[asset_class]
-        pct = (value / patrimonio_total * 100) if patrimonio_total else Decimal("0")
+        pct = (value / patrimonio_investivel * 100) if patrimonio_investivel else Decimal("0")
         target_pct = targets.get(asset_class, Decimal("0")) * 100
         allocation.append(ClassSummary(
             asset_class=asset_class,
