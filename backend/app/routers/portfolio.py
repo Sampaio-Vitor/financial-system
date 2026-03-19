@@ -13,6 +13,7 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveTarget
+from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.routers.financial_reserve import get_reserve_for_month
 from app.schemas.portfolio import (
@@ -34,12 +35,17 @@ CLASS_LABELS = {
 }
 
 
-async def _get_class_values(db: AsyncSession, user: User) -> dict[AssetType, Decimal]:
-    """Compute current market value per asset class."""
+async def _get_class_values(
+    db: AsyncSession, user: User, cutoff: date | None = None
+) -> dict[AssetType, Decimal]:
+    """Compute current market value per asset class.
+
+    If cutoff is given, only purchases with purchase_date < cutoff are included.
+    """
     values: dict[AssetType, Decimal] = {t: Decimal("0") for t in AssetType}
 
     # Variable income: aggregate purchases and multiply by current price
-    result = await db.execute(
+    query = (
         select(
             Asset.type,
             Asset.current_price,
@@ -47,14 +53,18 @@ async def _get_class_values(db: AsyncSession, user: User) -> dict[AssetType, Dec
         )
         .join(Asset, Purchase.asset_id == Asset.id)
         .where(Purchase.user_id == user.id, Asset.type != AssetType.RF)
-        .group_by(Asset.id, Asset.type, Asset.current_price)
     )
+    if cutoff:
+        query = query.where(Purchase.purchase_date < cutoff)
+    query = query.group_by(Asset.id, Asset.type, Asset.current_price)
+
+    result = await db.execute(query)
     for row in result.all():
         asset_type, price, qty = row
         if price and qty:
             values[asset_type] += price * qty
 
-    # Fixed income: sum current_balance
+    # Fixed income: sum current_balance (no date filtering — balances are current)
     fi_result = await db.execute(
         select(func.sum(FixedIncomePosition.current_balance))
         .where(FixedIncomePosition.user_id == user.id)
@@ -130,8 +140,8 @@ async def get_overview(
     )
     total_invested += fi_invested.scalar() or Decimal("0")
 
-    # Current values per class
-    class_values = await _get_class_values(db, user)
+    # Current values per class (purchases up to end of viewed month)
+    class_values = await _get_class_values(db, user, cutoff=month_end)
 
     # Financial reserve (separate from asset classes)
     reserve_entry = await get_reserve_for_month(db, user.id, year, m)
@@ -146,9 +156,55 @@ async def get_overview(
 
     patrimonio_total = sum(class_values.values()) + (reserva_financeira or Decimal("0"))
 
-    # P&L
-    variacao_mes = patrimonio_total - total_invested
-    variacao_mes_pct = (variacao_mes / total_invested * 100) if total_invested else Decimal("0")
+    # Previous month's snapshot for month-over-month variation
+    if m == 1:
+        prev_month_str = f"{year - 1}-12"
+    else:
+        prev_month_str = f"{year}-{m - 1:02d}"
+
+    prev_snap_result = await db.execute(
+        select(MonthlySnapshot).where(
+            MonthlySnapshot.user_id == user.id,
+            MonthlySnapshot.month == prev_month_str,
+        )
+    )
+    prev_snapshot = prev_snap_result.scalar_one_or_none()
+
+    if prev_snapshot:
+        variacao_mes = patrimonio_total - prev_snapshot.total_patrimonio
+        variacao_mes_pct = (variacao_mes / prev_snapshot.total_patrimonio * 100) if prev_snapshot.total_patrimonio else Decimal("0")
+    else:
+        # No previous snapshot: first month or no data — variation is zero
+        variacao_mes = Decimal("0")
+        variacao_mes_pct = Decimal("0")
+
+    # Auto-save/update snapshot for the viewed month
+    existing_snap = await db.execute(
+        select(MonthlySnapshot).where(
+            MonthlySnapshot.user_id == user.id,
+            MonthlySnapshot.month == month,
+        )
+    )
+    snap = existing_snap.scalar_one_or_none()
+    if snap:
+        snap.total_patrimonio = patrimonio_total
+        snap.total_invested = total_invested
+        snap.total_pnl = patrimonio_total - total_invested
+        snap.pnl_pct = ((patrimonio_total - total_invested) / total_invested * 100) if total_invested else Decimal("0")
+        snap.aportes_do_mes = aportes_do_mes
+        snap.snapshot_at = now
+    else:
+        snap = MonthlySnapshot(
+            user_id=user.id,
+            month=month,
+            total_patrimonio=patrimonio_total,
+            total_invested=total_invested,
+            total_pnl=patrimonio_total - total_invested,
+            pnl_pct=((patrimonio_total - total_invested) / total_invested * 100) if total_invested else Decimal("0"),
+            aportes_do_mes=aportes_do_mes,
+        )
+        db.add(snap)
+    await db.commit()
 
     # Allocation targets
     targets = await _get_targets(db, user)
