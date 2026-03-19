@@ -161,3 +161,35 @@ export interface PriceUpdateResult {
   failed: { ticker: string; error: string }[];
   usd_brl_rate: number | null;
 }
+
+export interface SnapshotResponse {
+  id: number;
+  month: string;
+  total_patrimonio: number;
+  total_invested: number;
+  total_pnl: number;
+  pnl_pct: number;
+  aportes_do_mes: number;
+  allocation_breakdown: unknown;
+  snapshot_at: string;
+}
+
+export interface SnapshotAssetItem {
+  ticker: string;
+  type: AssetType;
+  quantity: number;
+  avg_price: number;
+  closing_price: number | null;
+  market_value: number | null;
+  total_cost: number;
+  pnl: number | null;
+  pnl_pct: number | null;
+}
+
+export interface PatrimonioEvolutionPoint {
+  month: string;
+  total_patrimonio: number;
+  total_invested: number;
+  total_pnl: number;
+  pnl_pct: number;
+}
