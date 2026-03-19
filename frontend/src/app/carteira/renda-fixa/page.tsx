@@ -15,6 +15,7 @@ import {
   Asset,
   FixedIncomePosition,
   FixedIncomeRedemption,
+  FixedIncomeInterest,
   MonthlyOverview,
 } from "@/types";
 import { formatBRL, formatPercent } from "@/lib/format";
@@ -22,7 +23,7 @@ import { formatBRL, formatPercent } from "@/lib/format";
 interface TimelineEvent {
   id: string;
   date: string;
-  type: "APORTE" | "RESGATE";
+  type: "APORTE" | "RESGATE" | "JUROS";
   ticker: string;
   description: string;
   amount: number;
@@ -54,20 +55,30 @@ export default function RendaFixaPage() {
   const [aporteMaturity, setAporteMaturity] = useState("");
   const [aporteSubmitting, setAporteSubmitting] = useState(false);
 
+  // Interest (juros) state
+  const [interest, setInterest] = useState<FixedIncomeInterest[]>([]);
+  const [jurosOpen, setJurosOpen] = useState(false);
+  const [jurosMonth, setJurosMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [jurosBalances, setJurosBalances] = useState<Record<number, string>>({});
+  const [jurosSubmitting, setJurosSubmitting] = useState(false);
+
   // Target for chart
   const [rfTargetValue, setRfTargetValue] = useState<number | null>(null);
 
   const fetchPositions = useCallback(async () => {
     try {
-      const [posData, redData] = await Promise.all([
+      const [posData, redData, intData] = await Promise.all([
         apiFetch<FixedIncomePosition[]>("/fixed-income"),
         apiFetch<FixedIncomeRedemption[]>("/fixed-income/redemptions"),
+        apiFetch<FixedIncomeInterest[]>("/fixed-income/interest"),
       ]);
       setPositions(posData);
       setRedemptions(redData);
+      setInterest(intData);
     } catch {
       setPositions([]);
       setRedemptions([]);
+      setInterest([]);
     } finally {
       setLoading(false);
     }
@@ -192,7 +203,74 @@ export default function RendaFixaPage() {
     }
   };
 
-  // Combined timeline: aportes (positions) + resgates (redemptions)
+  // Juros modal helpers
+  const openJurosModal = () => {
+    setJurosOpen(true);
+    setJurosMonth(new Date().toISOString().slice(0, 7));
+    // Pre-fill with existing entries for the selected month, or empty
+    const balances: Record<number, string> = {};
+    for (const entry of interest) {
+      if (entry.fixed_income_id && entry.reference_month.startsWith(new Date().toISOString().slice(0, 7))) {
+        balances[entry.fixed_income_id] = String(Number(entry.new_balance));
+      }
+    }
+    setJurosBalances(balances);
+  };
+
+  // When month changes, update pre-filled balances
+  const handleJurosMonthChange = (newMonth: string) => {
+    setJurosMonth(newMonth);
+    const balances: Record<number, string> = {};
+    for (const entry of interest) {
+      if (entry.fixed_income_id && entry.reference_month.startsWith(newMonth)) {
+        balances[entry.fixed_income_id] = String(Number(entry.new_balance));
+      }
+    }
+    setJurosBalances(balances);
+  };
+
+  const handleJuros = async () => {
+    const entries = Object.entries(jurosBalances)
+      .filter(([, val]) => val !== "")
+      .map(([id, val]) => ({
+        fixed_income_id: Number(id),
+        new_balance: parseFloat(val),
+      }))
+      .filter((e) => !isNaN(e.new_balance));
+
+    if (entries.length === 0) return;
+
+    setJurosSubmitting(true);
+    try {
+      await apiFetch("/fixed-income/interest", {
+        method: "POST",
+        body: JSON.stringify({
+          reference_month: jurosMonth,
+          entries,
+        }),
+      });
+      setJurosOpen(false);
+      fetchPositions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao registrar juros");
+    } finally {
+      setJurosSubmitting(false);
+    }
+  };
+
+  // Determine the most recent interest entry per position (for delete button logic)
+  const mostRecentInterestByPosition = useMemo(() => {
+    const map = new Map<number, number>();
+    // interest is already sorted by reference_month DESC from the API
+    for (const entry of interest) {
+      if (entry.fixed_income_id && !map.has(entry.fixed_income_id)) {
+        map.set(entry.fixed_income_id, entry.id);
+      }
+    }
+    return map;
+  }, [interest]);
+
+  // Combined timeline: aportes (positions) + resgates (redemptions) + juros (interest)
   const timeline = useMemo<TimelineEvent[]>(() => {
     const events: TimelineEvent[] = [];
     for (const p of positions) {
@@ -215,16 +293,27 @@ export default function RendaFixaPage() {
         amount: Number(r.amount),
       });
     }
+    for (const i of interest) {
+      events.push({
+        id: `juros-${i.id}`,
+        date: i.reference_month,
+        type: "JUROS",
+        ticker: i.ticker,
+        description: i.description,
+        amount: Number(i.interest_amount),
+      });
+    }
     events.sort((a, b) => b.date.localeCompare(a.date));
     return events;
-  }, [positions, redemptions]);
+  }, [positions, redemptions, interest]);
 
-  // Chart data: cumulative net per month
+  // Chart data: cumulative net per month (capital only, excluding interest)
   const chartData = useMemo(() => {
-    if (timeline.length === 0) return [];
+    const capitalEvents = timeline.filter((e) => e.type !== "JUROS");
+    if (capitalEvents.length === 0) return [];
 
     const byMonth = new Map<string, number>();
-    for (const e of timeline) {
+    for (const e of capitalEvents) {
       const m = e.date.slice(0, 7);
       const current = byMonth.get(m) || 0;
       byMonth.set(m, current + (e.type === "APORTE" ? e.amount : -e.amount));
@@ -266,12 +355,20 @@ export default function RendaFixaPage() {
             Registrar Aporte
           </button>
           {positions.length > 0 && (
-            <button
-              onClick={() => { setResgateOpen(true); setResgateId(null); setResgateAmount(""); setResgateDate(new Date().toISOString().split("T")[0]); }}
-              className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Resgatar
-            </button>
+            <>
+              <button
+                onClick={openJurosModal}
+                className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Registrar Juros
+              </button>
+              <button
+                onClick={() => { setResgateOpen(true); setResgateId(null); setResgateAmount(""); setResgateDate(new Date().toISOString().split("T")[0]); }}
+                className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Resgatar
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -408,10 +505,10 @@ export default function RendaFixaPage() {
       {/* Timeline + Chart side by side */}
       {timeline.length > 0 && (
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Historico de Aportes & Resgates */}
+          {/* Historico de Aportes, Resgates & Juros */}
           <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">
-              Aportes & Resgates
+              Aportes, Resgates & Juros
             </h2>
             <div className="overflow-x-auto max-h-80 overflow-y-auto">
               <table className="w-full text-sm">
@@ -425,52 +522,79 @@ export default function RendaFixaPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {timeline.map((e) => (
-                    <tr key={e.id} className="border-b border-[var(--color-border)]/50">
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                          e.type === "RESGATE"
-                            ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
-                            : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                        }`}>
-                          {e.type}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
-                        <span className="font-medium">{e.ticker}</span> {e.description}
-                      </td>
-                      <td className={`px-3 py-2.5 font-medium whitespace-nowrap ${
-                        e.type === "RESGATE" ? "text-[var(--color-negative)]" : "text-[var(--color-positive)]"
-                      }`}>
-                        {e.type === "RESGATE" ? "- " : "+ "}{formatBRL(e.amount)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {e.type === "RESGATE" && (
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Remover este resgate do historico?")) return;
-                              const redId = e.id.replace("resgate-", "");
-                              try {
-                                await apiFetch(`/fixed-income/redemptions/${redId}`, { method: "DELETE" });
-                                fetchPositions();
-                              } catch (err) {
-                                alert(err instanceof Error ? err.message : "Erro ao remover");
-                              }
-                            }}
-                            className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
-                            title="Remover"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                            </svg>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {timeline.map((e) => {
+                    const badgeClass =
+                      e.type === "RESGATE"
+                        ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
+                        : e.type === "JUROS"
+                          ? "bg-amber-500/15 text-amber-500"
+                          : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]";
+
+                    const valueClass =
+                      e.type === "RESGATE"
+                        ? "text-[var(--color-negative)]"
+                        : e.type === "JUROS"
+                          ? e.amount >= 0 ? "text-amber-500" : "text-[var(--color-negative)]"
+                          : "text-[var(--color-positive)]";
+
+                    const prefix =
+                      e.type === "RESGATE" ? "- " : e.amount >= 0 ? "+ " : "";
+
+                    // Can delete: RESGATE always, JUROS only most recent per position
+                    const canDelete =
+                      e.type === "RESGATE" ||
+                      (e.type === "JUROS" && (() => {
+                        const entryId = Number(e.id.replace("juros-", ""));
+                        const entry = interest.find((i) => i.id === entryId);
+                        if (!entry || !entry.fixed_income_id) return entry != null; // orphaned entries can be deleted
+                        return mostRecentInterestByPosition.get(entry.fixed_income_id) === entryId;
+                      })());
+
+                    return (
+                      <tr key={e.id} className="border-b border-[var(--color-border)]/50">
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${badgeClass}`}>
+                            {e.type}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
+                          <span className="font-medium">{e.ticker}</span> {e.description}
+                        </td>
+                        <td className={`px-3 py-2.5 font-medium whitespace-nowrap ${valueClass}`}>
+                          {prefix}{formatBRL(Math.abs(e.amount))}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {canDelete && (
+                            <button
+                              onClick={async () => {
+                                const label = e.type === "RESGATE" ? "resgate" : "juros";
+                                if (!confirm(`Remover este ${label} do historico?`)) return;
+                                const entryId = e.id.replace(/^(resgate|juros)-/, "");
+                                const endpoint = e.type === "RESGATE"
+                                  ? `/fixed-income/redemptions/${entryId}`
+                                  : `/fixed-income/interest/${entryId}`;
+                                try {
+                                  await apiFetch(endpoint, { method: "DELETE" });
+                                  fetchPositions();
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : "Erro ao remover");
+                                }
+                              }}
+                              className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                              title="Remover"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              </svg>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -675,6 +799,81 @@ export default function RendaFixaPage() {
                 </button>
                 <button
                   onClick={() => setResgateOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg-main)] transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Juros modal */}
+      {jurosOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-lg">
+            <h2 className="text-lg font-bold mb-4">Registrar Juros</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+                  Mes de Referencia
+                </label>
+                <input
+                  type="month"
+                  value={jurosMonth}
+                  onChange={(e) => handleJurosMonthChange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+
+              <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-[var(--color-bg-card)]">
+                    <tr className="border-b border-[var(--color-border)]">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Novo Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions.map((p) => (
+                      <tr key={p.id} className="border-b border-[var(--color-border)]/50">
+                        <td className="px-3 py-2 font-medium">{p.ticker}</td>
+                        <td className="px-3 py-2 text-[var(--color-text-secondary)]">{p.description}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatBRL(p.current_balance)}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="number"
+                            step="any"
+                            value={jurosBalances[p.id] || ""}
+                            onChange={(e) =>
+                              setJurosBalances((prev) => ({
+                                ...prev,
+                                [p.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={String(Number(p.current_balance))}
+                            className="w-32 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm text-right"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleJuros}
+                  disabled={jurosSubmitting || Object.values(jurosBalances).every((v) => v === "")}
+                  className="flex-1 py-2 rounded-lg bg-amber-600 text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {jurosSubmitting ? "Registrando..." : "Confirmar Juros"}
+                </button>
+                <button
+                  onClick={() => setJurosOpen(false)}
                   className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg-main)] transition-colors"
                 >
                   Cancelar
