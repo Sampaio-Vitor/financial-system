@@ -1,3 +1,4 @@
+import random
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -101,6 +102,7 @@ class RebalancingService:
                     class_candidates.append((ticker, asset_class, current_val, target_per_asset, gap, gap_pct))
 
             if class_candidates:
+                random.shuffle(class_candidates)
                 class_candidates.sort(key=lambda x: x[4], reverse=True)
                 candidates_by_class[asset_class] = class_candidates
 
