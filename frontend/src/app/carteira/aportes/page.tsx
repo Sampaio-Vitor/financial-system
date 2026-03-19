@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { Purchase, Asset } from "@/types";
+import { Purchase } from "@/types";
 import { formatBRL, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 
@@ -10,6 +10,13 @@ export default function AportesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<{
+    purchase_date: string;
+    quantity: string;
+    unit_price: string;
+  }>({ purchase_date: "", quantity: "", unit_price: "" });
+  const [saving, setSaving] = useState(false);
 
   const fetchPurchases = useCallback(async () => {
     try {
@@ -33,6 +40,39 @@ export default function AportesPage() {
       fetchPurchases();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erro ao remover");
+    }
+  };
+
+  const startEdit = (p: Purchase) => {
+    setEditingId(p.id);
+    setEditData({
+      purchase_date: p.purchase_date,
+      quantity: String(p.quantity),
+      unit_price: String(p.unit_price),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveEdit = async (id: number) => {
+    setSaving(true);
+    try {
+      await apiFetch(`/purchases/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          purchase_date: editData.purchase_date,
+          quantity: parseFloat(editData.quantity),
+          unit_price: parseFloat(editData.unit_price),
+        }),
+      });
+      setEditingId(null);
+      fetchPurchases();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -76,28 +116,99 @@ export default function AportesPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Qtd</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Preco Unit.</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Total</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Acoes</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Acoes</th>
                 </tr>
               </thead>
               <tbody>
                 {purchases.map((p) => (
                   <tr key={p.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
-                    <td className="px-3 py-2.5">
-                      {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
-                    <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
-                    <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
-                    <td className="px-3 py-2.5">{formatBRL(p.unit_price)}</td>
-                    <td className="px-3 py-2.5 font-medium">{formatBRL(p.total_value)}</td>
-                    <td className="px-3 py-2.5">
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        className="text-xs text-[var(--color-negative)] hover:underline"
-                      >
-                        Remover
-                      </button>
-                    </td>
+                    {editingId === p.id ? (
+                      <>
+                        <td className="px-3 py-1.5">
+                          <input
+                            type="date"
+                            value={editData.purchase_date}
+                            onChange={(e) => setEditData({ ...editData, purchase_date: e.target.value })}
+                            className="w-full px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
+                        <td className="px-3 py-1.5">
+                          <input
+                            type="number"
+                            step="any"
+                            value={editData.quantity}
+                            onChange={(e) => setEditData({ ...editData, quantity: e.target.value })}
+                            className="w-24 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <input
+                            type="number"
+                            step="any"
+                            value={editData.unit_price}
+                            onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })}
+                            className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)]">
+                          {formatBRL(parseFloat(editData.quantity) * parseFloat(editData.unit_price) || 0)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => saveEdit(p.id)}
+                              disabled={saving}
+                              className="text-xs text-[var(--color-positive)] hover:underline disabled:opacity-50"
+                            >
+                              {saving ? "..." : "Salvar"}
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="text-xs text-[var(--color-text-muted)] hover:underline"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-3 py-2.5">
+                          {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
+                        <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
+                        <td className="px-3 py-2.5">{formatBRL(p.unit_price)}</td>
+                        <td className="px-3 py-2.5 font-medium">{formatBRL(p.total_value)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => startEdit(p)}
+                              className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                              title="Editar"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                <path d="m15 5 4 4"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDelete(p.id)}
+                              className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                              title="Remover"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

@@ -86,6 +86,8 @@ async def update_fixed_income(
 
     if data.description is not None:
         fi.description = data.description
+    if data.applied_value is not None:
+        fi.applied_value = data.applied_value
     if data.current_balance is not None:
         fi.current_balance = data.current_balance
     if data.yield_value is not None:
@@ -94,6 +96,11 @@ async def update_fixed_income(
         fi.yield_pct = data.yield_pct
     if data.maturity_date is not None:
         fi.maturity_date = data.maturity_date
+
+    # Recalculate yield from applied_value and current_balance
+    if fi.applied_value and fi.current_balance:
+        fi.yield_value = fi.current_balance - fi.applied_value
+        fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
 
     await db.commit()
     result = await db.execute(select(FixedIncomePosition).where(FixedIncomePosition.id == fi.id))
