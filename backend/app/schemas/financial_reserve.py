@@ -7,6 +7,13 @@ from pydantic import BaseModel
 class FinancialReserveCreate(BaseModel):
     amount: Decimal
     note: str | None = None
+    recorded_at: datetime | None = None
+
+
+class FinancialReserveUpdate(BaseModel):
+    amount: Decimal | None = None
+    note: str | None = None
+    recorded_at: datetime | None = None
 
 
 class FinancialReserveResponse(BaseModel):
