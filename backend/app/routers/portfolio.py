@@ -91,11 +91,15 @@ async def get_overview(
     else:
         month_end = date(year, m + 1, 1)
 
-    # Earliest purchase date (for calendar floor)
-    min_date_result = await db.execute(
+    # Earliest date across purchases and fixed income (for calendar floor)
+    min_purchase = await db.execute(
         select(func.min(Purchase.purchase_date)).where(Purchase.user_id == user.id)
     )
-    min_date = min_date_result.scalar()
+    min_fi = await db.execute(
+        select(func.min(FixedIncomePosition.start_date)).where(FixedIncomePosition.user_id == user.id)
+    )
+    dates = [d for d in [min_purchase.scalar(), min_fi.scalar()] if d]
+    min_date = min(dates) if dates else None
     min_month = min_date.strftime("%Y-%m") if min_date else None
 
     # Get purchases for this month
