@@ -92,23 +92,23 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         isCollapsed ? "w-20" : "w-64"
       }`}
     >
-      <div className={`p-6 border-b border-[var(--color-border)] flex items-center ${isCollapsed ? "px-4 justify-center" : "px-6 justify-between"}`}>
-        {!isCollapsed && (
-          <div className="flex flex-col gap-1 overflow-hidden">
-            <h1 className="text-xl font-extrabold tracking-tight text-[var(--color-text-primary)] whitespace-nowrap">
-              Carteira
-            </h1>
-            <p className="text-sm font-medium text-[var(--color-text-muted)] whitespace-nowrap">
-              Investimentos
-            </p>
-          </div>
+      <div className={`border-b border-[var(--color-border)] flex flex-col items-center ${isCollapsed ? "py-3" : "py-5 relative"}`}>
+        <img src="/logo.svg" alt="CofrinhoGordinho" className={isCollapsed ? "w-10 h-10" : "w-14 h-14"} />
+        {isCollapsed ? (
+          <button
+            onClick={onToggle}
+            className="mt-2 p-1.5 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
+          >
+            <Menu size={18} />
+          </button>
+        ) : (
+          <button
+            onClick={onToggle}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
+          >
+            <Menu size={20} />
+          </button>
         )}
-        <button
-          onClick={onToggle}
-          className="p-2 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
-        >
-          <Menu size={20} />
-        </button>
       </div>
 
       <nav className="flex-1 p-4 space-y-1.5 overflow-hidden">
