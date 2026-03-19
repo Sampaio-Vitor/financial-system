@@ -15,7 +15,6 @@ import {
   Asset,
   FixedIncomePosition,
   FixedIncomeRedemption,
-  AllocationTarget,
   MonthlyOverview,
 } from "@/types";
 import { formatBRL, formatPercent } from "@/lib/format";
@@ -83,16 +82,15 @@ export default function RendaFixaPage() {
       .then((all) => setRfAssets(all.filter((a) => a.type === "RF")))
       .catch(() => {});
 
-    // Fetch RF allocation target + patrimonio to compute target value
+    // Fetch RF target from overview allocation_breakdown (same calc as the painel)
     const month = new Date().toISOString().slice(0, 7);
-    Promise.all([
-      apiFetch<AllocationTarget[]>("/allocation-targets"),
-      apiFetch<MonthlyOverview>(`/portfolio/overview?month=${month}`),
-    ])
-      .then(([targets, overview]) => {
-        const rfTarget = targets.find((t) => t.asset_class === "RF");
-        if (rfTarget && overview.patrimonio_total) {
-          setRfTargetValue((rfTarget.target_pct / 100) * overview.patrimonio_total);
+    apiFetch<MonthlyOverview>(`/portfolio/overview?month=${month}`)
+      .then((overview) => {
+        const breakdown = overview.allocation_breakdown;
+        const rfClass = breakdown.find((c) => c.asset_class === "RF");
+        if (rfClass && Number(rfClass.target_pct) > 0) {
+          const patrimonioInvestivel = breakdown.reduce((s, c) => s + Number(c.value), 0);
+          setRfTargetValue((Number(rfClass.target_pct) / 100) * patrimonioInvestivel);
         }
       })
       .catch(() => {});
