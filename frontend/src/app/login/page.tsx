@@ -31,11 +31,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-main)] p-4">
       <div className="w-full max-w-md bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 shadow-lg">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--color-text-primary)] mb-2">
-            Carteira de Investimentos
+          <img src="/logo.svg" alt="CofrinhoGordinho" className="w-20 h-20 mx-auto mb-4" />
+          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--color-text-primary)] mb-1">
+            CofrinhoGordinho
           </h1>
           <p className="text-[var(--color-text-muted)] text-sm font-medium">
-            Entre para gerenciar seu portfólio
+            Seu porquinho de investimentos
           </p>
         </div>
 

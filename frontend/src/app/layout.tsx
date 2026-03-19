@@ -6,8 +6,8 @@ import { AuthProvider } from "@/lib/auth";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Carteira de Investimentos",
-  description: "Portfolio management system",
+  title: "CofrinhoGordinho",
+  description: "Seu porquinho de investimentos",
 };
 
 export default function RootLayout({
