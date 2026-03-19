@@ -17,6 +17,7 @@ class FixedIncomeCreate(BaseModel):
 
 class FixedIncomeUpdate(BaseModel):
     description: str | None = None
+    applied_value: Decimal | None = None
     current_balance: Decimal | None = None
     yield_value: Decimal | None = None
     yield_pct: Decimal | None = None

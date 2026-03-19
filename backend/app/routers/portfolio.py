@@ -128,6 +128,29 @@ async def get_overview(
     month_purchases = purchases_result.scalars().all()
     aportes_do_mes = sum(p.total_value for p in month_purchases)
 
+    # Add fixed income positions started this month
+    fi_aportes = await db.execute(
+        select(func.sum(FixedIncomePosition.applied_value))
+        .where(
+            FixedIncomePosition.user_id == user.id,
+            FixedIncomePosition.start_date >= month_start,
+            FixedIncomePosition.start_date < month_end,
+        )
+    )
+    aportes_do_mes += fi_aportes.scalar() or Decimal("0")
+
+    # Add reserve increase for the month (current - previous)
+    reserve_entry = await get_reserve_for_month(db, user.id, year, m)
+    reserva_financeira = reserve_entry.amount if reserve_entry else None
+    if m == 1:
+        prev_year_r, prev_m_r = year - 1, 12
+    else:
+        prev_year_r, prev_m_r = year, m - 1
+    prev_reserve = await get_reserve_for_month(db, user.id, prev_year_r, prev_m_r)
+    reserva_aporte = (reserva_financeira or Decimal("0")) - (prev_reserve.amount if prev_reserve else Decimal("0"))
+    if reserva_aporte > 0:
+        aportes_do_mes += reserva_aporte
+
     # Get total invested (all purchases up to end of month)
     invested_result = await db.execute(
         select(func.sum(Purchase.total_value))
@@ -145,10 +168,6 @@ async def get_overview(
     # Current values per class (purchases up to end of viewed month)
     class_values = await _get_class_values(db, user, cutoff=month_end)
 
-    # Financial reserve (separate from asset classes)
-    reserve_entry = await get_reserve_for_month(db, user.id, year, m)
-    reserva_financeira = reserve_entry.amount if reserve_entry else None
-
     # Reserve target
     target_result = await db.execute(
         select(FinancialReserveTarget).where(FinancialReserveTarget.user_id == user.id)
@@ -160,12 +179,7 @@ async def get_overview(
 
     # Month-over-month variation: compute previous month's patrimonio on-the-fly
     prev_class_values = await _get_class_values(db, user, cutoff=month_start)
-    if m == 1:
-        prev_year, prev_m = year - 1, 12
-    else:
-        prev_year, prev_m = year, m - 1
-    prev_reserve_entry = await get_reserve_for_month(db, user.id, prev_year, prev_m)
-    prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve_entry.amount if prev_reserve_entry else Decimal("0"))
+    prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve.amount if prev_reserve else Decimal("0"))
 
     if prev_patrimonio > 0:
         variacao_mes = patrimonio_total - prev_patrimonio
