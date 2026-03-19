@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  Calendar,
   TrendingUp,
   Building2,
   Landmark,
@@ -19,9 +20,15 @@ import { useAuth } from "@/lib/auth";
 
 const navItems = [
   {
-    label: "Painel",
+    label: "Visão Geral",
     href: "/carteira",
     icon: LayoutDashboard,
+    exact: true,
+  },
+  {
+    label: "Mensal",
+    href: "/carteira/mensal",
+    icon: Calendar,
     exact: true,
   },
   {

@@ -37,7 +37,7 @@ export function formatQuantity(value: number | null | undefined): string {
 export function getMonthLabel(month: string): string {
   const [year, m] = month.split("-");
   const months = [
-    "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
   ];
   return `${months[parseInt(m) - 1]} de ${year}`;
