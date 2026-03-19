@@ -303,7 +303,12 @@ export default function DesejadosPage() {
                   <tbody>
                     {rebalancing.asset_plan.map((a) => (
                       <tr key={a.ticker} className="border-b border-[var(--color-border)]/50">
-                        <td className="px-3 py-2 font-medium">{a.ticker}</td>
+                        <td className="px-3 py-2 font-medium">
+                          <div className="flex items-center gap-2">
+                            <TickerLogo ticker={a.ticker} type={a.asset_class} size={20} />
+                            {a.ticker}
+                          </div>
+                        </td>
                         <td className="px-3 py-2 text-[var(--color-text-secondary)]">{a.asset_class}</td>
                         <td className="px-3 py-2">{formatBRL(a.current_value)}</td>
                         <td className="px-3 py-2">{formatBRL(a.target_value)}</td>
