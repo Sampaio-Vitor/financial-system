@@ -10,6 +10,7 @@ from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
+from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveTarget
@@ -139,6 +140,30 @@ async def get_overview(
     )
     aportes_do_mes += fi_aportes.scalar() or Decimal("0")
 
+    # --- Resgates do mês ---
+    # 1) Vendas RV: purchases com quantity negativa no mês (total_value será negativo)
+    vendas_result = await db.execute(
+        select(func.sum(Purchase.total_value))
+        .where(
+            Purchase.user_id == user.id,
+            Purchase.purchase_date >= month_start,
+            Purchase.purchase_date < month_end,
+            Purchase.quantity < 0,
+        )
+    )
+    resgates_do_mes = abs(vendas_result.scalar() or Decimal("0"))
+
+    # 2) Resgates RF no mês
+    fi_resgates = await db.execute(
+        select(func.sum(FixedIncomeRedemption.amount))
+        .where(
+            FixedIncomeRedemption.user_id == user.id,
+            FixedIncomeRedemption.redemption_date >= month_start,
+            FixedIncomeRedemption.redemption_date < month_end,
+        )
+    )
+    resgates_do_mes += fi_resgates.scalar() or Decimal("0")
+
     # Add reserve increase for the month (current - previous)
     reserve_entry = await get_reserve_for_month(db, user.id, year, m)
     reserva_financeira = reserve_entry.amount if reserve_entry else None
@@ -150,6 +175,9 @@ async def get_overview(
     reserva_aporte = (reserva_financeira or Decimal("0")) - (prev_reserve.amount if prev_reserve else Decimal("0"))
     if reserva_aporte > 0:
         aportes_do_mes += reserva_aporte
+    elif reserva_aporte < 0:
+        # 3) Resgate de reserva (diminuiu vs mês anterior)
+        resgates_do_mes += abs(reserva_aporte)
 
     # Get total invested (all purchases up to end of month)
     invested_result = await db.execute(
@@ -232,6 +260,7 @@ async def get_overview(
         reserva_target=round(reserva_target, 4) if reserva_target else None,
         total_invested=round(total_invested, 4),
         aportes_do_mes=round(aportes_do_mes, 4),
+        resgates_do_mes=round(resgates_do_mes, 4),
         variacao_mes=round(variacao_mes, 4),
         variacao_mes_pct=round(variacao_mes_pct, 2),
         allocation_breakdown=allocation,

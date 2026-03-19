@@ -85,6 +85,7 @@ export interface MonthlyOverview {
   reserva_target: number | null;
   total_invested: number;
   aportes_do_mes: number;
+  resgates_do_mes: number;
   variacao_mes: number;
   variacao_mes_pct: number;
   allocation_breakdown: ClassSummary[];
