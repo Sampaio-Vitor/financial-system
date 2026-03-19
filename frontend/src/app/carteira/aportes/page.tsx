@@ -23,7 +23,7 @@ export default function AportesPage() {
   const fetchPurchases = useCallback(async () => {
     try {
       const data = await apiFetch<Purchase[]>("/purchases");
-      setPurchases(data);
+      setPurchases(data.filter((p) => p.asset_type !== "RF"));
     } catch {
       setPurchases([]);
     } finally {
@@ -81,7 +81,7 @@ export default function AportesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">Historico de Aportes</h1>
+        <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
         <div className="flex gap-2">
           <button
             onClick={() => { setFormMode("compra"); setShowForm(true); }}

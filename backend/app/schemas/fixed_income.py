@@ -26,6 +26,18 @@ class FixedIncomeUpdate(BaseModel):
 
 class FixedIncomeResgate(BaseModel):
     amount: Decimal
+    redemption_date: date | None = None
+
+
+class FixedIncomeRedemptionResponse(BaseModel):
+    id: int
+    fixed_income_id: int | None
+    ticker: str
+    description: str
+    redemption_date: date
+    amount: Decimal
+
+    model_config = {"from_attributes": True}
 
 
 class FixedIncomeResponse(BaseModel):

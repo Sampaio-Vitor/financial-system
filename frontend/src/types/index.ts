@@ -37,6 +37,15 @@ export interface FixedIncomePosition {
   ticker?: string;
 }
 
+export interface FixedIncomeRedemption {
+  id: number;
+  fixed_income_id: number | null;
+  ticker: string;
+  description: string;
+  redemption_date: string;
+  amount: number;
+}
+
 export interface ClassSummary {
   asset_class: AssetType;
   label: string;

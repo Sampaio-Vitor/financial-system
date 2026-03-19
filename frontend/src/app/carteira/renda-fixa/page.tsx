@@ -1,9 +1,33 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 import { apiFetch } from "@/lib/api";
-import { FixedIncomePosition } from "@/types";
+import {
+  Asset,
+  FixedIncomePosition,
+  FixedIncomeRedemption,
+  AllocationTarget,
+  MonthlyOverview,
+} from "@/types";
 import { formatBRL, formatPercent } from "@/lib/format";
+
+interface TimelineEvent {
+  id: string;
+  date: string;
+  type: "APORTE" | "RESGATE";
+  ticker: string;
+  description: string;
+  amount: number;
+}
 
 export default function RendaFixaPage() {
   const [positions, setPositions] = useState<FixedIncomePosition[]>([]);
@@ -14,16 +38,37 @@ export default function RendaFixaPage() {
     current_balance: string;
   }>({ applied_value: "", current_balance: "" });
   const [saving, setSaving] = useState(false);
+  const [resgateOpen, setResgateOpen] = useState(false);
   const [resgateId, setResgateId] = useState<number | null>(null);
   const [resgateAmount, setResgateAmount] = useState("");
+  const [resgateDate, setResgateDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [resgateSubmitting, setResgateSubmitting] = useState(false);
+  const [redemptions, setRedemptions] = useState<FixedIncomeRedemption[]>([]);
+
+  // Aporte form state
+  const [aporteOpen, setAporteOpen] = useState(false);
+  const [rfAssets, setRfAssets] = useState<Asset[]>([]);
+  const [aporteAssetId, setAporteAssetId] = useState<number | "">("");
+  const [aporteDescription, setAporteDescription] = useState("");
+  const [aporteDate, setAporteDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [aporteValue, setAporteValue] = useState("");
+  const [aporteMaturity, setAporteMaturity] = useState("");
+  const [aporteSubmitting, setAporteSubmitting] = useState(false);
+
+  // Target for chart
+  const [rfTargetValue, setRfTargetValue] = useState<number | null>(null);
 
   const fetchPositions = useCallback(async () => {
     try {
-      const data = await apiFetch<FixedIncomePosition[]>("/fixed-income");
-      setPositions(data);
+      const [posData, redData] = await Promise.all([
+        apiFetch<FixedIncomePosition[]>("/fixed-income"),
+        apiFetch<FixedIncomeRedemption[]>("/fixed-income/redemptions"),
+      ]);
+      setPositions(posData);
+      setRedemptions(redData);
     } catch {
       setPositions([]);
+      setRedemptions([]);
     } finally {
       setLoading(false);
     }
@@ -32,6 +77,62 @@ export default function RendaFixaPage() {
   useEffect(() => {
     fetchPositions();
   }, [fetchPositions]);
+
+  useEffect(() => {
+    apiFetch<Asset[]>("/assets")
+      .then((all) => setRfAssets(all.filter((a) => a.type === "RF")))
+      .catch(() => {});
+
+    // Fetch RF allocation target + patrimonio to compute target value
+    const month = new Date().toISOString().slice(0, 7);
+    Promise.all([
+      apiFetch<AllocationTarget[]>("/allocation-targets"),
+      apiFetch<MonthlyOverview>(`/portfolio/overview?month=${month}`),
+    ])
+      .then(([targets, overview]) => {
+        const rfTarget = targets.find((t) => t.asset_class === "RF");
+        if (rfTarget && overview.patrimonio_total) {
+          setRfTargetValue((rfTarget.target_pct / 100) * overview.patrimonio_total);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const openAporteModal = () => {
+    setAporteOpen(true);
+    setAporteAssetId("");
+    setAporteDescription("");
+    setAporteDate(new Date().toISOString().split("T")[0]);
+    setAporteValue("");
+    setAporteMaturity("");
+  };
+
+  const handleAporte = async () => {
+    if (!aporteAssetId || !aporteDescription || !aporteValue) return;
+    const value = parseFloat(aporteValue);
+    if (isNaN(value) || value <= 0) return;
+
+    setAporteSubmitting(true);
+    try {
+      await apiFetch("/fixed-income", {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: aporteAssetId,
+          description: aporteDescription,
+          start_date: aporteDate,
+          applied_value: value,
+          current_balance: value,
+          maturity_date: aporteMaturity || null,
+        }),
+      });
+      setAporteOpen(false);
+      fetchPositions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao registrar aporte");
+    } finally {
+      setAporteSubmitting(false);
+    }
+  };
 
   const startEdit = (p: FixedIncomePosition) => {
     setEditingId(p.id);
@@ -79,10 +180,12 @@ export default function RendaFixaPage() {
     try {
       await apiFetch(`/fixed-income/${resgateId}/resgate`, {
         method: "POST",
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount, redemption_date: resgateDate }),
       });
+      setResgateOpen(false);
       setResgateId(null);
       setResgateAmount("");
+      setResgateDate(new Date().toISOString().split("T")[0]);
       fetchPositions();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erro ao resgatar");
@@ -90,6 +193,55 @@ export default function RendaFixaPage() {
       setResgateSubmitting(false);
     }
   };
+
+  // Combined timeline: aportes (positions) + resgates (redemptions)
+  const timeline = useMemo<TimelineEvent[]>(() => {
+    const events: TimelineEvent[] = [];
+    for (const p of positions) {
+      events.push({
+        id: `aporte-${p.id}`,
+        date: p.start_date,
+        type: "APORTE",
+        ticker: p.ticker || "",
+        description: p.description,
+        amount: Number(p.applied_value),
+      });
+    }
+    for (const r of redemptions) {
+      events.push({
+        id: `resgate-${r.id}`,
+        date: r.redemption_date,
+        type: "RESGATE",
+        ticker: r.ticker,
+        description: r.description,
+        amount: Number(r.amount),
+      });
+    }
+    events.sort((a, b) => b.date.localeCompare(a.date));
+    return events;
+  }, [positions, redemptions]);
+
+  // Chart data: cumulative net per month
+  const chartData = useMemo(() => {
+    if (timeline.length === 0) return [];
+
+    const byMonth = new Map<string, number>();
+    for (const e of timeline) {
+      const m = e.date.slice(0, 7);
+      const current = byMonth.get(m) || 0;
+      byMonth.set(m, current + (e.type === "APORTE" ? e.amount : -e.amount));
+    }
+
+    const months = Array.from(byMonth.keys()).sort();
+    let cumulative = 0;
+    return months.map((m) => {
+      cumulative += byMonth.get(m)!;
+      return {
+        month: m.slice(5) + "/" + m.slice(2, 4),
+        value: cumulative,
+      };
+    });
+  }, [timeline]);
 
   if (loading) {
     return (
@@ -106,8 +258,27 @@ export default function RendaFixaPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6">Renda Fixa</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold">Renda Fixa</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={openAporteModal}
+            className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Registrar Aporte
+          </button>
+          {positions.length > 0 && (
+            <button
+              onClick={() => { setResgateOpen(true); setResgateId(null); setResgateAmount(""); setResgateDate(new Date().toISOString().split("T")[0]); }}
+              className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Resgatar
+            </button>
+          )}
+        </div>
+      </div>
 
+      {/* Positions table */}
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         {positions.length === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">
@@ -182,7 +353,7 @@ export default function RendaFixaPage() {
                       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
                         {p.maturity_date
                           ? new Date(p.maturity_date + "T00:00:00").toLocaleDateString("pt-BR")
-                          : "—"}
+                          : "\u2014"}
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {isEditing ? (
@@ -202,24 +373,16 @@ export default function RendaFixaPage() {
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => { setResgateId(p.id); setResgateAmount(""); }}
-                              className="text-xs text-[var(--color-negative)] hover:underline"
-                            >
-                              Resgatar
-                            </button>
-                            <button
-                              onClick={() => startEdit(p)}
-                              className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
-                              title="Editar"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                <path d="m15 5 4 4"/>
-                              </svg>
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => startEdit(p)}
+                            className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                            title="Editar"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                              <path d="m15 5 4 4"/>
+                            </svg>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -243,15 +406,254 @@ export default function RendaFixaPage() {
           </div>
         )}
       </div>
-      {/* Resgate modal */}
-      {resgateId !== null && resgatePosition && (
+
+      {/* Timeline + Chart side by side */}
+      {timeline.length > 0 && (
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Historico de Aportes & Resgates */}
+          <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">
+              Aportes & Resgates
+            </h2>
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-[var(--color-bg-card)]">
+                  <tr className="border-b border-[var(--color-border)]">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Operacao</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeline.map((e) => (
+                    <tr key={e.id} className="border-b border-[var(--color-border)]/50">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                          e.type === "RESGATE"
+                            ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
+                            : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
+                        }`}>
+                          {e.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
+                        <span className="font-medium">{e.ticker}</span> {e.description}
+                      </td>
+                      <td className={`px-3 py-2.5 font-medium whitespace-nowrap ${
+                        e.type === "RESGATE" ? "text-[var(--color-negative)]" : "text-[var(--color-positive)]"
+                      }`}>
+                        {e.type === "RESGATE" ? "- " : "+ "}{formatBRL(e.amount)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {e.type === "RESGATE" && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Remover este resgate do historico?")) return;
+                              const redId = e.id.replace("resgate-", "");
+                              try {
+                                await apiFetch(`/fixed-income/redemptions/${redId}`, { method: "DELETE" });
+                                fetchPositions();
+                              } catch (err) {
+                                alert(err instanceof Error ? err.message : "Erro ao remover");
+                              }
+                            }}
+                            className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                            title="Remover"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Evolution chart */}
+          <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">
+              Evolucao Mensal
+            </h2>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    axisLine={{ stroke: "#2a2d3a" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1e2130",
+                      border: "1px solid #2a2d3a",
+                      borderRadius: "8px",
+                      color: "#f8fafc",
+                      fontSize: "12px",
+                    }}
+                    formatter={(v: number) => [formatBRL(v), "Capital Investido"]}
+                  />
+                  {rfTargetValue != null && (
+                    <ReferenceLine
+                      y={rfTargetValue}
+                      stroke="#f59e0b"
+                      strokeDasharray="6 4"
+                      strokeWidth={2}
+                      label={{
+                        value: `Meta: ${formatBRL(rfTargetValue)}`,
+                        position: "insideTopRight",
+                        fill: "#f59e0b",
+                        fontSize: 11,
+                      }}
+                    />
+                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#8b5cf6"
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: "#8b5cf6" }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Aporte modal */}
+      {aporteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
-            <h2 className="text-lg font-bold mb-1">Resgatar</h2>
-            <p className="text-sm text-[var(--color-text-muted)] mb-4">
-              {resgatePosition.ticker} — Saldo atual: {formatBRL(resgatePosition.current_balance)}
-            </p>
+            <h2 className="text-lg font-bold mb-4">Registrar Aporte em RF</h2>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Tipo</label>
+                <select
+                  value={aporteAssetId}
+                  onChange={(e) => setAporteAssetId(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                >
+                  <option value="">Selecione o tipo</option>
+                  {rfAssets.map((a) => (
+                    <option key={a.id} value={a.id}>{a.ticker} — {a.description}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Descricao</label>
+                <input
+                  type="text"
+                  value={aporteDescription}
+                  onChange={(e) => setAporteDescription(e.target.value)}
+                  placeholder="Ex: LCI Banco X 12 meses"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Data da Aplicacao</label>
+                <input
+                  type="date"
+                  value={aporteDate}
+                  onChange={(e) => setAporteDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Valor Aplicado (R$)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={aporteValue}
+                  onChange={(e) => setAporteValue(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Vencimento (opcional)</label>
+                <input
+                  type="date"
+                  value={aporteMaturity}
+                  onChange={(e) => setAporteMaturity(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAporte}
+                  disabled={aporteSubmitting || !aporteAssetId || !aporteDescription || !aporteValue}
+                  className="flex-1 py-2 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {aporteSubmitting ? "Registrando..." : "Confirmar Aporte"}
+                </button>
+                <button
+                  onClick={() => setAporteOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg-main)] transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resgate modal */}
+      {resgateOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
+            <h2 className="text-lg font-bold mb-4">Resgatar</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+                  Ativo
+                </label>
+                <select
+                  value={resgateId ?? ""}
+                  onChange={(e) => setResgateId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                >
+                  <option value="">Selecione um ativo</option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.ticker} — {p.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {resgatePosition && (
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  Saldo atual: {formatBRL(resgatePosition.current_balance)}
+                </p>
+              )}
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
+                  Data do Resgate
+                </label>
+                <input
+                  type="date"
+                  value={resgateDate}
+                  onChange={(e) => setResgateDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
                   Valor do Resgate (R$)
@@ -262,20 +664,19 @@ export default function RendaFixaPage() {
                   value={resgateAmount}
                   onChange={(e) => setResgateAmount(e.target.value)}
                   placeholder="0,00"
-                  autoFocus
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                 />
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={handleResgate}
-                  disabled={resgateSubmitting || !resgateAmount}
+                  disabled={resgateSubmitting || !resgateId || !resgateAmount}
                   className="flex-1 py-2 rounded-lg bg-[var(--color-negative)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
                 >
                   {resgateSubmitting ? "Resgatando..." : "Confirmar Resgate"}
                 </button>
                 <button
-                  onClick={() => setResgateId(null)}
+                  onClick={() => setResgateOpen(false)}
                   className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg-main)] transition-colors"
                 >
                   Cancelar
