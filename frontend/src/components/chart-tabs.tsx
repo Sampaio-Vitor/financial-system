@@ -60,7 +60,7 @@ export default function ChartTabs({
   };
 
   const renderEmptyState = () => (
-    <div className="h-48 flex flex-col items-center justify-center gap-3">
+    <div className="flex-1 flex flex-col items-center justify-center gap-3">
       <p className="text-[var(--color-text-muted)] text-sm font-medium">
         Nenhum snapshot histórico gerado
       </p>
@@ -92,7 +92,7 @@ export default function ChartTabs({
 
     if (loading) {
       return (
-        <div className="h-48 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500" />
         </div>
       );
@@ -110,7 +110,7 @@ export default function ChartTabs({
   };
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm flex flex-col min-h-[400px]">
       <div className="flex items-center justify-between mb-6">
         <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
           {TABS.map((tab) => (
@@ -137,7 +137,9 @@ export default function ChartTabs({
           </button>
         )}
       </div>
-      {renderTabContent()}
+      <div className="flex-1 flex flex-col min-h-0">
+        {renderTabContent()}
+      </div>
     </div>
   );
 }
