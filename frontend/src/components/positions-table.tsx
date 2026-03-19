@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatBRL, formatPercent, formatQuantity } from "@/lib/format";
 import { PositionItem } from "@/types";
+import TickerLogo from "@/components/ticker-logo";
 
 interface PositionsTableProps {
   positions: PositionItem[];
@@ -78,7 +79,12 @@ export default function PositionsTable({
               key={p.asset_id}
               className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
             >
-              <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
+              <td className="px-3 py-2.5 font-medium">
+                <div className="flex items-center gap-2">
+                  <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+                  {p.ticker}
+                </div>
+              </td>
               <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
                 {p.description}
               </td>

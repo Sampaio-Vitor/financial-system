@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { Purchase } from "@/types";
 import { formatBRL, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
+import TickerLogo from "@/components/ticker-logo";
 
 export default function AportesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -144,7 +145,12 @@ export default function AportesPage() {
                             className="w-full px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
                           />
                         </td>
-                        <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
+                        <td className="px-3 py-2.5 font-medium">
+                          <div className="flex items-center gap-2">
+                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                            {p.ticker}
+                          </div>
+                        </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
                         <td className="px-3 py-1.5">
                           <input
@@ -191,12 +197,15 @@ export default function AportesPage() {
                           {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
                         </td>
                         <td className="px-3 py-2.5 font-medium">
-                          {p.ticker}
-                          {isSale && (
-                            <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
-                              VENDA
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                            {p.ticker}
+                            {isSale && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
+                                VENDA
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
                         <td className={`px-3 py-2.5 ${isSale ? "text-[var(--color-negative)]" : ""}`}>
