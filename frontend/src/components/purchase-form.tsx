@@ -49,7 +49,9 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         setAssets(assetList);
       });
     } else {
-      apiFetch<Asset[]>("/assets").then(setAssets).catch(() => {});
+      apiFetch<Asset[]>("/assets")
+        .then((all) => setAssets(all.filter((a) => a.type !== "RF")))
+        .catch(() => {});
     }
   }, [isVenda]);
 
@@ -118,35 +120,30 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ativo</label>
-            <input
-              type="text"
-              value={search}
+            <select
+              value={assetId}
               onChange={(e) => {
-                setSearch(e.target.value);
-                setAssetId("");
+                const id = e.target.value ? Number(e.target.value) : "";
+                setAssetId(id);
+                if (id) {
+                  const asset = assets.find((a) => a.id === id);
+                  if (asset) {
+                    setSearch(asset.ticker);
+                    if (asset.current_price) setUnitPrice(asset.current_price.toString());
+                  }
+                }
               }}
-              placeholder={isVenda ? "Buscar ativo que voce possui..." : "Buscar por ticker ou nome..."}
               className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-            />
-            {search && !selectedAsset && (
-              <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)]">
-                {filteredAssets.slice(0, 10).map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => handleSelectAsset(a)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--color-bg-card)] flex justify-between"
-                  >
-                    <span className="font-medium">{a.ticker}</span>
-                    <span className="text-[var(--color-text-muted)]">
-                      {isVenda
-                        ? `${ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0} cotas`
-                        : a.description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            >
+              <option value="">Selecione um ativo</option>
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.ticker} — {isVenda
+                    ? `${ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0} cotas`
+                    : a.description}
+                </option>
+              ))}
+            </select>
             {isVenda && selectedPosition && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1">
                 Posicao atual: {selectedPosition.quantity} cotas

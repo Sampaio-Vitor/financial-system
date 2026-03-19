@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,8 +8,15 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.asset import Asset
 from app.models.fixed_income import FixedIncomePosition
+from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.user import User
-from app.schemas.fixed_income import FixedIncomeCreate, FixedIncomeUpdate, FixedIncomeResgate, FixedIncomeResponse
+from app.schemas.fixed_income import (
+    FixedIncomeCreate,
+    FixedIncomeUpdate,
+    FixedIncomeResgate,
+    FixedIncomeResponse,
+    FixedIncomeRedemptionResponse,
+)
 
 router = APIRouter()
 
@@ -127,8 +136,20 @@ async def resgate_fixed_income(
     if data.amount > fi.current_balance:
         raise HTTPException(status_code=400, detail="Valor de resgate excede o saldo atual")
 
+    # Record redemption history
+    redemption = FixedIncomeRedemption(
+        user_id=user.id,
+        fixed_income_id=fi.id,
+        ticker=fi.asset.ticker if fi.asset else "N/A",
+        description=fi.description,
+        redemption_date=data.redemption_date or date.today(),
+        amount=data.amount,
+    )
+    db.add(redemption)
+
     if data.amount >= fi.current_balance:
         # Total redemption: delete position
+        redemption.fixed_income_id = None
         await db.delete(fi)
         await db.commit()
         return None
@@ -143,6 +164,56 @@ async def resgate_fixed_income(
     await db.commit()
     result = await db.execute(select(FixedIncomePosition).where(FixedIncomePosition.id == fi.id))
     return _to_response(result.scalar_one())
+
+
+@router.get("/redemptions", response_model=list[FixedIncomeRedemptionResponse])
+async def list_redemptions(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(FixedIncomeRedemption)
+        .where(FixedIncomeRedemption.user_id == user.id)
+        .order_by(FixedIncomeRedemption.redemption_date.desc(), FixedIncomeRedemption.id.desc())
+    )
+    return result.scalars().all()
+
+
+@router.delete("/redemptions/{redemption_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_redemption(
+    redemption_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(FixedIncomeRedemption).where(
+            FixedIncomeRedemption.id == redemption_id,
+            FixedIncomeRedemption.user_id == user.id,
+        )
+    )
+    redemption = result.scalar_one_or_none()
+    if not redemption:
+        raise HTTPException(status_code=404, detail="Redemption not found")
+
+    # Reverse the effect on the position if it still exists
+    if redemption.fixed_income_id is not None:
+        fi_result = await db.execute(
+            select(FixedIncomePosition).where(
+                FixedIncomePosition.id == redemption.fixed_income_id,
+                FixedIncomePosition.user_id == user.id,
+            )
+        )
+        fi = fi_result.scalar_one_or_none()
+        if fi:
+            old_balance = fi.current_balance
+            fi.current_balance += redemption.amount
+            if old_balance > 0:
+                fi.applied_value = fi.applied_value * fi.current_balance / old_balance
+            fi.yield_value = fi.current_balance - fi.applied_value
+            fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
+
+    await db.delete(redemption)
+    await db.commit()
 
 
 @router.delete("/{fi_id}", status_code=status.HTTP_204_NO_CONTENT)

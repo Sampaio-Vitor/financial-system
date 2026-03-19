@@ -8,7 +8,7 @@ import {
   Building2,
   Landmark,
   PiggyBank,
-  History,
+  DollarSign,
   Target,
   LogOut,
   Menu,
@@ -50,9 +50,9 @@ const navItems = [
     icon: ShieldCheck,
   },
   {
-    label: "Aportes",
+    label: "Aportes em RV",
     href: "/carteira/aportes",
-    icon: History,
+    icon: DollarSign,
   },
   {
     label: "Ativos Desejados",
