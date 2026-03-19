@@ -9,6 +9,8 @@ import SummaryCards from "@/components/summary-cards";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import PatrimonioChart from "@/components/patrimonio-chart";
 import MonthTransactions from "@/components/month-transactions";
+import MonthlySnapshotsTable from "@/components/monthly-snapshots-table";
+import SnapshotAssetsTable from "@/components/snapshot-assets-table";
 import PriceUpdateButton from "@/components/price-update-button";
 
 export default function CarteiraOverview() {
@@ -136,8 +138,12 @@ export default function CarteiraOverview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AllocationBreakdown items={data.allocation_breakdown} patrimonioTotal={data.patrimonio_total} reservaFinanceira={data.reserva_financeira} reservaTarget={data.reserva_target} />
-        <PatrimonioChart data={data.daily_patrimonio} month={month} />
+        <PatrimonioChart />
       </div>
+
+      <MonthlySnapshotsTable />
+
+      <SnapshotAssetsTable month={month} />
 
       <MonthTransactions transactions={data.transactions} />
     </div>

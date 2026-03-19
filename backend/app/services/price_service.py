@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import yfinance as yf
@@ -9,6 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset, AssetType
 from app.models.settings import UserSettings
 from app.models.user import User
+
+
+def _extract_close(data, yf_ticker: str) -> float | None:
+    """Extract closing price from yfinance DataFrame (always MultiIndex columns)."""
+    try:
+        val = data["Close"][yf_ticker].iloc[-1]
+        close = float(val)
+        return close if close and close > 0 else None
+    except Exception:
+        return None
 
 
 class PriceService:
@@ -62,24 +72,22 @@ class PriceService:
                 data = await loop.run_in_executor(
                     None, lambda: yf.download(yf_ticker, period="1d", progress=False)
                 )
-                if not data.empty:
-                    close = float(data["Close"].iloc[-1])
-                    if close and rate:
-                        price_brl = Decimal(str(close)) * rate
-                        asset.current_price = round(price_brl, 4)
-                        asset.price_updated_at = datetime.now(timezone.utc)
-                        return asset.current_price
+                close = _extract_close(data, yf_ticker) if not data.empty else None
+                if close and rate:
+                    price_brl = Decimal(str(close)) * rate
+                    asset.current_price = round(price_brl, 4)
+                    asset.price_updated_at = datetime.now(timezone.utc)
+                    return asset.current_price
             elif asset.type in (AssetType.ACAO, AssetType.FII):
                 yf_ticker = f"{asset.ticker}.SA"
                 data = await loop.run_in_executor(
                     None, lambda: yf.download(yf_ticker, period="1d", progress=False)
                 )
-                if not data.empty:
-                    close = float(data["Close"].iloc[-1])
-                    if close:
-                        asset.current_price = Decimal(str(close))
-                        asset.price_updated_at = datetime.now(timezone.utc)
-                        return asset.current_price
+                close = _extract_close(data, yf_ticker) if not data.empty else None
+                if close:
+                    asset.current_price = Decimal(str(close))
+                    asset.price_updated_at = datetime.now(timezone.utc)
+                    return asset.current_price
         except Exception:
             pass
         return None
@@ -91,8 +99,9 @@ class PriceService:
             None, lambda: yf.download("USDBRL=X", period="1d", progress=False)
         )
         if not data.empty:
-            close = float(data["Close"].iloc[-1])
-            return Decimal(str(close))
+            close = _extract_close(data, "USDBRL=X")
+            if close:
+                return Decimal(str(close))
         return None
 
     async def _save_usd_brl(self, rate: Decimal):
@@ -129,7 +138,6 @@ class PriceService:
                 return results
 
         # Map DB ticker -> yfinance ticker
-        # BR assets need .SA suffix, US assets use ticker as-is
         ticker_map = {}  # yf_ticker -> asset
         for a in assets:
             if a.type in (AssetType.ACAO, AssetType.FII):
@@ -156,25 +164,17 @@ class PriceService:
 
                 for yf_ticker in batch:
                     asset = ticker_map[yf_ticker]
-                    try:
-                        if len(batch) == 1:
-                            close = data["Close"].iloc[-1]
+                    close_val = _extract_close(data, yf_ticker)
+                    if close_val:
+                        if convert_to_brl:
+                            price = Decimal(str(close_val)) * usd_brl_rate
+                            asset.current_price = round(price, 4)
                         else:
-                            close = data["Close"][yf_ticker].iloc[-1]
-
-                        close_val = float(close)
-                        if close_val and close_val > 0:
-                            if convert_to_brl:
-                                price = Decimal(str(close_val)) * usd_brl_rate
-                                asset.current_price = round(price, 4)
-                            else:
-                                asset.current_price = Decimal(str(round(close_val, 4)))
-                            asset.price_updated_at = datetime.now(timezone.utc)
-                            results["updated"].append({"ticker": asset.ticker, "price": float(asset.current_price)})
-                        else:
-                            results["failed"].append({"ticker": asset.ticker, "error": "No close price"})
-                    except Exception as e:
-                        results["failed"].append({"ticker": asset.ticker, "error": str(e)})
+                            asset.current_price = Decimal(str(round(close_val, 4)))
+                        asset.price_updated_at = datetime.now(timezone.utc)
+                        results["updated"].append({"ticker": asset.ticker, "price": float(asset.current_price)})
+                    else:
+                        results["failed"].append({"ticker": asset.ticker, "error": "No close price"})
             except Exception as e:
                 for t in batch:
                     asset = ticker_map[t]
@@ -185,3 +185,78 @@ class PriceService:
                 await asyncio.sleep(2)
 
         return results
+
+    # ── Historical prices ────────────────────────────────────────────
+
+    async def _fetch_historical_usd_brl(self, target_date: date) -> Decimal | None:
+        """Fetch USD/BRL closing rate for target_date (tries a 7-day window to find last trading day)."""
+        loop = asyncio.get_event_loop()
+        start = target_date - timedelta(days=7)
+        end = target_date + timedelta(days=1)
+        data = await loop.run_in_executor(
+            None,
+            lambda: yf.download("USDBRL=X", start=start.isoformat(), end=end.isoformat(), progress=False),
+        )
+        if not data.empty:
+            close = _extract_close(data, "USDBRL=X")
+            if close:
+                return Decimal(str(close))
+        return None
+
+    async def fetch_historical_prices(
+        self, assets: list[Asset], target_date: date
+    ) -> dict[int, Decimal]:
+        """Return {asset_id: price_brl} for each asset on target_date."""
+        prices: dict[int, Decimal] = {}
+        if not assets:
+            return prices
+
+        us_stocks = [a for a in assets if a.type == AssetType.STOCK]
+        br_assets = [a for a in assets if a.type in (AssetType.ACAO, AssetType.FII)]
+
+        usd_brl = None
+        if us_stocks:
+            usd_brl = await self._fetch_historical_usd_brl(target_date)
+            if not usd_brl:
+                usd_brl = await self._get_usd_brl()  # fallback to cached
+
+        for group, convert in [(us_stocks, True), (br_assets, False)]:
+            if not group:
+                continue
+            ticker_map: dict[str, Asset] = {}
+            for a in group:
+                yf_ticker = f"{a.ticker}.SA" if a.type in (AssetType.ACAO, AssetType.FII) else a.ticker
+                ticker_map[yf_ticker] = a
+
+            yf_tickers = list(ticker_map.keys())
+            loop = asyncio.get_event_loop()
+            start = target_date - timedelta(days=7)
+            end = target_date + timedelta(days=1)
+
+            for i in range(0, len(yf_tickers), 10):
+                batch = yf_tickers[i : i + 10]
+                try:
+                    data = await loop.run_in_executor(
+                        None,
+                        lambda b=batch, s=start.isoformat(), e=end.isoformat(): yf.download(
+                            b, start=s, end=e, progress=False
+                        ),
+                    )
+                    if data.empty:
+                        continue
+
+                    for yf_ticker in batch:
+                        asset = ticker_map[yf_ticker]
+                        close_val = _extract_close(data, yf_ticker)
+                        if close_val:
+                            if convert and usd_brl:
+                                prices[asset.id] = round(Decimal(str(close_val)) * usd_brl, 4)
+                            elif not convert:
+                                prices[asset.id] = Decimal(str(round(close_val, 4)))
+                except Exception:
+                    pass
+
+                if i + 10 < len(yf_tickers):
+                    await asyncio.sleep(2)
+
+        return prices
