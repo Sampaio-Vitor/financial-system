@@ -11,12 +11,13 @@ import {
   Landmark,
   PiggyBank,
   DollarSign,
-  Target,
+  Calculator,
   LogOut,
   Menu,
   ChevronRight,
   ShieldCheck,
   Briefcase,
+  BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -49,6 +50,7 @@ const navItems: NavItem[] = [
     label: "Ativos",
     icon: Briefcase,
     children: [
+      { label: "Catálogo", href: "/carteira/catalogo", icon: BookOpen },
       { label: "Stocks (EUA)", href: "/carteira/stocks", icon: TrendingUp },
       { label: "Ações (Brasil)", href: "/carteira/acoes", icon: Building2 },
       { label: "FIIs", href: "/carteira/fiis", icon: Landmark },
@@ -62,9 +64,9 @@ const navItems: NavItem[] = [
     icon: DollarSign,
   },
   {
-    label: "Ativos Desejados",
+    label: "Planejador de Aporte",
     href: "/desejados",
-    icon: Target,
+    icon: Calculator,
   },
 ];
 

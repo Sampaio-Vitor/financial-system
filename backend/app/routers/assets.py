@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
-from app.models.purchase import Purchase
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetResponse
 
 router = APIRouter()
@@ -74,24 +73,3 @@ async def update_asset(
     await db.commit()
     await db.refresh(asset)
     return asset
-
-
-@router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_asset(
-    asset_id: int,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
-
-    purchase_count = await db.execute(
-        select(func.count()).select_from(Purchase).where(Purchase.asset_id == asset_id)
-    )
-    if purchase_count.scalar() > 0:
-        raise HTTPException(status_code=409, detail="Cannot delete asset with existing purchases")
-
-    await db.delete(asset)
-    await db.commit()
