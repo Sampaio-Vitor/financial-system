@@ -11,6 +11,7 @@ import {
 import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
 import AssetForm from "@/components/asset-form";
 import { Trash2, Calculator } from "lucide-react";
+import TickerLogo from "@/components/ticker-logo";
 
 const CLASS_LABELS: Record<AssetType, string> = {
   STOCK: "Stocks (EUA)",
@@ -374,7 +375,10 @@ export default function DesejadosPage() {
                         key={a.id}
                         className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-[var(--color-bg-main)] text-sm group transition-colors"
                       >
-                        <span className="font-medium">{a.ticker}</span>
+                        <div className="flex items-center gap-2">
+                          <TickerLogo ticker={a.ticker} type={a.type} size={20} />
+                          <span className="font-medium">{a.ticker}</span>
+                        </div>
                         <button
                           onClick={() => handleDeleteAsset(a.id, a.ticker)}
                           className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] opacity-0 group-hover:opacity-100 transition-opacity"
