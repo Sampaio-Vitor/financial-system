@@ -43,6 +43,7 @@ class MonthlyOverview(BaseModel):
     reserva_target: Decimal | None
     total_invested: Decimal
     aportes_do_mes: Decimal
+    resgates_do_mes: Decimal
     variacao_mes: Decimal
     variacao_mes_pct: Decimal
     allocation_breakdown: list[ClassSummary]

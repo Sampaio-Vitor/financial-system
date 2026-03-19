@@ -46,8 +46,8 @@ export default function CarteiraOverview() {
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
         <div className="animate-pulse space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[...Array(4)].map((_, i) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            {[...Array(5)].map((_, i) => (
               <div key={i} className="h-[104px] rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
             ))}
           </div>
@@ -88,6 +88,7 @@ export default function CarteiraOverview() {
         cards={[
           { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
           { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl" },
+          { label: "Resgates do Mês", value: data.resgates_do_mes, format: "brl" },
           { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
           { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
         ]}
