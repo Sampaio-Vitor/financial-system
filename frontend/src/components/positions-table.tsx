@@ -63,6 +63,7 @@ export default function PositionsTable({
             <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
               Descricao
             </th>
+            {colHeader("1o Aporte", "first_date")}
             {colHeader("Qtd", "quantity")}
             {colHeader("Preco Medio", "avg_price")}
             {colHeader("Cotacao Atual", "current_price")}
@@ -80,6 +81,11 @@ export default function PositionsTable({
               <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
               <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
                 {p.description}
+              </td>
+              <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                {p.first_date
+                  ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
+                  : "—"}
               </td>
               <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
               <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
@@ -108,7 +114,7 @@ export default function PositionsTable({
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-[var(--color-border)] font-bold">
-            <td className="px-3 py-2.5" colSpan={5}>
+            <td className="px-3 py-2.5" colSpan={6}>
               TOTAL
             </td>
             <td className="px-3 py-2.5">{formatBRL(totalMarketValue)}</td>

@@ -88,6 +88,7 @@ export interface PositionItem {
   ticker: string;
   description: string;
   type: AssetType;
+  first_date: string | null;
   quantity: number;
   total_cost: number;
   avg_price: number;

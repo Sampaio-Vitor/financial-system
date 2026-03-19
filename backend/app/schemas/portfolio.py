@@ -11,6 +11,7 @@ class PositionItem(BaseModel):
     ticker: str
     description: str
     type: AssetType
+    first_date: str | None
     quantity: Decimal
     total_cost: Decimal
     avg_price: Decimal
