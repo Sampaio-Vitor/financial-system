@@ -46,7 +46,7 @@ export default function AllocationDonutChart({
   if (chartData.length === 0) return null;
 
   return (
-    <div className="h-48 relative">
+    <div className="flex-1 flex flex-col relative">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -70,9 +70,10 @@ export default function AllocationDonutChart({
               borderRadius: "8px",
               color: "#f8fafc",
               fontSize: "12px",
+              zIndex: 50,
             }}
-            formatter={(value: number) => [formatBRL(value), ""]}
-            labelFormatter={(name: string) => name}
+            itemStyle={{ color: "#f8fafc" }}
+            formatter={(value: number, name: string) => [formatBRL(value), name]}
           />
         </PieChart>
       </ResponsiveContainer>
@@ -82,7 +83,7 @@ export default function AllocationDonutChart({
           {formatBRL(patrimonioTotal)}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 justify-center">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 justify-center shrink-0">
         {chartData.map((entry) => (
           <div key={entry.name} className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: entry.color }} />

@@ -26,8 +26,8 @@ export default function PatrimonioChart({ data }: PatrimonioChartProps) {
   }));
 
   return (
-    <div>
-      <div className="h-48">
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData}>
             <defs>
@@ -86,7 +86,7 @@ export default function PatrimonioChart({ data }: PatrimonioChartProps) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex items-center gap-4 mt-3 justify-center">
+      <div className="flex items-center gap-4 mt-3 justify-center shrink-0">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-0.5 bg-emerald-500 rounded" />
           <span className="text-xs text-[var(--color-text-muted)]">Patrimônio</span>
