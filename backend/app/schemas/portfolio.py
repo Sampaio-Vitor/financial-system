@@ -59,6 +59,7 @@ class MonthlyOverview(BaseModel):
     transactions: list[PurchaseResponse]
     fi_aportes: list[FixedIncomeTransactionItem]
     fi_redemptions: list[FixedIncomeTransactionItem]
+    fi_interest: list[FixedIncomeTransactionItem]
     reserva_depositos: Decimal
     reserva_resgates: Decimal
 

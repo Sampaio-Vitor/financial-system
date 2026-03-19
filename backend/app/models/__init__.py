@@ -7,6 +7,7 @@ from app.models.settings import UserSettings
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.fixed_income_redemption import FixedIncomeRedemption
+from app.models.fixed_income_interest import FixedIncomeInterest
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "FinancialReserveEntry",
     "FinancialReserveTarget",
     "FixedIncomeRedemption",
+    "FixedIncomeInterest",
 ]
