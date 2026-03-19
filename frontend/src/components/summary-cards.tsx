@@ -36,10 +36,10 @@ export default function SummaryCards({ cards, expandedCard, onToggleCard }: Summ
           <div
             key={card.label}
             onClick={isExpandable ? () => onToggleCard(card.label) : undefined}
-            className={`border shadow-sm flex flex-col justify-between transition-all duration-200 ${
+            className={`border flex flex-col justify-between transition-all duration-200 ${
               isExpanded
-                ? "bg-[var(--color-bg-card)] rounded-t-2xl rounded-b-none border-[var(--color-border)] border-b-transparent z-10 relative px-6 pt-6 pb-8"
-                : "bg-[var(--color-bg-card)] rounded-2xl border-[var(--color-border)] hover:border-[var(--color-text-muted)]/30 p-6"
+                ? "bg-[var(--color-bg-card)] rounded-t-2xl rounded-b-none border-[var(--color-border)] border-b-transparent shadow-none z-10 relative px-6 pt-6 pb-8"
+                : "bg-[var(--color-bg-card)] rounded-2xl border-[var(--color-border)] shadow-sm hover:border-[var(--color-text-muted)]/30 p-6"
             } ${isExpandable ? "cursor-pointer group" : ""}`}
           >
             <div className="flex items-center justify-between mb-2">

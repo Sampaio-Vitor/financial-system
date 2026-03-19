@@ -127,7 +127,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
 
   if (groups.length === 0) {
     return (
-      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] border-t-0 px-6 py-6 -mt-1">
+      <div className="-mt-px overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] px-6 py-6">
         <p className="text-sm text-[var(--color-text-muted)] text-center">
           {type === "aportes"
             ? "Nenhum aporte neste periodo"
@@ -140,7 +140,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
   const grandTotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-b-2xl border border-[var(--color-border)] border-t-0">
+    <div className="-mt-px overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)]">
       <div className="px-8 pt-6 pb-5">
         <div className="flex flex-wrap gap-x-12 gap-y-5">
           {groups.map((group) => {
@@ -148,7 +148,6 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
 
             return (
               <div key={group.key} className="min-w-[180px]">
-                {/* Group header */}
                 <div className="flex items-baseline justify-between gap-4 mb-2.5 pb-2 border-b border-[var(--color-border)]/50">
                   <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">
                     {label}
@@ -158,7 +157,6 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
                   </span>
                 </div>
 
-                {/* Items */}
                 <div className="space-y-1">
                   {group.items.map((item, i) => (
                     <div
@@ -180,7 +178,6 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
         </div>
       </div>
 
-      {/* Grand total */}
       <div className="px-8 py-3 border-t border-[var(--color-border)]/40 flex items-center justify-end gap-4">
         <span className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
           Total
