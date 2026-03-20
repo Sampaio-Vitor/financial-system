@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,28 +18,9 @@ from app.schemas.financial_reserve import (
     FinancialReserveTargetResponse,
 )
 
+from app.services.portfolio_service import get_reserve_for_month
+
 router = APIRouter()
-
-
-async def get_reserve_for_month(
-    db: AsyncSession, user_id: int, year: int, month: int
-) -> FinancialReserveEntry | None:
-    """Get the last reserve entry recorded on or before the end of the given month."""
-    if month == 12:
-        month_end = datetime(year + 1, 1, 1)
-    else:
-        month_end = datetime(year, month + 1, 1)
-
-    result = await db.execute(
-        select(FinancialReserveEntry)
-        .where(
-            FinancialReserveEntry.user_id == user_id,
-            FinancialReserveEntry.recorded_at < month_end,
-        )
-        .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
 
 
 @router.get("", response_model=FinancialReserveMonthValue)
@@ -48,7 +29,7 @@ async def get_reserve_value(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if not month:
         month = now.strftime("%Y-%m")
 
@@ -85,7 +66,7 @@ async def create_reserve_entry(
         user_id=user.id,
         amount=data.amount,
         note=data.note,
-        recorded_at=data.recorded_at or datetime.utcnow(),
+        recorded_at=data.recorded_at or datetime.now(timezone.utc),
     )
     db.add(entry)
     await db.commit()

@@ -38,11 +38,6 @@ class ClassSummary(BaseModel):
     gap: Decimal
 
 
-class DailyPatrimonio(BaseModel):
-    day: int
-    value: Decimal
-
-
 class MonthlyOverview(BaseModel):
     month: str
     min_month: str | None
@@ -55,7 +50,6 @@ class MonthlyOverview(BaseModel):
     variacao_mes: Decimal
     variacao_mes_pct: Decimal
     allocation_breakdown: list[ClassSummary]
-    daily_patrimonio: list[DailyPatrimonio]
     transactions: list[PurchaseResponse]
     fi_aportes: list[FixedIncomeTransactionItem]
     fi_redemptions: list[FixedIncomeTransactionItem]

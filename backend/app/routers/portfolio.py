@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -16,11 +16,11 @@ from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.user import User
-from app.routers.financial_reserve import get_reserve_for_month
+from app.constants import CLASS_LABELS
+from app.services.portfolio_service import get_reserve_for_month, get_class_values
 from app.schemas.portfolio import (
     MonthlyOverview,
     ClassSummary,
-    DailyPatrimonio,
     FixedIncomeTransactionItem,
     PositionsResponse,
     PositionItem,
@@ -28,56 +28,6 @@ from app.schemas.portfolio import (
 from app.schemas.purchase import PurchaseResponse
 
 router = APIRouter()
-
-CLASS_LABELS = {
-    AssetType.STOCK: "Stocks (EUA)",
-    AssetType.ACAO: "Acoes (Brasil)",
-    AssetType.FII: "FIIs",
-    AssetType.RF: "Renda Fixa",
-}
-
-
-async def _get_class_values(
-    db: AsyncSession, user: User, cutoff: date | None = None
-) -> dict[AssetType, Decimal]:
-    """Compute current market value per asset class.
-
-    If cutoff is given, only purchases with purchase_date < cutoff are included.
-    """
-    values: dict[AssetType, Decimal] = {t: Decimal("0") for t in AssetType}
-
-    # Variable income: aggregate purchases and multiply by current price
-    query = (
-        select(
-            Asset.type,
-            Asset.current_price,
-            func.sum(Purchase.quantity).label("total_qty"),
-        )
-        .join(Asset, Purchase.asset_id == Asset.id)
-        .where(Purchase.user_id == user.id, Asset.type != AssetType.RF)
-    )
-    if cutoff:
-        query = query.where(Purchase.purchase_date < cutoff)
-    query = query.group_by(Asset.id, Asset.type, Asset.current_price)
-
-    result = await db.execute(query)
-    for row in result.all():
-        asset_type, price, qty = row
-        if price and qty:
-            values[asset_type] += price * qty
-
-    # Fixed income: sum current_balance for positions that existed before cutoff
-    fi_query = (
-        select(func.sum(FixedIncomePosition.current_balance))
-        .where(FixedIncomePosition.user_id == user.id)
-    )
-    if cutoff:
-        fi_query = fi_query.where(FixedIncomePosition.start_date < cutoff)
-    fi_result = await db.execute(fi_query)
-    rf_total = fi_result.scalar() or Decimal("0")
-    values[AssetType.RF] = rf_total
-
-    return values
 
 
 async def _get_targets(db: AsyncSession, user: User) -> dict[AssetType, Decimal]:
@@ -93,7 +43,7 @@ async def get_overview(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if not month:
         month = now.strftime("%Y-%m")
 
@@ -229,7 +179,7 @@ async def get_overview(
     total_invested += fi_invested.scalar() or Decimal("0")
 
     # Current values per class (purchases up to end of viewed month)
-    class_values = await _get_class_values(db, user, cutoff=month_end)
+    class_values = await get_class_values(db, user, cutoff=month_end)
 
     # Reserve target
     target_result = await db.execute(
@@ -241,7 +191,7 @@ async def get_overview(
     patrimonio_total = sum(class_values.values()) + (reserva_financeira or Decimal("0"))
 
     # Month-over-month variation: compute previous month's patrimonio on-the-fly
-    prev_class_values = await _get_class_values(db, user, cutoff=month_start)
+    prev_class_values = await get_class_values(db, user, cutoff=month_start)
     prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve.amount if prev_reserve else Decimal("0"))
 
     if prev_patrimonio > 0:
@@ -356,7 +306,6 @@ async def get_overview(
         variacao_mes=round(variacao_mes, 4),
         variacao_mes_pct=round(variacao_mes_pct, 2),
         allocation_breakdown=allocation,
-        daily_patrimonio=[],  # Simplified: would need historical price data for daily tracking
         transactions=transactions,
         fi_aportes=fi_aportes_list,
         fi_redemptions=fi_redemptions_list,

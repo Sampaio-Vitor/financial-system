@@ -11,14 +11,9 @@ from app.models.financial_reserve import FinancialReserveEntry, FinancialReserve
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.user import User
+from app.constants import CLASS_LABELS
+from app.services.portfolio_service import get_class_values
 from app.schemas.rebalancing import RebalancingResponse, ClassRebalancing, AssetRebalancing
-
-CLASS_LABELS = {
-    AssetType.STOCK: "Stocks (EUA)",
-    AssetType.ACAO: "Acoes (Brasil)",
-    AssetType.FII: "FIIs",
-    AssetType.RF: "Renda Fixa",
-}
 
 
 class RebalancingService:
@@ -28,7 +23,7 @@ class RebalancingService:
 
     async def calculate(self, contribution: Decimal, top_n: int) -> RebalancingResponse:
         # Get current values per class (investments only)
-        class_values = await self._get_class_values()
+        class_values = await get_class_values(self.db, self.user)
         investable_total = sum(class_values.values())
 
         # Financial reserve
@@ -161,32 +156,6 @@ class RebalancingService:
             asset_plan=asset_plan,
             total_planned=round(total_planned, 2),
         )
-
-    async def _get_class_values(self) -> dict[AssetType, Decimal]:
-        values: dict[AssetType, Decimal] = {t: Decimal("0") for t in AssetType}
-
-        result = await self.db.execute(
-            select(
-                Asset.type,
-                Asset.current_price,
-                func.sum(Purchase.quantity).label("total_qty"),
-            )
-            .join(Asset, Purchase.asset_id == Asset.id)
-            .where(Purchase.user_id == self.user.id, Asset.type != AssetType.RF)
-            .group_by(Asset.id, Asset.type, Asset.current_price)
-        )
-        for row in result.all():
-            asset_type, price, qty = row
-            if price and qty:
-                values[asset_type] += price * qty
-
-        fi_result = await self.db.execute(
-            select(func.sum(FixedIncomePosition.current_balance))
-            .where(FixedIncomePosition.user_id == self.user.id)
-        )
-        values[AssetType.RF] = fi_result.scalar() or Decimal("0")
-
-        return values
 
     async def _get_reserve_value(self) -> Decimal:
         result = await self.db.execute(

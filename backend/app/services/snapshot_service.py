@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -11,15 +11,9 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
-from app.routers.financial_reserve import get_reserve_for_month
+from app.constants import CLASS_LABELS
+from app.services.portfolio_service import get_reserve_for_month
 from app.services.price_service import PriceService
-
-CLASS_LABELS = {
-    AssetType.STOCK: "Stocks (EUA)",
-    AssetType.ACAO: "Acoes (Brasil)",
-    AssetType.FII: "FIIs",
-    AssetType.RF: "Renda Fixa",
-}
 
 
 class SnapshotService:
@@ -114,16 +108,25 @@ class SnapshotService:
         fi_positions = fi_positions_result.scalars().all()
         fi_applied = sum(p.applied_value for p in fi_positions)
 
-        # Per-position redemptions
-        for fi_pos in fi_positions:
-            pos_redemptions_result = await self.db.execute(
-                select(func.sum(FixedIncomeRedemption.amount)).where(
+        # Batch query for per-position redemptions (fixes N+1)
+        fi_pos_ids = [p.id for p in fi_positions]
+        redemption_by_position: dict[int, Decimal] = {}
+        if fi_pos_ids:
+            batch_redemptions = await self.db.execute(
+                select(
+                    FixedIncomeRedemption.fixed_income_id,
+                    func.sum(FixedIncomeRedemption.amount).label("total"),
+                ).where(
                     FixedIncomeRedemption.user_id == self.user.id,
-                    FixedIncomeRedemption.fixed_income_id == fi_pos.id,
+                    FixedIncomeRedemption.fixed_income_id.in_(fi_pos_ids),
                     FixedIncomeRedemption.redemption_date < next_month_start,
-                )
+                ).group_by(FixedIncomeRedemption.fixed_income_id)
             )
-            pos_redeemed = pos_redemptions_result.scalar() or Decimal("0")
+            for row in batch_redemptions.all():
+                redemption_by_position[row.fixed_income_id] = row.total
+
+        for fi_pos in fi_positions:
+            pos_redeemed = redemption_by_position.get(fi_pos.id, Decimal("0"))
             net_value = fi_pos.applied_value - pos_redeemed
             if net_value > 0:
                 asset_items.append({
@@ -226,7 +229,7 @@ class SnapshotService:
             snapshot.aportes_do_mes = round(aportes_do_mes, 4)
             snapshot.allocation_breakdown = allocation
             snapshot.asset_breakdown = asset_items
-            snapshot.snapshot_at = datetime.utcnow()
+            snapshot.snapshot_at = datetime.now(timezone.utc)
         else:
             snapshot = MonthlySnapshot(
                 user_id=self.user.id,
@@ -238,7 +241,7 @@ class SnapshotService:
                 aportes_do_mes=round(aportes_do_mes, 4),
                 allocation_breakdown=allocation,
                 asset_breakdown=asset_items,
-                snapshot_at=datetime.utcnow(),
+                snapshot_at=datetime.now(timezone.utc),
             )
             self.db.add(snapshot)
 
