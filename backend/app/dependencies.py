@@ -33,3 +33,14 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+async def get_admin_user(
+    user: User = Depends(get_current_user),
+) -> User:
+    if user.id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito ao administrador",
+        )
+    return user
