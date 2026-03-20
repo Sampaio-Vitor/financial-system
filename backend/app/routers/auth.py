@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.limiter import limiter
+from app.models.allowed_username import AllowedUsername
 from app.models.settings import UserSettings
+from app.models.system_setting import SystemSetting
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 from app.services.auth_service import (
@@ -70,6 +72,23 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
 @limiter.limit("5/minute")
 async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await verify_turnstile(body.turnstile_token)
+
+    # Check whitelist if enabled
+    setting_result = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == "registration_whitelist_enabled")
+    )
+    setting_row = setting_result.scalar_one_or_none()
+    if setting_row and setting_row.value == "true":
+        allowed = await db.execute(
+            select(AllowedUsername).where(
+                func.lower(AllowedUsername.username) == body.username.lower()
+            )
+        )
+        if not allowed.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Pau no seu cu, o que vc ta fazendo aqui arrombado? Some inseto!",
+            )
 
     # Check username uniqueness (case-insensitive)
     result = await db.execute(

@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine, Base
 from app.limiter import limiter
-from app.routers import auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots
+from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots
 
 
 @asynccontextmanager
@@ -64,6 +64,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(purchases.router, prefix="/api/purchases", tags=["purchases"])
