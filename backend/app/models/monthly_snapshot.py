@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -15,7 +15,7 @@ class MonthlySnapshot(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     month: Mapped[str] = mapped_column(String(7), nullable=False, index=True)  # YYYY-MM
     total_patrimonio: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     total_invested: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
@@ -25,4 +25,4 @@ class MonthlySnapshot(Base):
     allocation_breakdown: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     asset_breakdown: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     daily_patrimonio: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
-    snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
