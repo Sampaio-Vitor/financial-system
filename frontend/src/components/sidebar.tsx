@@ -88,7 +88,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className={`min-h-screen bg-[var(--color-bg-sidebar)] border-r border-[var(--color-border)] flex flex-col transition-all duration-300 ease-in-out ${
+      className={`h-screen sticky top-0 bg-[var(--color-bg-sidebar)] border-r border-[var(--color-border)] flex flex-col transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-20" : "w-64"
       }`}
     >
@@ -111,7 +111,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         )}
       </div>
 
-      <nav className="flex-1 p-4 space-y-1.5 overflow-hidden">
+      <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
         {navItems.map((item) => {
           if (item.children) {
             const isChildActive = hasActiveChild(item.children);
