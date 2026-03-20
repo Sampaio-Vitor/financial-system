@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Asset, AllocationTarget, AssetType } from "@/types";
 import AssetForm from "@/components/asset-form";
+import CsvImportModal from "@/components/csv-import-modal";
 import TickerLogo from "@/components/ticker-logo";
 
 const CLASS_LABELS: Record<AssetType, string> = {
@@ -35,6 +36,7 @@ function CatalogoContent() {
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [showAssetForm, setShowAssetForm] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const [filter, setFilter] = useState<FilterType>("ALL");
 
   const [editTargets, setEditTargets] = useState<Record<AssetType, string>>({
@@ -170,12 +172,20 @@ function CatalogoContent() {
                 ))}
               </div>
             </div>
-            <button
-              onClick={() => setShowAssetForm(true)}
-              className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Adicionar Ativo
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCsvImport(true)}
+                className="px-4 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
+              >
+                Importar CSV
+              </button>
+              <button
+                onClick={() => setShowAssetForm(true)}
+                className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Adicionar Ativo
+              </button>
+            </div>
           </div>
 
           {/* Table */}
@@ -240,6 +250,16 @@ function CatalogoContent() {
               onClose={() => setShowAssetForm(false)}
               onSaved={() => {
                 setShowAssetForm(false);
+                fetchAssets();
+              }}
+            />
+          )}
+
+          {showCsvImport && (
+            <CsvImportModal
+              onClose={() => setShowCsvImport(false)}
+              onSaved={() => {
+                setShowCsvImport(false);
                 fetchAssets();
               }}
             />
