@@ -5,7 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
-from app.schemas.asset import AssetCreate, AssetUpdate, AssetResponse
+from app.schemas.asset import (
+    AssetCreate,
+    AssetUpdate,
+    AssetResponse,
+    BulkAssetRequest,
+    BulkAssetResponse,
+    BulkAssetCreated,
+    BulkAssetSkipped,
+)
 
 router = APIRouter()
 
@@ -21,6 +29,49 @@ async def list_assets(
         query = query.where(Asset.type == type)
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.post("/bulk", response_model=BulkAssetResponse)
+async def bulk_create_assets(
+    data: BulkAssetRequest,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    # Normalize tickers
+    items = [(item.ticker.strip().upper(), item.type) for item in data.assets]
+
+    # Deduplicate within request (keep first occurrence)
+    seen: set[str] = set()
+    unique_items: list[tuple[str, AssetType]] = []
+    intra_dupes: list[str] = []
+    for ticker, asset_type in items:
+        if ticker in seen:
+            intra_dupes.append(ticker)
+        else:
+            seen.add(ticker)
+            unique_items.append((ticker, asset_type))
+
+    # Check existing tickers in one query
+    tickers = [t for t, _ in unique_items]
+    result = await db.execute(select(Asset.ticker).where(Asset.ticker.in_(tickers)))
+    existing = {row[0] for row in result.all()}
+
+    created: list[BulkAssetCreated] = []
+    skipped: list[BulkAssetSkipped] = []
+
+    for ticker, asset_type in unique_items:
+        if ticker in existing:
+            skipped.append(BulkAssetSkipped(ticker=ticker, reason="Já existe no catálogo"))
+        else:
+            asset = Asset(ticker=ticker, type=asset_type, description="")
+            db.add(asset)
+            created.append(BulkAssetCreated(ticker=ticker, type=asset_type))
+
+    for ticker in intra_dupes:
+        skipped.append(BulkAssetSkipped(ticker=ticker, reason="Duplicado no CSV"))
+
+    await db.commit()
+    return BulkAssetResponse(created=created, skipped=skipped)
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
