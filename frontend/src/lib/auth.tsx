@@ -11,6 +11,8 @@ import {
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  userId: number | null;
+  isAdmin: boolean;
   login: (username: string, password: string, turnstileToken?: string) => Promise<void>;
   register: (username: string, password: string, turnstileToken?: string) => Promise<void>;
   logout: () => void;
@@ -18,6 +20,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
+  userId: null,
+  isAdmin: false,
   login: async () => {},
   register: async () => {},
   logout: () => {},
@@ -33,12 +37,26 @@ function extractErrorMessage(data: Record<string, unknown>, fallback: string): s
   return fallback;
 }
 
+function getUserIdFromToken(): number | null {
+  if (typeof window === "undefined") return null;
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return parseInt(payload.sub, 10) || null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     setIsAuthenticated(!!token);
+    setUserId(getUserIdFromToken());
   }, []);
 
   const login = useCallback(async (username: string, password: string, turnstileToken?: string) => {
@@ -56,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await res.json();
     localStorage.setItem("token", data.access_token);
     setIsAuthenticated(true);
+    setUserId(getUserIdFromToken());
   }, []);
 
   const register = useCallback(async (username: string, password: string, turnstileToken?: string) => {
@@ -73,16 +92,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await res.json();
     localStorage.setItem("token", data.access_token);
     setIsAuthenticated(true);
+    setUserId(getUserIdFromToken());
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     setIsAuthenticated(false);
+    setUserId(null);
     window.location.href = "/login";
   }, []);
 
+  const isAdmin = userId === 1;
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, register, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, userId, isAdmin, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

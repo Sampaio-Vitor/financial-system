@@ -77,7 +77,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
 
   const hasActiveChild = (children: NavChild[]) =>
     children.some((child) =>
@@ -202,7 +202,21 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         })}
       </nav>
 
-      <div className="p-4 border-t border-[var(--color-border)]">
+      <div className="p-4 border-t border-[var(--color-border)] space-y-1.5">
+        {isAdmin && (
+          <Link
+            href="/admin"
+            title={isCollapsed ? "Admin" : ""}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 w-full ${
+              pathname.startsWith("/admin")
+                ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] shadow-sm"
+                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
+            } ${isCollapsed ? "justify-center px-2" : ""}`}
+          >
+            <ShieldCheck size={18} className={pathname.startsWith("/admin") ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"} />
+            {!isCollapsed && <span>Admin</span>}
+          </Link>
+        )}
         <button
           onClick={logout}
           title={isCollapsed ? "Sair" : ""}
