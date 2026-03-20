@@ -5,7 +5,7 @@ function getToken(): string | null {
   return localStorage.getItem("token");
 }
 
-export async function apiFetch<T>(
+export async function apiFetch<T = void>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -36,6 +36,7 @@ export async function apiFetch<T>(
     throw new Error(error.detail || `HTTP ${res.status}`);
   }
 
-  if (res.status === 204) return undefined as T;
+  // 204 No Content: safe cast since T defaults to void for DELETE calls
+  if (res.status === 204) return undefined as unknown as T;
   return res.json();
 }

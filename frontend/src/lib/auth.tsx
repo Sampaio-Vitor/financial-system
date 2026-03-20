@@ -7,7 +7,6 @@ import {
   useEffect,
   useCallback,
   ReactNode,
-  createElement,
 } from "react";
 
 interface AuthContextType {
@@ -82,10 +81,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/login";
   }, []);
 
-  return createElement(
-    AuthContext.Provider,
-    { value: { isAuthenticated, login, register, logout } },
-    children
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 
