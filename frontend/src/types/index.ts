@@ -212,3 +212,18 @@ export interface PatrimonioEvolutionPoint {
   total_pnl: number;
   pnl_pct: number;
 }
+
+export interface BulkAssetCreated {
+  ticker: string;
+  type: AssetType;
+}
+
+export interface BulkAssetSkipped {
+  ticker: string;
+  reason: string;
+}
+
+export interface BulkAssetResponse {
+  created: BulkAssetCreated[];
+  skipped: BulkAssetSkipped[];
+}
