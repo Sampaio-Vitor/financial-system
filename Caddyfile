@@ -1,0 +1,4 @@
+cofrinhogordinho.uk {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+    reverse_proxy frontend:3000
+}

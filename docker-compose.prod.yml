@@ -1,23 +1,39 @@
 # Production overrides — usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
-#
-# Requires Docker Compose v2.24+ for !override syntax on volume lists.
 
 services:
   backend:
     user: appuser
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    volumes: !override []
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
       target: production
     user: appuser
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
       API_URL: http://backend:8000
       NODE_ENV: production
-    volumes: !override []
     command: ["node", "server.js"]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: portfolio_caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:
