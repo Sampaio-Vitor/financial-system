@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-modal";
 import { Trash2, Pencil } from "lucide-react";
 import {
   LineChart,
@@ -20,6 +22,7 @@ function todayStr() {
 }
 
 export default function ReservaPage() {
+  const { confirm, ConfirmDialog } = useConfirm();
   const [month, setMonth] = useState(getCurrentMonth());
   const [monthData, setMonthData] = useState<FinancialReserveMonthValue | null>(null);
   const [history, setHistory] = useState<FinancialReserveEntry[]>([]);
@@ -98,7 +101,8 @@ export default function ReservaPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Excluir este registro?")) return;
+    const ok = await confirm("Excluir Registro", "Excluir este registro?");
+    if (!ok) return;
     try {
       await apiFetch(`/financial-reserves/${id}`, { method: "DELETE" });
       await fetchData();
@@ -132,7 +136,7 @@ export default function ReservaPage() {
 
     const current = monthData?.amount ?? 0;
     if (parsed > current) {
-      alert("Valor de resgate excede o saldo atual da reserva.");
+      toast.error("Valor de resgate excede o saldo atual da reserva.");
       return;
     }
 
@@ -188,7 +192,7 @@ export default function ReservaPage() {
       setEditingId(null);
       await fetchData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Erro ao salvar");
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
       setSavingEdit(false);
     }
@@ -238,6 +242,7 @@ export default function ReservaPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Reserva Financeira</h1>
         <MonthNavigator month={month} onChange={setMonth} />

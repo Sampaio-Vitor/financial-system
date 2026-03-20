@@ -55,11 +55,6 @@ export interface ClassSummary {
   gap: number;
 }
 
-export interface DailyPatrimonio {
-  day: number;
-  value: number;
-}
-
 export interface FinancialReserveEntry {
   id: number;
   amount: number;
@@ -108,7 +103,6 @@ export interface MonthlyOverview {
   variacao_mes: number;
   variacao_mes_pct: number;
   allocation_breakdown: ClassSummary[];
-  daily_patrimonio: DailyPatrimonio[];
   transactions: Purchase[];
   fi_aportes: FixedIncomeTransactionItem[];
   fi_redemptions: FixedIncomeTransactionItem[];
