@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum as PyEnum
 from typing import Optional
@@ -25,4 +25,4 @@ class Asset(Base):
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     current_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
     price_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

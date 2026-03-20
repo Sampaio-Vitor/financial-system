@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -13,7 +13,7 @@ class FixedIncomePosition(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("assets.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     applied_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
@@ -21,7 +21,7 @@ class FixedIncomePosition(Base):
     yield_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     yield_pct: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False, default=0)
     maturity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     asset = relationship("Asset", lazy="joined")

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -10,6 +11,8 @@ from app.models.asset import Asset, AssetType
 from app.models.settings import UserSettings
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 
 def _extract_close(data, yf_ticker: str) -> float | None:
     """Extract closing price from yfinance DataFrame (always MultiIndex columns)."""
@@ -18,6 +21,7 @@ def _extract_close(data, yf_ticker: str) -> float | None:
         close = float(val)
         return close if close and close > 0 else None
     except Exception:
+        logger.warning("Failed to extract close price", exc_info=True)
         return None
 
 
@@ -62,39 +66,9 @@ class PriceService:
         await self.db.commit()
         return results
 
-    async def fetch_single_price(self, asset: Asset) -> Decimal | None:
-        """Fetch price for a single newly added asset."""
-        try:
-            loop = asyncio.get_event_loop()
-            if asset.type == AssetType.STOCK:
-                rate = await self._get_usd_brl()
-                yf_ticker = asset.ticker
-                data = await loop.run_in_executor(
-                    None, lambda: yf.download(yf_ticker, period="1d", progress=False)
-                )
-                close = _extract_close(data, yf_ticker) if not data.empty else None
-                if close and rate:
-                    price_brl = Decimal(str(close)) * rate
-                    asset.current_price = round(price_brl, 4)
-                    asset.price_updated_at = datetime.now(timezone.utc)
-                    return asset.current_price
-            elif asset.type in (AssetType.ACAO, AssetType.FII):
-                yf_ticker = f"{asset.ticker}.SA"
-                data = await loop.run_in_executor(
-                    None, lambda: yf.download(yf_ticker, period="1d", progress=False)
-                )
-                close = _extract_close(data, yf_ticker) if not data.empty else None
-                if close:
-                    asset.current_price = Decimal(str(close))
-                    asset.price_updated_at = datetime.now(timezone.utc)
-                    return asset.current_price
-        except Exception:
-            pass
-        return None
-
     async def _fetch_usd_brl(self) -> Decimal | None:
         """Fetch USD/BRL exchange rate via yfinance."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None, lambda: yf.download("USDBRL=X", period="1d", progress=False)
         )
@@ -146,7 +120,7 @@ class PriceService:
                 ticker_map[a.ticker] = a
 
         yf_tickers = list(ticker_map.keys())
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Process in batches of 10
         for i in range(0, len(yf_tickers), 10):
@@ -190,7 +164,7 @@ class PriceService:
 
     async def _fetch_historical_usd_brl(self, target_date: date) -> Decimal | None:
         """Fetch USD/BRL closing rate for target_date (tries a 7-day window to find last trading day)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = target_date - timedelta(days=7)
         end = target_date + timedelta(days=1)
         data = await loop.run_in_executor(
@@ -229,7 +203,7 @@ class PriceService:
                 ticker_map[yf_ticker] = a
 
             yf_tickers = list(ticker_map.keys())
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             start = target_date - timedelta(days=7)
             end = target_date + timedelta(days=1)
 
@@ -254,7 +228,7 @@ class PriceService:
                             elif not convert:
                                 prices[asset.id] = Decimal(str(round(close_val, 4)))
                 except Exception:
-                    pass
+                    logger.warning("Failed to fetch historical prices for batch", exc_info=True)
 
                 if i + 10 < len(yf_tickers):
                     await asyncio.sleep(2)

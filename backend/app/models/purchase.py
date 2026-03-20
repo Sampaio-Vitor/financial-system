@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Date, DateTime, Numeric, Integer
@@ -12,11 +12,11 @@ class Purchase(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("assets.id"), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     purchase_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     total_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     asset = relationship("Asset", lazy="joined")
