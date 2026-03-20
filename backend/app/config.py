@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+aiomysql://portfolio_user:portfolio_pass@localhost:3307/portfolio"
-    SECRET_KEY: str = "change-me-to-a-random-secret-key"
+    SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
     ADMIN_USERNAME: str = "admin"
