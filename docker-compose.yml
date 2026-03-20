@@ -40,6 +40,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     container_name: portfolio_frontend
     user: root  # dev override; Dockerfile sets non-root user for production
     environment:
