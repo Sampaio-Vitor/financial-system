@@ -23,6 +23,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: portfolio_api
+    user: root  # dev override; Dockerfile sets non-root user for production
     env_file: .env
     environment:
       DATABASE_URL: mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio
@@ -40,6 +41,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: portfolio_frontend
+    user: root  # dev override; Dockerfile sets non-root user for production
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       API_URL: http://backend:8000
