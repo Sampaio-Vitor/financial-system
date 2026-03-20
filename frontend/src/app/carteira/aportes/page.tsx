@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
 import { AssetType, Purchase } from "@/types";
 import { formatBRL, formatQuantity } from "@/lib/format";
@@ -10,6 +12,7 @@ import TickerLogo from "@/components/ticker-logo";
 type OperationFilter = "todos" | "compras" | "vendas";
 
 export default function AportesPage() {
+  const { confirm, ConfirmDialog } = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -74,12 +77,13 @@ export default function AportesPage() {
   }, [fetchPurchases]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Remover este aporte? Isso afetara os calculos da carteira.")) return;
+    const ok = await confirm("Remover Aporte", "Remover este aporte? Isso afetara os calculos da carteira.");
+    if (!ok) return;
     try {
       await apiFetch(`/purchases/${id}`, { method: "DELETE" });
       fetchPurchases();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Erro ao remover");
+      toast.error(err instanceof Error ? err.message : "Erro ao remover");
     }
   };
 
@@ -110,7 +114,7 @@ export default function AportesPage() {
       setEditingId(null);
       fetchPurchases();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Erro ao salvar");
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
       setSaving(false);
     }
@@ -118,6 +122,7 @@ export default function AportesPage() {
 
   return (
     <div>
+      <ConfirmDialog />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
         <div className="flex gap-2">

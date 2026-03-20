@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
 import { AllocationTarget, AssetType, RebalancingResponse } from "@/types";
 import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
@@ -50,7 +52,7 @@ export default function PlanejadorAportePage() {
       );
       setRebalancing(data);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Erro ao calcular");
+      toast.error(err instanceof Error ? err.message : "Erro ao calcular");
     }
   };
 
