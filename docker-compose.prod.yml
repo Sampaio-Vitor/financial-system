@@ -1,0 +1,23 @@
+# Production overrides — usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+#
+# Requires Docker Compose v2.24+ for !override syntax on volume lists.
+
+services:
+  backend:
+    user: appuser
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes: !override []
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    user: appuser
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      API_URL: http://backend:8000
+      NODE_ENV: production
+    volumes: !override []
+    command: ["node", "server.js"]
