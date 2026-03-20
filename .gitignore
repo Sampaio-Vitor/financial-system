@@ -16,6 +16,9 @@ out/
 .env
 .env.local
 
+# TLS certificates
+certs/
+
 # IDE
 .vscode/
 .idea/

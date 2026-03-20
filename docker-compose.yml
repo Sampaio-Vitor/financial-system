@@ -2,14 +2,13 @@ services:
   mysql:
     image: mysql:8.0
     container_name: portfolio_db
+    env_file: .env
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: portfolio
-      MYSQL_USER: portfolio_user
-      MYSQL_PASSWORD: portfolio_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-portfolio}
+      MYSQL_USER: ${MYSQL_USER:-portfolio_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-portfolio_pass}
     command: --default-authentication-plugin=mysql_native_password
-    ports:
-      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -23,38 +22,20 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: portfolio_api
-    user: root  # dev override; Dockerfile sets non-root user for production
     env_file: .env
     environment:
-      DATABASE_URL: mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
+      DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio}
     depends_on:
       mysql:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: development
     container_name: portfolio_frontend
-    user: root  # dev override; Dockerfile sets non-root user for production
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      API_URL: http://backend:8000
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     depends_on:
       - backend
-    command: npm run dev
 
 volumes:
   mysql_data:
