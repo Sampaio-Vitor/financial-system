@@ -256,7 +256,20 @@ async def bulk_register_interest(
                 detail=f"Posicao {entry.fixed_income_id} nao encontrada",
             )
 
-        interest_amount = entry.new_balance - fi.current_balance
+        # Compute previous_balance from the most recent interest entry before ref_date
+        prev_result = await db.execute(
+            select(FixedIncomeInterest)
+            .where(
+                FixedIncomeInterest.fixed_income_id == fi.id,
+                FixedIncomeInterest.reference_month < ref_date,
+            )
+            .order_by(FixedIncomeInterest.reference_month.desc())
+            .limit(1)
+        )
+        prev_entry = prev_result.scalar_one_or_none()
+        previous_balance = prev_entry.new_balance if prev_entry else fi.applied_value
+
+        interest_amount = entry.new_balance - previous_balance
 
         # Skip zero-change entries
         if interest_amount == 0:
@@ -273,7 +286,7 @@ async def bulk_register_interest(
 
         if existing:
             # Update existing entry
-            existing.previous_balance = fi.current_balance
+            existing.previous_balance = previous_balance
             existing.new_balance = entry.new_balance
             existing.interest_amount = interest_amount
             interest_record = existing
@@ -285,16 +298,32 @@ async def bulk_register_interest(
                 ticker=fi.asset.ticker if fi.asset else "N/A",
                 description=fi.description,
                 reference_month=ref_date,
-                previous_balance=fi.current_balance,
+                previous_balance=previous_balance,
                 new_balance=entry.new_balance,
                 interest_amount=interest_amount,
             )
             db.add(interest_record)
 
-        # Update position balance and recalculate yields
-        fi.current_balance = entry.new_balance
-        fi.yield_value = fi.current_balance - fi.applied_value
-        fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
+        # Forward cascade: update the next entry's previous_balance if it exists
+        next_result = await db.execute(
+            select(FixedIncomeInterest)
+            .where(
+                FixedIncomeInterest.fixed_income_id == fi.id,
+                FixedIncomeInterest.reference_month > ref_date,
+            )
+            .order_by(FixedIncomeInterest.reference_month.asc())
+            .limit(1)
+        )
+        next_entry = next_result.scalar_one_or_none()
+        if next_entry:
+            next_entry.previous_balance = entry.new_balance
+            next_entry.interest_amount = next_entry.new_balance - entry.new_balance
+
+        # Only update position balance if no later interest entry exists
+        if not next_entry:
+            fi.current_balance = entry.new_balance
+            fi.yield_value = fi.current_balance - fi.applied_value
+            fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
 
         results.append(interest_record)
 
