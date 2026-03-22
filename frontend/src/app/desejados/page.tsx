@@ -233,15 +233,19 @@ export default function PlanejadorAportePage() {
                         {formatBRL(c.gap)}
                       </td>
                       <td className="px-3 py-2">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded ${
-                            c.status === "APORTAR"
-                              ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                              : "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
-                          }`}
-                        >
-                          {c.status}
-                        </span>
+                        {c.status === "—" ? (
+                          <span className="text-xs text-[var(--color-text-muted)]">—</span>
+                        ) : (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded ${
+                              c.status === "APORTAR"
+                                ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
+                                : "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
+                            }`}
+                          >
+                            {c.status}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
