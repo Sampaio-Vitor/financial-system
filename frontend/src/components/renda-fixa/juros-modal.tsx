@@ -4,7 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { FixedIncomePosition, FixedIncomeInterest } from "@/types";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, getCurrentMonth } from "@/lib/format";
+import MonthNavigator from "@/components/month-navigator";
 
 interface JurosModalProps {
   open: boolean;
@@ -14,12 +15,43 @@ interface JurosModalProps {
   onSaved: () => void;
 }
 
+function getPreviousBalance(
+  positionId: number,
+  month: string,
+  interest: FixedIncomeInterest[],
+  appliedValue: number,
+): number {
+  // Find the most recent interest entry for this position before the selected month
+  // reference_month is stored as "YYYY-MM-DD" (last day of month), month is "YYYY-MM"
+  let best: FixedIncomeInterest | null = null;
+  for (const entry of interest) {
+    if (entry.fixed_income_id !== positionId) continue;
+    const entryMonth = entry.reference_month.slice(0, 7);
+    if (entryMonth >= month) continue;
+    if (!best || entryMonth > best.reference_month.slice(0, 7)) {
+      best = entry;
+    }
+  }
+  return best ? Number(best.new_balance) : appliedValue;
+}
+
+function hasEntryForMonth(
+  positionId: number,
+  month: string,
+  interest: FixedIncomeInterest[],
+): boolean {
+  return interest.some(
+    (e) => e.fixed_income_id === positionId && e.reference_month.startsWith(month),
+  );
+}
+
 export default function JurosModal({ open, positions, interest, onClose, onSaved }: JurosModalProps) {
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => getCurrentMonth());
   const [balances, setBalances] = useState<Record<number, string>>(() => {
     const initial: Record<number, string> = {};
+    const currentMonth = getCurrentMonth();
     for (const entry of interest) {
-      if (entry.fixed_income_id && entry.reference_month.startsWith(new Date().toISOString().slice(0, 7))) {
+      if (entry.fixed_income_id && entry.reference_month.startsWith(currentMonth)) {
         initial[entry.fixed_income_id] = String(Number(entry.new_balance));
       }
     }
@@ -68,49 +100,78 @@ export default function JurosModal({ open, positions, interest, onClose, onSaved
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-lg">
+      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-3xl">
         <h2 className="text-lg font-bold mb-4">Registrar Juros</h2>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mes de Referencia</label>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => handleMonthChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-            />
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-[var(--color-text-secondary)]">Mes de Referencia</span>
+            <MonthNavigator month={month} onChange={handleMonthChange} />
           </div>
 
-          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--color-bg-card)]">
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Saldo Anterior</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Novo Saldo</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Juros</th>
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p) => (
-                  <tr key={p.id} className="border-b border-[var(--color-border)]/50">
-                    <td className="px-3 py-2 font-medium">{p.ticker}</td>
-                    <td className="px-3 py-2 text-[var(--color-text-secondary)]">{p.description}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatBRL(p.current_balance)}</td>
-                    <td className="px-3 py-1.5 text-right">
-                      <input
-                        type="number"
-                        step="any"
-                        value={balances[p.id] || ""}
-                        onChange={(e) =>
-                          setBalances((prev) => ({ ...prev, [p.id]: e.target.value }))
-                        }
-                        placeholder={String(Number(p.current_balance))}
-                        className="w-32 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm text-right"
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {positions.map((p) => {
+                  const prevBalance = getPreviousBalance(p.id, month, interest, p.applied_value);
+                  const newBalStr = balances[p.id] || "";
+                  const newBalNum = parseFloat(newBalStr);
+                  const juros = !isNaN(newBalNum) ? newBalNum - prevBalance : null;
+                  const existing = hasEntryForMonth(p.id, month, interest);
+
+                  return (
+                    <tr key={p.id} className="border-b border-[var(--color-border)]/50">
+                      <td className="px-3 py-2 font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          {p.ticker}
+                          {existing && (
+                            <span
+                              className="inline-block w-2 h-2 rounded-full bg-amber-500"
+                              title="Registro existente para este mes"
+                            />
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-[var(--color-text-secondary)]">{p.description}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatBRL(prevBalance)}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        <input
+                          type="number"
+                          step="any"
+                          value={balances[p.id] || ""}
+                          onChange={(e) =>
+                            setBalances((prev) => ({ ...prev, [p.id]: e.target.value }))
+                          }
+                          placeholder={String(Number(prevBalance))}
+                          className="w-32 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm text-right"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">
+                        {juros !== null ? (
+                          <span
+                            style={{
+                              color: juros >= 0
+                                ? "var(--color-positive)"
+                                : "var(--color-negative)",
+                            }}
+                          >
+                            {formatBRL(juros)}
+                          </span>
+                        ) : (
+                          <span className="text-[var(--color-text-muted)]">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
