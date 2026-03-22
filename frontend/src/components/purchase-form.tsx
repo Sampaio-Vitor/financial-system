@@ -44,6 +44,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
           ticker: p.ticker,
           type: p.type,
           description: p.description,
+          paused: false,
           current_price: p.current_price,
           price_updated_at: null,
           created_at: "",
