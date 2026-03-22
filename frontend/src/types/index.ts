@@ -5,6 +5,7 @@ export interface Asset {
   ticker: string;
   type: AssetType;
   description: string;
+  paused: boolean;
   current_price: number | null;
   price_updated_at: string | null;
   created_at: string;
