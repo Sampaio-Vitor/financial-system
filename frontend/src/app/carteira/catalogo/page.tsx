@@ -18,7 +18,7 @@ const CLASS_LABELS: Record<AssetType, string> = {
 const ASSET_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF"];
 
 type Tab = "ativos" | "metas";
-type FilterType = "ALL" | AssetType;
+type FilterType = "ALL" | "PAUSED" | AssetType;
 
 export default function CatalogoPage() {
   return (
@@ -101,8 +101,24 @@ function CatalogoContent() {
     }
   };
 
+  const togglePaused = async (asset: Asset) => {
+    try {
+      await apiFetch(`/assets/${asset.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ paused: !asset.paused }),
+      });
+      setAssets((prev) =>
+        prev.map((a) => (a.id === asset.id ? { ...a, paused: !a.paused } : a))
+      );
+    } catch {}
+  };
+
   const filteredAssets =
-    filter === "ALL" ? assets : assets.filter((a) => a.type === filter);
+    filter === "ALL"
+      ? assets
+      : filter === "PAUSED"
+        ? assets.filter((a) => a.paused)
+        : assets.filter((a) => a.type === filter);
 
   const targetTotal = Object.values(editTargets).reduce(
     (s, v) => s + (parseFloat(v) || 0),
@@ -170,6 +186,16 @@ function CatalogoContent() {
                     {CLASS_LABELS[type]}
                   </button>
                 ))}
+                <button
+                  onClick={() => setFilter("PAUSED")}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    filter === "PAUSED"
+                      ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  }`}
+                >
+                  Pausados
+                </button>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -202,13 +228,16 @@ function CatalogoContent() {
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">
                     Descrição
                   </th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAssets.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={3}
+                      colSpan={4}
                       className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]"
                     >
                       Nenhum ativo encontrado
@@ -218,7 +247,9 @@ function CatalogoContent() {
                   filteredAssets.map((a) => (
                     <tr
                       key={a.id}
-                      className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-main)]/50 transition-colors"
+                      className={`border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-main)]/50 transition-colors ${
+                        a.paused ? "opacity-40" : ""
+                      }`}
                     >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
@@ -228,6 +259,11 @@ function CatalogoContent() {
                             size={24}
                           />
                           <span className="font-medium">{a.ticker}</span>
+                          {a.paused && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/20 text-[var(--color-text-muted)]">
+                              pausado
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
@@ -237,6 +273,28 @@ function CatalogoContent() {
                       </td>
                       <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                         {a.description || "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => togglePaused(a)}
+                          title={a.paused ? "Retomar ativo" : "Pausar ativo"}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            a.paused
+                              ? "text-[var(--color-positive)] hover:bg-[var(--color-positive)]/10"
+                              : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-main)]"
+                          }`}
+                        >
+                          {a.paused ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                              <rect x="6" y="4" width="4" height="16" />
+                              <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                          )}
+                        </button>
                       </td>
                     </tr>
                   ))
