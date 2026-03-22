@@ -64,7 +64,12 @@ class RebalancingService:
             gap_pct = (gap / target_value) if target_value else Decimal("0")
             class_gaps[asset_class] = gap
 
-            status = "APORTAR" if gap > 0 else "ACIMA DO ALVO"
+            if gap > 0:
+                status = "APORTAR"
+            elif current_value == 0 and target_value == 0:
+                status = "—"
+            else:
+                status = "ACIMA DO ALVO"
 
             class_breakdown.append(ClassRebalancing(
                 asset_class=asset_class,
