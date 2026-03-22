@@ -15,6 +15,7 @@ class AssetCreate(BaseModel):
 class AssetUpdate(BaseModel):
     ticker: str | None = None
     description: str | None = None
+    paused: bool | None = None
 
 
 class BulkAssetItem(BaseModel):
@@ -55,6 +56,7 @@ class AssetResponse(BaseModel):
     ticker: str
     type: AssetType
     description: str
+    paused: bool
     current_price: Decimal | None
     price_updated_at: datetime | None
     created_at: datetime

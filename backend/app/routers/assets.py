@@ -120,6 +120,8 @@ async def update_asset(
         asset.ticker = data.ticker.upper()
     if data.description is not None:
         asset.description = data.description
+    if data.paused is not None:
+        asset.paused = data.paused
 
     await db.commit()
     await db.refresh(asset)

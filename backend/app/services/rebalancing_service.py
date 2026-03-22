@@ -189,9 +189,9 @@ class RebalancingService:
 
     async def _get_assets_with_values(self, asset_class: AssetType) -> dict[str, Decimal]:
         """Get current market value for each asset in a class."""
-        # All assets in this class (including those with no purchases)
+        # All non-paused assets in this class (including those with no purchases)
         all_assets = await self.db.execute(
-            select(Asset).where(Asset.type == asset_class)
+            select(Asset).where(Asset.type == asset_class, Asset.paused == False)
         )
         result_map: dict[str, Decimal] = {}
         for asset in all_assets.scalars().all():
@@ -205,7 +205,7 @@ class RebalancingService:
                 func.sum(Purchase.quantity).label("qty"),
             )
             .join(Asset, Purchase.asset_id == Asset.id)
-            .where(Purchase.user_id == self.user.id, Asset.type == asset_class)
+            .where(Purchase.user_id == self.user.id, Asset.type == asset_class, Asset.paused == False)
             .group_by(Asset.id, Asset.ticker, Asset.current_price)
         )
         for ticker, price, qty in positions.all():
