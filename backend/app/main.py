@@ -7,15 +7,13 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.database import engine, Base
+from app.database import engine
 from app.limiter import limiter
 from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
 
