@@ -81,10 +81,12 @@ export default function ReservaPage() {
 
     setSaving(true);
     try {
+      const current = Number(monthData?.amount ?? 0);
+      const newAmount = current + parsed;
       await apiFetch("/financial-reserves", {
         method: "POST",
         body: JSON.stringify({
-          amount: parsed,
+          amount: newAmount,
           note: note || null,
           recorded_at: date ? `${date}T00:00:00` : null,
         }),
