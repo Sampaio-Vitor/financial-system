@@ -155,7 +155,7 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
   };
 
   const handleClose = () => {
-    if (result && (result.created.length > 0)) {
+    if (result && (result.created.length > 0 || result.linked.length > 0)) {
       onSaved();
     }
     onClose();
@@ -335,7 +335,7 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
             {result.created.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-[var(--color-positive)] mb-3">
-                  {result.created.length} ativo(s) adicionado(s)
+                  {result.created.length} ativo(s) criado(s)
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-52 overflow-y-auto">
                   {result.created.map((item) => (
@@ -360,7 +360,35 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
               </div>
             )}
 
-            {result.created.length === 0 && (
+            {result.linked.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-[var(--color-accent)] mb-3">
+                  {result.linked.length} ativo(s) vinculado(s) ao seu catálogo
+                </p>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-52 overflow-y-auto">
+                  {result.linked.map((item) => (
+                    <div
+                      key={item.ticker}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg bg-[var(--color-bg-main)]"
+                    >
+                      <TickerLogo
+                        ticker={item.ticker}
+                        type={item.type}
+                        size={32}
+                      />
+                      <span className="text-xs font-medium text-[var(--color-text-primary)]">
+                        {item.ticker}
+                      </span>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">
+                        {CLASS_LABELS[item.type]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {result.created.length === 0 && result.linked.length === 0 && (
               <div className="text-center py-4">
                 <p className="text-sm text-[var(--color-text-muted)]">
                   Nenhum ativo novo adicionado

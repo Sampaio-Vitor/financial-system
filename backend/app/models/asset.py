@@ -25,5 +25,4 @@ class Asset(Base):
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     current_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
     price_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    paused: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
