@@ -121,7 +121,14 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
             return (
               <div key={item.label}>
                 <button
-                  onClick={() => setAtivosExpanded(!ativosExpanded)}
+                  onClick={() => {
+                    if (isCollapsed) {
+                      onToggle();
+                      setAtivosExpanded(true);
+                    } else {
+                      setAtivosExpanded(!ativosExpanded);
+                    }
+                  }}
                   title={isCollapsed ? item.label : ""}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 w-full ${
                     isChildActive
