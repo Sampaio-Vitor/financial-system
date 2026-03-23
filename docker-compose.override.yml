@@ -7,6 +7,8 @@ services:
 
   backend:
     user: root
+    environment:
+      DATABASE_URL: mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio
     ports:
       - "8000:8000"
     volumes:
