@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
+from app.models.user_asset import UserAsset
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
@@ -193,10 +194,16 @@ class RebalancingService:
         return s.usd_brl_rate if s else None
 
     async def _get_assets_with_values(self, asset_class: AssetType) -> dict[str, Decimal]:
-        """Get current market value for each asset in a class."""
-        # All non-paused assets in this class (including those with no purchases)
+        """Get current market value for each non-paused asset the user tracks in a class."""
+        # All non-paused assets in this class that the user tracks
         all_assets = await self.db.execute(
-            select(Asset).where(Asset.type == asset_class, Asset.paused == False)
+            select(Asset)
+            .join(UserAsset, UserAsset.asset_id == Asset.id)
+            .where(
+                Asset.type == asset_class,
+                UserAsset.user_id == self.user.id,
+                UserAsset.paused == False,
+            )
         )
         result_map: dict[str, Decimal] = {}
         for asset in all_assets.scalars().all():
@@ -210,7 +217,13 @@ class RebalancingService:
                 func.sum(Purchase.quantity).label("qty"),
             )
             .join(Asset, Purchase.asset_id == Asset.id)
-            .where(Purchase.user_id == self.user.id, Asset.type == asset_class, Asset.paused == False)
+            .join(UserAsset, UserAsset.asset_id == Asset.id)
+            .where(
+                Purchase.user_id == self.user.id,
+                Asset.type == asset_class,
+                UserAsset.user_id == self.user.id,
+                UserAsset.paused == False,
+            )
             .group_by(Asset.id, Asset.ticker, Asset.current_price)
         )
         for ticker, price, qty in positions.all():

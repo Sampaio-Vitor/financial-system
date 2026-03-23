@@ -38,6 +38,8 @@ function CatalogoContent() {
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [filter, setFilter] = useState<FilterType>("ALL");
+  const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   const [editTargets, setEditTargets] = useState<Record<AssetType, string>>({
     STOCK: "25",
@@ -111,6 +113,18 @@ function CatalogoContent() {
         prev.map((a) => (a.id === asset.id ? { ...a, paused: !a.paused } : a))
       );
     } catch {}
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await apiFetch(`/assets/${deleteTarget.id}`, { method: "DELETE" });
+      setAssets((prev) => prev.filter((a) => a.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setDeleteError("");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Erro ao remover ativo");
+    }
   };
 
   const filteredAssets =
@@ -275,26 +289,38 @@ function CatalogoContent() {
                         {a.description || "—"}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => togglePaused(a)}
-                          title={a.paused ? "Retomar ativo" : "Pausar ativo"}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            a.paused
-                              ? "text-[var(--color-positive)] hover:bg-[var(--color-positive)]/10"
-                              : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-main)]"
-                          }`}
-                        >
-                          {a.paused ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                              <polygon points="5 3 19 12 5 21 5 3" />
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => togglePaused(a)}
+                            title={a.paused ? "Retomar ativo" : "Pausar ativo"}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              a.paused
+                                ? "text-[var(--color-positive)] hover:bg-[var(--color-positive)]/10"
+                                : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-main)]"
+                            }`}
+                          >
+                            {a.paused ? (
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                              </svg>
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                <rect x="6" y="4" width="4" height="16" />
+                                <rect x="14" y="4" width="4" height="16" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => { setDeleteTarget(a); setDeleteError(""); }}
+                            title="Remover ativo"
+                            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)] hover:bg-[var(--color-negative)]/10 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                             </svg>
-                          ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                              <rect x="6" y="4" width="4" height="16" />
-                              <rect x="14" y="4" width="4" height="16" />
-                            </svg>
-                          )}
-                        </button>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -321,6 +347,34 @@ function CatalogoContent() {
                 fetchAssets();
               }}
             />
+          )}
+
+          {deleteTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+              <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
+                <h3 className="text-base font-bold mb-2">Remover ativo</h3>
+                <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+                  Remover <span className="font-semibold">{deleteTarget.ticker}</span> do seu catálogo? Seu histórico de compras será preservado.
+                </p>
+                {deleteError && (
+                  <p className="text-sm text-[var(--color-negative)] mb-4">{deleteError}</p>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => { setDeleteTarget(null); setDeleteError(""); }}
+                    className="px-4 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="px-4 py-1.5 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
