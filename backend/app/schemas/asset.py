@@ -41,6 +41,11 @@ class BulkAssetCreated(BaseModel):
     type: AssetType
 
 
+class BulkAssetLinked(BaseModel):
+    ticker: str
+    type: AssetType
+
+
 class BulkAssetSkipped(BaseModel):
     ticker: str
     reason: str
@@ -48,6 +53,7 @@ class BulkAssetSkipped(BaseModel):
 
 class BulkAssetResponse(BaseModel):
     created: list[BulkAssetCreated]
+    linked: list[BulkAssetLinked]
     skipped: list[BulkAssetSkipped]
 
 

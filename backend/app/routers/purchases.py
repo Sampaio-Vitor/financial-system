@@ -9,6 +9,7 @@ from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.user import User
+from app.models.user_asset import UserAsset
 from app.schemas.purchase import PurchaseCreate, PurchaseUpdate, PurchaseResponse
 
 router = APIRouter()
@@ -60,6 +61,15 @@ async def create_purchase(
     asset = await db.execute(select(Asset).where(Asset.id == data.asset_id))
     if not asset.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Validate user has this asset in their catalog
+    link = await db.execute(
+        select(UserAsset).where(
+            UserAsset.user_id == user.id, UserAsset.asset_id == data.asset_id
+        )
+    )
+    if not link.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Ativo não está no seu catálogo")
 
     # Validate sale: quantity negative means selling
     if data.quantity < 0:
