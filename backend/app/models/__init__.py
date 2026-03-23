@@ -10,6 +10,7 @@ from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.fixed_income_interest import FixedIncomeInterest
 from app.models.allowed_username import AllowedUsername
 from app.models.system_setting import SystemSetting
+from app.models.user_asset import UserAsset
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "FixedIncomeInterest",
     "AllowedUsername",
     "SystemSetting",
+    "UserAsset",
 ]

@@ -219,6 +219,11 @@ export interface BulkAssetCreated {
   type: AssetType;
 }
 
+export interface BulkAssetLinked {
+  ticker: string;
+  type: AssetType;
+}
+
 export interface BulkAssetSkipped {
   ticker: string;
   reason: string;
@@ -226,5 +231,6 @@ export interface BulkAssetSkipped {
 
 export interface BulkAssetResponse {
   created: BulkAssetCreated[];
+  linked: BulkAssetLinked[];
   skipped: BulkAssetSkipped[];
 }
