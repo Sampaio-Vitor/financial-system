@@ -13,6 +13,7 @@
     "next": "^15.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "read-excel-file": "^7.0.2",
     "recharts": "^2.15.3",
     "sonner": "^2.0.7"
   },
@@ -26,6 +27,7 @@
     "eslint-config-next": "^15.3.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "write-excel-file": "^3.0.6"
   }
 }
