@@ -233,7 +233,7 @@ export default function ReservaPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h1 className="text-xl font-bold">Reserva Financeira</h1>
           <MonthNavigator month={month} onChange={setMonth} minMonth={minMonth} />
         </div>
@@ -245,7 +245,7 @@ export default function ReservaPage() {
   return (
     <div className="space-y-6">
       <ConfirmDialog />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-xl font-bold">Reserva Financeira</h1>
         <MonthNavigator month={month} onChange={setMonth} />
       </div>
@@ -480,7 +480,71 @@ export default function ReservaPage() {
             Nenhum registro encontrado.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile card view */}
+          <div className="md:hidden space-y-2 px-2">
+            {history.map((entry, idx) => {
+              const prevEntry = idx < history.length - 1 ? history[idx + 1] : null;
+              const currentAmt = Number(entry.amount);
+              const prevAmt = prevEntry ? Number(prevEntry.amount) : 0;
+              const diff = currentAmt - prevAmt;
+              const isResgate = diff < 0;
+
+              return (
+                <div key={entry.id} className="bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isResgate ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]" : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"}`}>
+                        {isResgate ? "RESGATE" : "APORTE"}
+                      </span>
+                      <span className={`text-sm font-medium ${isResgate ? "text-[var(--color-negative)]" : "text-[var(--color-positive)]"}`}>
+                        {isResgate ? "- " : "+ "}{formatBRL(Math.abs(diff))}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEdit(entry)} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"><Pencil size={16} /></button>
+                      <button onClick={() => handleDelete(entry.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-red-500"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {new Date(entry.recorded_at).toLocaleDateString("pt-BR")}
+                    {entry.note && <span className="ml-2">{entry.note}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Mobile bottom-sheet edit modal */}
+          {editingId !== null && (
+            <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:hidden">
+              <div className="fixed inset-0 bg-black/50" onClick={cancelEdit} />
+              <div className="relative w-full bg-[var(--color-bg-card)] rounded-t-2xl border-t border-[var(--color-border)] p-6 space-y-4">
+                <h3 className="text-base font-bold">Editar Registro</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Data</label>
+                    <input type="date" value={editData.recorded_at} onChange={(e) => setEditData({ ...editData, recorded_at: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Valor (R$)</label>
+                    <input type="text" inputMode="decimal" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Nota</label>
+                    <input type="text" value={editData.note} onChange={(e) => setEditData({ ...editData, note: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={cancelEdit} className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium">Cancelar</button>
+                  <button onClick={() => saveEdit(editingId)} disabled={savingEdit} className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium disabled:opacity-50">{savingEdit ? "Salvando..." : "Salvar"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Desktop table view */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -607,6 +671,7 @@ export default function ReservaPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

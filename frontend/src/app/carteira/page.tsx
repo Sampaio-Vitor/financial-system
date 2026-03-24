@@ -66,9 +66,9 @@ export default function VisaoGeralPage() {
       </div>
 
       {/* Hero: Patrimônio Total */}
-      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 shadow-sm">
+      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5 md:p-8 shadow-sm">
         <p className="text-sm font-medium text-[var(--color-text-secondary)] mb-1">Patrimônio Total</p>
-        <p className="text-4xl font-extrabold tracking-tight text-[var(--color-text-primary)]">
+        <p className="text-2xl md:text-4xl font-extrabold tracking-tight text-[var(--color-text-primary)]">
           {formatBRL(data.patrimonio_total)}
         </p>
       </div>

@@ -110,8 +110,8 @@ export default function ChartTabs({
   };
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm flex flex-col min-h-[400px]">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-4 md:p-6 shadow-sm flex flex-col min-h-[300px] md:min-h-[400px]">
+      <div className="flex items-center justify-between mb-4 md:mb-6">
         <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
           {TABS.map((tab) => (
             <button
