@@ -27,6 +27,7 @@ export default function BankConnectDialog({
 }: BankConnectDialogProps) {
   const [mode, setMode] = useState<"choose" | "widget" | "manual">("choose");
   const [itemId, setItemId] = useState("");
+  const [connectionName, setConnectionName] = useState("");
   const [saving, setSaving] = useState(false);
   const [connectToken, setConnectToken] = useState<string | null>(null);
   const [loadingToken, setLoadingToken] = useState(false);
@@ -63,11 +64,15 @@ export default function BankConnectDialog({
 
   const handleWidgetSuccess = useCallback(
     async (data: { item: { id: string } }) => {
+      const name = prompt("Nome para esta conexão (ex: Nubank, Inter):");
       setSaving(true);
       try {
         await apiFetch("/connections/callback", {
           method: "POST",
-          body: JSON.stringify({ item_id: data.item.id }),
+          body: JSON.stringify({
+            item_id: data.item.id,
+            connection_name: name || undefined,
+          }),
         });
         toast.success("Banco conectado com sucesso!");
         onConnected();
@@ -91,10 +96,14 @@ export default function BankConnectDialog({
     try {
       await apiFetch("/connections/callback", {
         method: "POST",
-        body: JSON.stringify({ item_id: trimmed }),
+        body: JSON.stringify({
+          item_id: trimmed,
+          connection_name: connectionName.trim() || undefined,
+        }),
       });
       toast.success("Banco conectado com sucesso!");
       setItemId("");
+      setConnectionName("");
       onConnected();
       onClose();
     } catch (err: unknown) {
@@ -108,6 +117,7 @@ export default function BankConnectDialog({
     setMode("choose");
     setConnectToken(null);
     setItemId("");
+    setConnectionName("");
     onClose();
   };
 
@@ -206,6 +216,16 @@ export default function BankConnectDialog({
                 </li>
                 <li>Vá em Items e copie o ID da conexão</li>
               </ol>
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Nome da conexão</label>
+              <input
+                type="text"
+                value={connectionName}
+                onChange={(e) => setConnectionName(e.target.value)}
+                placeholder="Ex: Nubank, Inter, Bradesco..."
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+              />
             </div>
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Item ID</label>

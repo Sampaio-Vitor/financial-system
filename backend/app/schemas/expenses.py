@@ -17,12 +17,23 @@ class PluggyCredentialsStatus(BaseModel):
 
 # --- Bank Connection ---
 
+class BankAccountResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    balance: Decimal
+    currency: str
+
+    model_config = {"from_attributes": True}
+
+
 class BankConnectionResponse(BaseModel):
     id: int
     institution_name: str
     status: str
     last_sync_at: datetime | None
     created_at: datetime
+    accounts: list[BankAccountResponse] = []
 
     model_config = {"from_attributes": True}
 
@@ -33,6 +44,11 @@ class ConnectTokenResponse(BaseModel):
 
 class ConnectionCallbackRequest(BaseModel):
     item_id: str
+    connection_name: str | None = None
+
+
+class ConnectionRenameRequest(BaseModel):
+    institution_name: str
 
 
 class SyncResponse(BaseModel):
@@ -46,6 +62,7 @@ class TransactionResponse(BaseModel):
     id: int
     account_id: int
     description: str
+    payee: str | None
     amount: Decimal
     date: date
     type: str
