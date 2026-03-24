@@ -19,6 +19,9 @@ from app.schemas.expenses import (
 
 router = APIRouter()
 
+# Categorias excluídas dos totais (não são despesas nem receitas reais)
+EXCLUDED_CATEGORIES = {"Transferência interna"}
+
 
 def _month_filter(year: int, month: int):
     """Return SQLAlchemy filter for a given year/month."""
@@ -69,14 +72,16 @@ async def get_summary(
         _month_filter(year, month),
     )
 
-    # Category breakdown (debits only = expenses)
+    not_excluded = Transaction.category.notin_(EXCLUDED_CATEGORIES)
+
+    # Category breakdown (debits only = expenses, excluding internal transfers)
     cat_query = (
         select(
             Transaction.category,
             func.sum(Transaction.amount).label("total"),
             func.count().label("count"),
         )
-        .where(base_filter, Transaction.type == "debit")
+        .where(base_filter, Transaction.type == "debit", not_excluded)
         .group_by(Transaction.category)
         .order_by(func.sum(Transaction.amount).desc())
     )
@@ -86,15 +91,15 @@ async def get_summary(
         for row in cat_result.all()
     ]
 
-    # Total expenses (debits)
+    # Total expenses (debits, excluding internal transfers)
     expense_query = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-        base_filter, Transaction.type == "debit"
+        base_filter, Transaction.type == "debit", not_excluded
     )
     total_expenses = (await db.execute(expense_query)).scalar() or Decimal("0")
 
-    # Total income (credits)
+    # Total income (credits, excluding internal transfers)
     income_query = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-        base_filter, Transaction.type == "credit"
+        base_filter, Transaction.type == "credit", not_excluded
     )
     total_income = (await db.execute(income_query)).scalar() or Decimal("0")
 

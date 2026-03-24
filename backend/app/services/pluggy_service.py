@@ -53,7 +53,8 @@ PLUGGY_CATEGORY_MAP: dict[str, str] = {
     # Transferências
     "Transfer": "Transferências",
     "Transfers": "Transferências",
-    "Same person transfer": "Transferências",
+    # Transferência interna (mesma pessoa — excluída dos totais)
+    "Same person transfer": "Transferência interna",
     # Investimentos
     "Investments": "Investimentos",
     "Savings": "Investimentos",
@@ -230,7 +231,35 @@ def _clean_description(desc: str) -> str:
     return desc.strip()
 
 
-def parse_transaction(txn: dict) -> dict:
+def _is_internal_transfer(category: str, description: str, payee: str | None, owner_names: list[str]) -> bool:
+    """Check if a transfer transaction is between the user's own accounts.
+
+    Handles cases where Pluggy doesn't detect 'Same person transfer'
+    (e.g. Inter bank which returns null paymentData).
+    Uses exact match on payee name to avoid false positives
+    (e.g. "Vitor Carvalho Sampaio" should NOT match "Vitor Carvalho Sampaio Tratamento de Dados Ltda").
+    Falls back to description check for banks that embed the name in the description
+    (e.g. "PIX ENVIADO - Cp :30306294-VITOR CARVALHO SAMPAIO").
+    """
+    if category != "Transferências" or not owner_names:
+        return False
+    names_upper = [n.upper() for n in owner_names]
+    # Exact match on payee (most reliable)
+    if payee:
+        payee_upper = payee.strip().upper()
+        if payee_upper in names_upper:
+            return True
+    # Fallback: check if name appears as a suffix in description after a separator
+    # e.g. "PIX ENVIADO - Cp :30306294-VITOR CARVALHO SAMPAIO"
+    desc_upper = description.upper()
+    for name in names_upper:
+        # Match name at end of description (after - separator)
+        if desc_upper.endswith(name) or desc_upper.endswith(f"-{name}"):
+            return True
+    return False
+
+
+def parse_transaction(txn: dict, owner_names: list[str] | None = None) -> dict:
     """Parse a raw Pluggy transaction into our format."""
     amount_raw = txn.get("amount", 0)
     amount = Decimal(str(abs(amount_raw)))
@@ -249,6 +278,10 @@ def parse_transaction(txn: dict) -> dict:
     category = map_pluggy_category(pluggy_category)
     payee = _extract_payee(txn, txn_type)
     description = _clean_description(txn.get("description", ""))
+
+    # Detect internal transfers not caught by Pluggy (e.g. Inter bank)
+    if owner_names and _is_internal_transfer(category, description, payee, owner_names):
+        category = "Transferência interna"
 
     return {
         "external_id": txn["id"],
