@@ -11,6 +11,14 @@ export interface Asset {
   created_at: string;
 }
 
+export interface AssetRebalancingInfo {
+  asset_id: number;
+  ticker: string;
+  target_value: number;
+  current_value: number;
+  gap: number;
+}
+
 export interface Purchase {
   id: number;
   asset_id: number;
