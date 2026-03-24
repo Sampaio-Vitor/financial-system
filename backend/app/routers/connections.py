@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.expenses import (
     BankConnectionResponse,
     ConnectionCallbackRequest,
+    ConnectionRenameRequest,
     ConnectTokenResponse,
     SyncResponse,
 )
@@ -60,7 +61,7 @@ async def handle_callback(
 
     # Fetch item details
     item_data = await pluggy_service.get_item(api_key, body.item_id)
-    institution_name = item_data.get("connector", {}).get("name", "Banco desconhecido")
+    institution_name = body.connection_name or item_data.get("connector", {}).get("name", "Banco desconhecido")
 
     # Check item status
     item_status = item_data.get("status", "")
@@ -116,6 +117,7 @@ async def list_connections(
 ):
     result = await db.execute(
         select(BankConnection)
+        .options(selectinload(BankConnection.accounts))
         .where(BankConnection.user_id == user.id)
         .order_by(BankConnection.created_at.desc())
     )
@@ -212,6 +214,27 @@ async def get_reconnect_token(
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
     token = await pluggy_service.create_connect_token(api_key, str(user.id), item_id=connection.external_id)
     return ConnectTokenResponse(access_token=token)
+
+
+@router.patch("/{connection_id}", response_model=BankConnectionResponse)
+async def rename_connection(
+    connection_id: int,
+    body: ConnectionRenameRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(BankConnection)
+        .options(selectinload(BankConnection.accounts))
+        .where(BankConnection.id == connection_id, BankConnection.user_id == user.id)
+    )
+    connection = result.scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada")
+    connection.institution_name = body.institution_name
+    await db.commit()
+    await db.refresh(connection)
+    return connection
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

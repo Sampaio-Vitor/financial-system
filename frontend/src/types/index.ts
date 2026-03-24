@@ -245,18 +245,28 @@ export interface BulkAssetResponse {
 
 // --- Expenses / Pluggy ---
 
+export interface BankAccount {
+  id: number;
+  name: string;
+  type: "checking" | "savings" | "credit_card";
+  balance: number;
+  currency: string;
+}
+
 export interface BankConnection {
   id: number;
   institution_name: string;
   status: "active" | "error" | "expired";
   last_sync_at: string | null;
   created_at: string;
+  accounts: BankAccount[];
 }
 
 export interface ExpenseTransaction {
   id: number;
   account_id: number;
   description: string;
+  payee: string | null;
   amount: number;
   date: string;
   type: "debit" | "credit";

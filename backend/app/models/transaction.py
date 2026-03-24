@@ -23,6 +23,7 @@ class Transaction(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(10), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False, default="Outros")
+    payee: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     pluggy_category: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="posted")
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

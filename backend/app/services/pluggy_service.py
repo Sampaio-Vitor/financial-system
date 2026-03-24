@@ -14,36 +14,62 @@ _api_key_cache: dict[int, tuple[str, float]] = {}
 
 
 PLUGGY_CATEGORY_MAP: dict[str, str] = {
+    # Alimentação
     "Eating out": "Alimentação",
     "Restaurants": "Alimentação",
     "Fast Food": "Alimentação",
     "Coffee shops": "Alimentação",
+    "Bars": "Alimentação",
+    # Mercado
     "Groceries": "Mercado",
     "Supermarkets": "Mercado",
+    # Saúde
     "Pharmacy": "Saúde",
     "Health": "Saúde",
+    "Medical expenses": "Saúde",
+    # Transporte
     "Taxi and ride-hailing": "Transporte",
     "Transport": "Transporte",
     "Gas Stations": "Transporte",
     "Parking": "Transporte",
+    "Tolls": "Transporte",
+    # Moradia
     "Housing": "Moradia",
     "Rent": "Moradia",
     "Utilities": "Moradia",
+    # Lazer
     "Entertainment": "Lazer",
     "Leisure": "Lazer",
     "Travel": "Lazer",
+    # Assinaturas
     "Subscriptions": "Assinaturas",
     "Streaming": "Assinaturas",
+    # Educação
     "Education": "Educação",
     "Books": "Educação",
+    # Vestuário
     "Clothing": "Vestuário",
     "Shopping": "Vestuário",
+    # Transferências
     "Transfer": "Transferências",
+    "Transfers": "Transferências",
+    "Same person transfer": "Transferências",
+    # Investimentos
     "Investments": "Investimentos",
     "Savings": "Investimentos",
+    # Pets
+    "Pet supplies and vet": "Pets",
+    "Pets": "Pets",
+    # Renda
+    "Salary": "Renda",
+    "Income": "Renda",
+    "Cashback": "Renda",
+    "Refund": "Renda",
+    # Outros
     "Insurance": "Outros",
     "Taxes": "Outros",
     "Fees": "Outros",
+    "Other": "Outros",
 }
 
 ACCOUNT_TYPE_MAP: dict[str, str] = {
@@ -168,6 +194,42 @@ async def get_transactions(
     return all_txns
 
 
+def _extract_payee(txn: dict, txn_type: str) -> str | None:
+    """Extract payee from description (split on |) or paymentData."""
+    # Try description "Transferência enviada|Nome Pessoa" pattern
+    desc = txn.get("description", "")
+    if "|" in desc:
+        parts = desc.split("|", 1)
+        if len(parts) == 2 and parts[1].strip():
+            return parts[1].strip()
+
+    # Try paymentData receiver/payer
+    payment_data = txn.get("paymentData")
+    if payment_data:
+        if txn_type == "debit":
+            receiver = payment_data.get("receiver")
+            if receiver and receiver.get("name"):
+                return receiver["name"]
+        else:
+            payer = payment_data.get("payer")
+            if payer and payer.get("name"):
+                return payer["name"]
+
+    # Try merchant
+    merchant = txn.get("merchant")
+    if merchant:
+        return merchant.get("name") or merchant.get("businessName")
+
+    return None
+
+
+def _clean_description(desc: str) -> str:
+    """Clean description: take part before | if present."""
+    if "|" in desc:
+        return desc.split("|", 1)[0].strip()
+    return desc.strip()
+
+
 def parse_transaction(txn: dict) -> dict:
     """Parse a raw Pluggy transaction into our format."""
     amount_raw = txn.get("amount", 0)
@@ -185,10 +247,13 @@ def parse_transaction(txn: dict) -> dict:
     status = "pending" if txn.get("status") == "PENDING" else "posted"
     pluggy_category = txn.get("category")
     category = map_pluggy_category(pluggy_category)
+    payee = _extract_payee(txn, txn_type)
+    description = _clean_description(txn.get("description", ""))
 
     return {
         "external_id": txn["id"],
-        "description": txn.get("description", ""),
+        "description": description,
+        "payee": payee,
         "amount": amount,
         "date": txn_date,
         "type": txn_type,

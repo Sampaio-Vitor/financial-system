@@ -68,6 +68,7 @@ def upgrade() -> None:
         sa.Column("date", sa.Date, nullable=False),
         sa.Column("type", sa.String(10), nullable=False),
         sa.Column("category", sa.String(100), nullable=False, server_default="Outros"),
+        sa.Column("payee", sa.String(255), nullable=True),
         sa.Column("pluggy_category", sa.String(255), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="posted"),
         sa.Column("raw_data", sa.JSON, nullable=True),
