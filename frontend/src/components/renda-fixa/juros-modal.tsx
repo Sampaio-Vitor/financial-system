@@ -99,7 +99,7 @@ export default function JurosModal({ open, positions, interest, onClose, onSaved
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-3xl">
         <h2 className="text-lg font-bold mb-4">Registrar Juros</h2>
         <div className="space-y-4">
