@@ -93,7 +93,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg-main)] p-8">
+      <div className="min-h-screen bg-[var(--color-bg-main)] p-4 md:p-8">
         <div className="max-w-2xl mx-auto space-y-6">
           <div className="h-8 w-48 rounded-xl bg-[var(--color-bg-card)]/80 animate-pulse" />
           <div className="h-32 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)] animate-pulse" />
@@ -104,7 +104,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg-main)] p-8">
+    <div className="min-h-screen bg-[var(--color-bg-main)] p-4 md:p-8">
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">

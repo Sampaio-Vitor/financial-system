@@ -529,7 +529,7 @@ function CatalogoContent() {
           )}
 
           {deleteTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
               <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
                 <h3 className="text-base font-bold mb-2">Remover ativo</h3>
                 <p className="text-sm text-[var(--color-text-secondary)] mb-4">
