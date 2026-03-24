@@ -151,6 +151,16 @@ class RebalancingService:
 
         total_planned = sum(a.amount_to_invest for a in asset_plan)
 
+        # Fix rounding: adjust largest asset so total matches exactly
+        expected_total = reserve_allocation + remaining_contribution
+        rounding_diff = expected_total - (reserve_allocation + total_planned)
+        if asset_plan and rounding_diff != 0:
+            largest = max(asset_plan, key=lambda a: a.amount_to_invest)
+            largest.amount_to_invest += rounding_diff
+            if largest.amount_to_invest_usd is not None and usd_brl:
+                largest.amount_to_invest_usd = round(largest.amount_to_invest / usd_brl, 2)
+            total_planned = sum(a.amount_to_invest for a in asset_plan)
+
         return RebalancingResponse(
             contribution=contribution,
             patrimonio_atual=round(patrimonio_atual, 2),
