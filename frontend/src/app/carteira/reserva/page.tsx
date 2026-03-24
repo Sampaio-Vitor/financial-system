@@ -480,6 +480,7 @@ export default function ReservaPage() {
             Nenhum registro encontrado.
           </p>
         ) : (
+          <>
           {/* Mobile card view */}
           <div className="md:hidden space-y-2 px-2">
             {history.map((entry, idx) => {
@@ -670,6 +671,7 @@ export default function ReservaPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

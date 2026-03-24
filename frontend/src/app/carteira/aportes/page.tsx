@@ -241,6 +241,7 @@ export default function AportesPage() {
             Nenhum resultado para os filtros selecionados.
           </p>
         ) : (
+          <>
           {/* Mobile card view */}
           <div className="md:hidden space-y-2 p-2">
             {filteredPurchases.map((p) => {
@@ -413,6 +414,7 @@ export default function AportesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

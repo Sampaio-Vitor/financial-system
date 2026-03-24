@@ -218,6 +218,7 @@ export default function RendaFixaPage() {
         {positions.length === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">Nenhuma posicao em Renda Fixa.</p>
         ) : (
+          <>
           {/* Mobile card view */}
           <div className="md:hidden space-y-2 p-2">
             {positions.map((p) => (
@@ -374,6 +375,7 @@ export default function RendaFixaPage() {
               </tfoot>
             </table>
           </div>
+          </>
         )}
       </div>
 
