@@ -26,8 +26,8 @@ from app.services import pluggy_service
 router = APIRouter()
 
 
-async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, str]:
-    """Decrypt and return (client_id, client_secret) for a user. Raises 400 if not configured."""
+async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, str, list[str]]:
+    """Decrypt and return (client_id, client_secret, owner_names) for a user. Raises 400 if not configured."""
     result = await db.execute(
         select(PluggyCredentials).where(PluggyCredentials.user_id == user_id)
     )
@@ -36,7 +36,8 @@ async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, s
         raise HTTPException(status_code=400, detail="Credenciais Pluggy não configuradas")
     client_id = decrypt(creds.encrypted_client_id)
     client_secret = decrypt(creds.encrypted_client_secret)
-    return client_id, client_secret
+    owner_names = creds.owner_names or []
+    return client_id, client_secret, owner_names
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
@@ -44,7 +45,7 @@ async def create_connect_token(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    client_id, client_secret = await _get_user_pluggy_creds(user.id, db)
+    client_id, client_secret, owner_names = await _get_user_pluggy_creds(user.id, db)
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
     token = await pluggy_service.create_connect_token(api_key, str(user.id))
     return ConnectTokenResponse(access_token=token)
@@ -56,7 +57,7 @@ async def handle_callback(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    client_id, client_secret = await _get_user_pluggy_creds(user.id, db)
+    client_id, client_secret, owner_names = await _get_user_pluggy_creds(user.id, db)
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
 
     # Fetch item details
@@ -97,7 +98,7 @@ async def handle_callback(
         # Fetch initial transactions for this account
         raw_txns = await pluggy_service.get_transactions(api_key, acc["id"])
         for raw_txn in raw_txns:
-            parsed = pluggy_service.parse_transaction(raw_txn)
+            parsed = pluggy_service.parse_transaction(raw_txn, owner_names=owner_names)
             txn = Transaction(
                 account_id=account.id,
                 user_id=user.id,
@@ -140,7 +141,7 @@ async def sync_connection(
     if not connection:
         raise HTTPException(status_code=404, detail="Conexão não encontrada")
 
-    client_id, client_secret = await _get_user_pluggy_creds(user.id, db)
+    client_id, client_secret, owner_names = await _get_user_pluggy_creds(user.id, db)
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
 
     # Check item status
@@ -170,7 +171,7 @@ async def sync_connection(
         # Fetch new transactions
         raw_txns = await pluggy_service.get_transactions(api_key, account.external_id, since=since_date)
         for raw_txn in raw_txns:
-            parsed = pluggy_service.parse_transaction(raw_txn)
+            parsed = pluggy_service.parse_transaction(raw_txn, owner_names=owner_names)
             # Check dedup
             existing = await db.execute(
                 select(Transaction).where(
@@ -210,7 +211,7 @@ async def get_reconnect_token(
     if not connection:
         raise HTTPException(status_code=404, detail="Conexão não encontrada")
 
-    client_id, client_secret = await _get_user_pluggy_creds(user.id, db)
+    client_id, client_secret, owner_names = await _get_user_pluggy_creds(user.id, db)
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
     token = await pluggy_service.create_connect_token(api_key, str(user.id), item_id=connection.external_id)
     return ConnectTokenResponse(access_token=token)

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { X, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -19,6 +19,24 @@ export default function PluggyCredentialsDialog({
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [saving, setSaving] = useState(false);
+  const [ownerNames, setOwnerNames] = useState<string[]>([]);
+  const [newName, setNewName] = useState("");
+  const [savingNames, setSavingNames] = useState(false);
+
+  const loadOwnerNames = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ has_credentials: boolean; owner_names: string[] }>("/pluggy-credentials");
+      if (data.has_credentials) {
+        setOwnerNames(data.owner_names || []);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) loadOwnerNames();
+  }, [isOpen, loadOwnerNames]);
 
   if (!isOpen) return null;
 
@@ -48,13 +66,48 @@ export default function PluggyCredentialsDialog({
     }
   };
 
+  const handleAddName = () => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    if (ownerNames.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error("Nome já adicionado");
+      return;
+    }
+    const updated = [...ownerNames, trimmed];
+    setOwnerNames(updated);
+    setNewName("");
+    saveOwnerNames(updated);
+  };
+
+  const handleRemoveName = (index: number) => {
+    const updated = ownerNames.filter((_, i) => i !== index);
+    setOwnerNames(updated);
+    saveOwnerNames(updated);
+  };
+
+  const saveOwnerNames = async (names: string[]) => {
+    setSavingNames(true);
+    try {
+      await apiFetch("/pluggy-credentials/owner-names", {
+        method: "PUT",
+        body: JSON.stringify({ owner_names: names }),
+      });
+      toast.success("Nomes atualizados");
+      onSaved();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar nomes");
+    } finally {
+      setSavingNames(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 w-full max-w-md mx-4 shadow-xl">
+      <div className="relative bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 w-full max-w-md mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
-            Credenciais Pluggy
+            Configurações Pluggy
           </h2>
           <button
             onClick={onClose}
@@ -64,6 +117,7 @@ export default function PluggyCredentialsDialog({
           </button>
         </div>
 
+        {/* Credentials section */}
         <p className="text-sm text-[var(--color-text-secondary)] mb-4">
           Insira suas credenciais do{" "}
           <a
@@ -104,7 +158,7 @@ export default function PluggyCredentialsDialog({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
+        <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-main)]"
@@ -116,8 +170,58 @@ export default function PluggyCredentialsDialog({
             disabled={saving}
             className="px-4 py-2 rounded-lg text-sm bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50"
           >
-            {saving ? "Salvando..." : "Salvar"}
+            {saving ? "Salvando..." : "Salvar Credenciais"}
           </button>
+        </div>
+
+        {/* Owner names section */}
+        <div className="mt-6 pt-6 border-t border-[var(--color-border)]">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-1">
+            Nomes do titular
+          </h3>
+          <p className="text-xs text-[var(--color-text-muted)] mb-3">
+            Transferências para esses nomes são excluídas dos totais (transferências internas entre suas contas).
+          </p>
+
+          {ownerNames.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              {ownerNames.map((name, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--color-bg-main)] text-sm text-[var(--color-text-primary)]"
+                >
+                  <span className="truncate">{name}</span>
+                  <button
+                    onClick={() => handleRemoveName(i)}
+                    disabled={savingNames}
+                    className="p-1 rounded hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-400 shrink-0 ml-2 disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddName();
+              }}
+              placeholder="Ex: Vitor Carvalho Sampaio"
+              className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+            />
+            <button
+              onClick={handleAddName}
+              disabled={savingNames || !newName.trim()}
+              className="px-3 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

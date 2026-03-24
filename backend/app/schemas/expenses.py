@@ -13,6 +13,11 @@ class PluggyCredentialsCreate(BaseModel):
 
 class PluggyCredentialsStatus(BaseModel):
     has_credentials: bool
+    owner_names: list[str] = []
+
+
+class OwnerNamesUpdate(BaseModel):
+    owner_names: list[str]
 
 
 # --- Bank Connection ---
