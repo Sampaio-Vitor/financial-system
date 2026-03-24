@@ -3,7 +3,8 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { Asset, AllocationTarget, AssetType } from "@/types";
+import { Asset, AllocationTarget, AssetType, AssetRebalancingInfo } from "@/types";
+import { formatBRL } from "@/lib/format";
 import AssetForm from "@/components/asset-form";
 import CsvImportModal from "@/components/csv-import-modal";
 import TickerLogo from "@/components/ticker-logo";
@@ -19,6 +20,8 @@ const ASSET_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF"];
 
 type Tab = "ativos" | "metas";
 type FilterType = "ALL" | "PAUSED" | AssetType;
+type SortKey = "ticker" | "type" | "description" | "current_value" | "target_value" | "gap";
+type SortDir = "asc" | "desc";
 
 export default function CatalogoPage() {
   return (
@@ -40,6 +43,9 @@ function CatalogoContent() {
   const [filter, setFilter] = useState<FilterType>("ALL");
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("ticker");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [rebalancingInfo, setRebalancingInfo] = useState<Map<number, AssetRebalancingInfo>>(new Map());
 
   const [editTargets, setEditTargets] = useState<Record<AssetType, string>>({
     STOCK: "25",
@@ -53,6 +59,15 @@ function CatalogoContent() {
     try {
       const data = await apiFetch<Asset[]>("/assets");
       setAssets(data);
+    } catch {}
+  }, []);
+
+  const fetchRebalancingInfo = useCallback(async () => {
+    try {
+      const data = await apiFetch<AssetRebalancingInfo[]>("/assets/rebalancing-info");
+      const map = new Map<number, AssetRebalancingInfo>();
+      for (const item of data) map.set(item.asset_id, item);
+      setRebalancingInfo(map);
     } catch {}
   }, []);
 
@@ -72,7 +87,8 @@ function CatalogoContent() {
   useEffect(() => {
     fetchAssets();
     fetchTargets();
-  }, [fetchAssets, fetchTargets]);
+    fetchRebalancingInfo();
+  }, [fetchAssets, fetchTargets, fetchRebalancingInfo]);
 
   const setTab = (tab: Tab) => {
     router.push(`/carteira/catalogo?tab=${tab}`, { scroll: false });
@@ -127,12 +143,44 @@ function CatalogoContent() {
     }
   };
 
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
   const filteredAssets =
     filter === "ALL"
       ? assets
       : filter === "PAUSED"
         ? assets.filter((a) => a.paused)
         : assets.filter((a) => a.type === filter);
+
+  const sortedAssets = [...filteredAssets].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const infoA = rebalancingInfo.get(a.id);
+    const infoB = rebalancingInfo.get(b.id);
+
+    switch (sortKey) {
+      case "ticker":
+        return dir * a.ticker.localeCompare(b.ticker);
+      case "type":
+        return dir * a.type.localeCompare(b.type);
+      case "description":
+        return dir * (a.description || "").localeCompare(b.description || "");
+      case "current_value":
+        return dir * ((infoA?.current_value ?? 0) - (infoB?.current_value ?? 0));
+      case "target_value":
+        return dir * ((infoA?.target_value ?? 0) - (infoB?.target_value ?? 0));
+      case "gap":
+        return dir * ((infoA?.gap ?? 0) - (infoB?.gap ?? 0));
+      default:
+        return 0;
+    }
+  });
 
   const targetTotal = Object.values(editTargets).reduce(
     (s, v) => s + (parseFloat(v) || 0),
@@ -233,32 +281,56 @@ function CatalogoContent() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Ticker
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Tipo
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Descrição
-                  </th>
+                  {([
+                    { key: "ticker" as SortKey, label: "Ticker", align: "left" },
+                    { key: "type" as SortKey, label: "Tipo", align: "left" },
+                    { key: "description" as SortKey, label: "Descrição", align: "left" },
+                    { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." },
+                    { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." },
+                    { key: "gap" as SortKey, label: "Gap", align: "right" },
+                  ] as const).map((col) => (
+                    <th
+                      key={col.key}
+                      onClick={() => toggleSort(col.key)}
+                      className={`px-4 py-2.5 text-xs font-medium text-[var(--color-text-muted)] cursor-pointer select-none hover:text-[var(--color-text-secondary)] transition-colors ${
+                        col.align === "right" ? "text-right" : "text-left"
+                      }`}
+                    >
+                      <span
+                        className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end" : ""} ${col.title ? "cursor-help" : ""}`}
+                        title={col.title}
+                      >
+                        {col.label}
+                        {col.title && (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                        )}
+                        {sortKey === col.key && (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                            {sortDir === "asc"
+                              ? <path d="M12 5v14M5 12l7-7 7 7" />
+                              : <path d="M12 5v14M5 12l7 7 7-7" />}
+                          </svg>
+                        )}
+                      </span>
+                    </th>
+                  ))}
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">
                     Ações
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredAssets.length === 0 ? (
+                {sortedAssets.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]"
                     >
                       Nenhum ativo encontrado
                     </td>
                   </tr>
                 ) : (
-                  filteredAssets.map((a) => (
+                  sortedAssets.map((a) => (
                     <tr
                       key={a.id}
                       className={`border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-main)]/50 transition-colors ${
@@ -287,6 +359,32 @@ function CatalogoContent() {
                       </td>
                       <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                         {a.description || "—"}
+                      </td>
+                      <td
+                        className="px-4 py-2.5 text-right text-[var(--color-text-secondary)] cursor-help"
+                        title={a.price_updated_at
+                          ? `Cotação atualizada em ${new Date(a.price_updated_at).toLocaleString("pt-BR")}`
+                          : "Cotação não disponível"}
+                      >
+                        {rebalancingInfo.has(a.id)
+                          ? formatBRL(rebalancingInfo.get(a.id)!.current_value)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-[var(--color-text-secondary)]">
+                        {rebalancingInfo.has(a.id)
+                          ? formatBRL(rebalancingInfo.get(a.id)!.target_value)
+                          : "—"}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-medium ${
+                        rebalancingInfo.has(a.id) && rebalancingInfo.get(a.id)!.gap > 0
+                          ? "text-[var(--color-positive)]"
+                          : rebalancingInfo.has(a.id) && rebalancingInfo.get(a.id)!.gap < 0
+                            ? "text-[var(--color-negative)]"
+                            : "text-[var(--color-text-muted)]"
+                      }`}>
+                        {rebalancingInfo.has(a.id)
+                          ? formatBRL(rebalancingInfo.get(a.id)!.gap)
+                          : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
