@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { SnapshotAssetItem } from "@/types";
+import MobileCard from "@/components/mobile-card";
 
 const TYPE_LABELS: Record<string, string> = {
   STOCK: "Stock",
@@ -57,12 +58,59 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
     );
   }
 
+  const pnlColor = (val: number | null) => {
+    const v = val ?? 0;
+    return v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "text-[var(--color-text-secondary)]";
+  };
+
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm min-h-0 flex flex-col h-full">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-4 md:p-6 shadow-sm min-h-0 flex flex-col h-full">
       <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-4 tracking-tight shrink-0">
         Fechamento por Ativo
       </h3>
-      <div className="overflow-auto flex-1">
+
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2 flex-1 overflow-y-auto">
+        {data.map((row) => (
+          <MobileCard
+            key={row.ticker}
+            header={
+              <>
+                <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                  {row.ticker}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[row.type] || ""}`}>
+                  {TYPE_LABELS[row.type] || row.type}
+                </span>
+              </>
+            }
+            badge={
+              <span className={`text-sm font-semibold ${pnlColor(row.pnl_pct)}`}>
+                {row.pnl_pct != null ? `${row.pnl_pct >= 0 ? "+" : ""}${row.pnl_pct.toFixed(2)}%` : "\u2014"}
+              </span>
+            }
+            bodyItems={[
+              { label: "Valor", value: row.market_value != null ? formatBRL(row.market_value) : "\u2014" },
+              { label: "Qtd", value: row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) },
+            ]}
+            expandedItems={[
+              { label: "Preco Medio", value: formatBRL(row.avg_price) },
+              { label: "Fechamento", value: row.closing_price != null ? formatBRL(row.closing_price) : "\u2014" },
+              {
+                label: "PnL (R$)",
+                value: (
+                  <span className={pnlColor(row.pnl)}>
+                    {row.pnl != null ? formatBRL(row.pnl) : "\u2014"}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        ))}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-auto flex-1">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border)]">
@@ -95,12 +143,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
           <tbody>
             {data.map((row) => {
               const pnl = row.pnl ?? 0;
-              const pnlColor =
-                pnl > 0
-                  ? "text-emerald-400"
-                  : pnl < 0
-                    ? "text-red-400"
-                    : "text-[var(--color-text-secondary)]";
+              const color = pnlColor(pnl);
 
               return (
                 <tr
@@ -116,24 +159,24 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.type === "RF" ? "—" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
+                    {row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
                     {formatBRL(row.avg_price)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.closing_price != null ? formatBRL(row.closing_price) : "—"}
+                    {row.closing_price != null ? formatBRL(row.closing_price) : "\u2014"}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.market_value != null ? formatBRL(row.market_value) : "—"}
+                    {row.market_value != null ? formatBRL(row.market_value) : "\u2014"}
                   </td>
-                  <td className={`py-2.5 px-3 text-right tabular-nums ${pnlColor}`}>
-                    {row.pnl != null ? formatBRL(row.pnl) : "—"}
+                  <td className={`py-2.5 px-3 text-right tabular-nums ${color}`}>
+                    {row.pnl != null ? formatBRL(row.pnl) : "\u2014"}
                   </td>
-                  <td className={`py-2.5 px-3 text-right tabular-nums ${pnlColor}`}>
+                  <td className={`py-2.5 px-3 text-right tabular-nums ${color}`}>
                     {row.pnl_pct != null
                       ? `${row.pnl_pct >= 0 ? "+" : ""}${row.pnl_pct.toFixed(2)}%`
-                      : "—"}
+                      : "\u2014"}
                   </td>
                 </tr>
               );
