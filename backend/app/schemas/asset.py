@@ -68,3 +68,11 @@ class AssetResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AssetRebalancingInfo(BaseModel):
+    asset_id: int
+    ticker: str
+    target_value: Decimal
+    current_value: Decimal
+    gap: Decimal
