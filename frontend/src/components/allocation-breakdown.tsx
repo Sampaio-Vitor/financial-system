@@ -30,7 +30,7 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
   const patrimonioInvestivel = patrimonioTotal - (reservaFinanceira ?? 0);
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6 shadow-sm">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-4 md:p-6 shadow-sm">
       <h3 className="text-base font-semibold mb-5 text-[var(--color-text-primary)] tracking-tight">
         Alocacao por Classe
       </h3>
@@ -59,9 +59,9 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                   <span className="text-sm font-medium">{item.label}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums">
+                  <span className="text-xs md:text-sm tabular-nums">
                     <span className="font-semibold">{formatBRL(item.value)}</span>
-                    <span className="text-[var(--color-text-muted)]"> / {formatBRL(targetValue)}</span>
+                    <span className="text-[var(--color-text-muted)] hidden md:inline"> / {formatBRL(targetValue)}</span>
                   </span>
                   <span
                     className={`text-xs font-medium tabular-nums px-1.5 py-0.5 rounded ${

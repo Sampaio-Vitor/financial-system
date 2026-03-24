@@ -41,7 +41,7 @@ export default function MensalPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Mensal</h1>
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
@@ -63,7 +63,7 @@ export default function MensalPage() {
   if (!data) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Mensal</h1>
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
@@ -76,7 +76,7 @@ export default function MensalPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-extrabold tracking-tight">Mensal</h1>
         <MonthNavigator month={month} onChange={setMonth} minMonth={data.min_month} />
       </div>
