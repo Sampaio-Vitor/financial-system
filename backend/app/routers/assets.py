@@ -3,17 +3,22 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+from decimal import Decimal
+
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
+from app.models.allocation_target import AllocationTarget
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user_asset import UserAsset
 from app.models.user import User
+from app.services.portfolio_service import get_class_values
 from app.schemas.asset import (
     AssetCreate,
     AssetUpdate,
     AssetResponse,
+    AssetRebalancingInfo,
     BulkAssetRequest,
     BulkAssetResponse,
     BulkAssetCreated,
@@ -120,6 +125,76 @@ async def bulk_create_assets(
 
     await db.commit()
     return BulkAssetResponse(created=created, linked=linked, skipped=skipped)
+
+
+@router.get("/rebalancing-info", response_model=list[AssetRebalancingInfo])
+async def get_rebalancing_info(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Per-asset target value and gap based on current portfolio."""
+    # Get allocation targets
+    targets_result = await db.execute(
+        select(AllocationTarget).where(AllocationTarget.user_id == user.id)
+    )
+    targets = {t.asset_class: t.target_pct for t in targets_result.scalars().all()}
+
+    # Current investable total
+    class_values = await get_class_values(db, user)
+    investable_total = sum(class_values.values())
+
+    # Count active (non-paused) assets per class
+    count_result = await db.execute(
+        select(Asset.type, func.count(Asset.id))
+        .join(UserAsset, UserAsset.asset_id == Asset.id)
+        .where(UserAsset.user_id == user.id, UserAsset.paused == False)
+        .group_by(Asset.type)
+    )
+    active_counts: dict[AssetType, int] = dict(count_result.all())
+
+    # Get per-asset market values (variable income)
+    positions = await db.execute(
+        select(
+            Asset.id,
+            Asset.ticker,
+            Asset.type,
+            Asset.current_price,
+            func.sum(Purchase.quantity).label("qty"),
+        )
+        .join(Asset, Purchase.asset_id == Asset.id)
+        .where(Purchase.user_id == user.id)
+        .group_by(Asset.id, Asset.ticker, Asset.type, Asset.current_price)
+    )
+    asset_values: dict[int, Decimal] = {}
+    for asset_id, _, _, price, qty in positions.all():
+        asset_values[asset_id] = (price * qty) if price and qty else Decimal("0")
+
+    # Build response for all user assets
+    all_assets = await db.execute(
+        select(Asset, UserAsset.paused)
+        .join(UserAsset, UserAsset.asset_id == Asset.id)
+        .where(UserAsset.user_id == user.id)
+    )
+
+    result = []
+    for asset, paused in all_assets.all():
+        if paused:
+            continue
+        n_active = active_counts.get(asset.type, 1)
+        target_pct = targets.get(asset.type, Decimal("0"))
+        target_value = investable_total * target_pct / n_active
+        current_value = asset_values.get(asset.id, Decimal("0"))
+        gap = target_value - current_value
+
+        result.append(AssetRebalancingInfo(
+            asset_id=asset.id,
+            ticker=asset.ticker,
+            target_value=round(target_value, 2),
+            current_value=round(current_value, 2),
+            gap=round(gap, 2),
+        ))
+
+    return result
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
