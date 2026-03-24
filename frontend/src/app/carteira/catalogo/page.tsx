@@ -265,7 +265,7 @@ function CatalogoContent() {
                 onClick={() => setShowCsvImport(true)}
                 className="px-4 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
               >
-                Importar CSV
+                Importar Arquivo
               </button>
               <button
                 onClick={() => setShowAssetForm(true)}
@@ -282,13 +282,13 @@ function CatalogoContent() {
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   {([
-                    { key: "ticker" as SortKey, label: "Ticker", align: "left" },
-                    { key: "type" as SortKey, label: "Tipo", align: "left" },
-                    { key: "description" as SortKey, label: "Descrição", align: "left" },
-                    { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." },
-                    { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." },
-                    { key: "gap" as SortKey, label: "Gap", align: "right" },
-                  ] as const).map((col) => (
+                    { key: "ticker" as SortKey, label: "Ticker", align: "left", title: undefined as string | undefined },
+                    { key: "type" as SortKey, label: "Tipo", align: "left", title: undefined },
+                    { key: "description" as SortKey, label: "Descrição", align: "left", title: undefined },
+                    { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." as string | undefined },
+                    { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." as string | undefined },
+                    { key: "gap" as SortKey, label: "Gap", align: "right", title: undefined },
+                  ]).map((col) => (
                     <th
                       key={col.key}
                       onClick={() => toggleSort(col.key)}
