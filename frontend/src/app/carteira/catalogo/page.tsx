@@ -8,6 +8,7 @@ import { formatBRL } from "@/lib/format";
 import AssetForm from "@/components/asset-form";
 import CsvImportModal from "@/components/csv-import-modal";
 import TickerLogo from "@/components/ticker-logo";
+import MobileCard from "@/components/mobile-card";
 
 const CLASS_LABELS: Record<AssetType, string> = {
   STOCK: "Stocks (EUA)",
@@ -219,15 +220,31 @@ function CatalogoContent() {
       {activeTab === "ativos" && (
         <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)]">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
-            <div className="flex items-center gap-4">
+          <div className="p-4 border-b border-[var(--color-border)] space-y-3">
+            <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--color-text-secondary)]">
                 {filteredAssets.length} ativos
               </span>
-              <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowCsvImport(true)}
+                  className="px-3 md:px-4 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-xs md:text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
+                >
+                  Importar
+                </button>
+                <button
+                  onClick={() => setShowAssetForm(true)}
+                  className="px-3 md:px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  Adicionar
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto -mx-4 px-4 pb-1">
+              <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1 w-fit">
                 <button
                   onClick={() => setFilter("ALL")}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
                     filter === "ALL"
                       ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                       : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -239,7 +256,7 @@ function CatalogoContent() {
                   <button
                     key={type}
                     onClick={() => setFilter(type)}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
                       filter === type
                         ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                         : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -250,7 +267,7 @@ function CatalogoContent() {
                 ))}
                 <button
                   onClick={() => setFilter("PAUSED")}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
                     filter === "PAUSED"
                       ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                       : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -260,24 +277,88 @@ function CatalogoContent() {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowCsvImport(true)}
-                className="px-4 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
-              >
-                Importar Arquivo
-              </button>
-              <button
-                onClick={() => setShowAssetForm(true)}
-                className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                Adicionar Ativo
-              </button>
-            </div>
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
+          {/* Mobile card view */}
+          <div className="md:hidden p-4 space-y-2">
+            {sortedAssets.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)] text-center py-8">
+                Nenhum ativo encontrado
+              </p>
+            ) : (
+              sortedAssets.map((a) => {
+                const info = rebalancingInfo.get(a.id);
+                const gapColor = info
+                  ? info.gap > 0
+                    ? "text-[var(--color-positive)]"
+                    : info.gap < 0
+                      ? "text-[var(--color-negative)]"
+                      : "text-[var(--color-text-muted)]"
+                  : "text-[var(--color-text-muted)]";
+
+                return (
+                  <MobileCard
+                    key={a.id}
+                    header={
+                      <div className={`flex items-center gap-2 ${a.paused ? "opacity-40" : ""}`}>
+                        <TickerLogo ticker={a.ticker} type={a.type} size={22} />
+                        <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                          {a.ticker}
+                        </span>
+                        {a.paused && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/20 text-[var(--color-text-muted)]">
+                            pausado
+                          </span>
+                        )}
+                      </div>
+                    }
+                    badge={
+                      <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
+                        {CLASS_LABELS[a.type]}
+                      </span>
+                    }
+                    bodyItems={[
+                      { label: "Posicao Atual", value: info ? formatBRL(info.current_value) : "\u2014" },
+                      { label: "Posicao Alvo", value: info ? formatBRL(info.target_value) : "\u2014" },
+                    ]}
+                    expandedItems={[
+                      { label: "Descricao", value: a.description || "\u2014" },
+                      { label: "Gap", value: <span className={gapColor}>{info ? formatBRL(info.gap) : "\u2014"}</span> },
+                    ]}
+                    actions={
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => togglePaused(a)}
+                          title={a.paused ? "Retomar ativo" : "Pausar ativo"}
+                          className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg transition-colors ${
+                            a.paused
+                              ? "text-[var(--color-positive)] hover:bg-[var(--color-positive)]/10"
+                              : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-main)]"
+                          }`}
+                        >
+                          {a.paused ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setDeleteTarget(a); setDeleteError(""); }}
+                          title="Remover ativo"
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)] hover:bg-[var(--color-negative)]/10 transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      </div>
+                    }
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -448,7 +529,7 @@ function CatalogoContent() {
           )}
 
           {deleteTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
               <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
                 <h3 className="text-base font-bold mb-2">Remover ativo</h3>
                 <p className="text-sm text-[var(--color-text-secondary)] mb-4">

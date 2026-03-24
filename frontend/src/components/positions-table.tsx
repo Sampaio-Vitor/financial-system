@@ -4,6 +4,7 @@ import { useState } from "react";
 import { formatBRL, formatPercent, formatQuantity } from "@/lib/format";
 import { PositionItem } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
+import MobileCard from "@/components/mobile-card";
 
 interface PositionsTableProps {
   positions: PositionItem[];
@@ -16,6 +17,14 @@ interface PositionsTableProps {
 }
 
 type SortKey = keyof PositionItem;
+
+const SORT_OPTIONS: { label: string; key: SortKey }[] = [
+  { label: "Ticker", key: "ticker" },
+  { label: "Valor Mercado", key: "market_value" },
+  { label: "P&L (%)", key: "pnl_pct" },
+  { label: "P&L (R$)", key: "pnl" },
+  { label: "Qtd", key: "quantity" },
+];
 
 export default function PositionsTable({
   positions,
@@ -51,100 +60,176 @@ export default function PositionsTable({
       className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] select-none"
       onClick={() => handleSort(key)}
     >
-      {label} {sortKey === key ? (sortAsc ? "↑" : "↓") : ""}
+      {label} {sortKey === key ? (sortAsc ? "\u2191" : "\u2193") : ""}
     </th>
   );
 
+  const pnlColor = (val: number | null) =>
+    (val ?? 0) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]";
+
   return (
-    <div className="overflow-x-auto bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-main)]/30">
-            {colHeader("Ticker", "ticker")}
-            <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-              Descricao
-            </th>
-            {colHeader("1o Aporte", "first_date")}
-            {colHeader("Qtd", "quantity")}
-            {colHeader("Preco Medio", "avg_price")}
-            {colHeader("Cotacao Atual", "current_price")}
-            {colHeader("Valor Mercado", "market_value")}
-            {colHeader("P&L (R$)", "pnl")}
-            {colHeader("P&L (%)", "pnl_pct")}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => (
-            <tr
-              key={p.asset_id}
-              className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
-            >
-              <td className="px-3 py-2.5 font-medium">
-                <div className="flex items-center gap-2">
-                  <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+    <>
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {/* Sort control */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs text-[var(--color-text-muted)]">Ordenar:</span>
+          <select
+            value={sortKey}
+            onChange={(e) => {
+              setSortKey(e.target.value as SortKey);
+              setSortAsc(true);
+            }}
+            className="text-xs bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-[var(--color-text-secondary)]"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.key} value={opt.key}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setSortAsc(!sortAsc)}
+            className="text-xs px-2 py-1.5 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-muted)]"
+          >
+            {sortAsc ? "\u2191" : "\u2193"}
+          </button>
+        </div>
+
+        {sorted.map((p) => (
+          <MobileCard
+            key={p.asset_id}
+            header={
+              <>
+                <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+                <span className="font-medium text-sm text-[var(--color-text-primary)]">
                   {p.ticker}
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
-                {p.description}
-              </td>
-              <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-                {p.first_date
-                  ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
-                  : "—"}
-              </td>
-              <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
-              <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
-              <td className="px-3 py-2.5">{formatBRL(p.current_price)}</td>
-              <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
-              <td
-                className={`px-3 py-2.5 font-medium ${
-                  (p.pnl ?? 0) >= 0
-                    ? "text-[var(--color-positive)]"
-                    : "text-[var(--color-negative)]"
-                }`}
-              >
-                {formatBRL(p.pnl)}
-              </td>
-              <td
-                className={`px-3 py-2.5 font-medium ${
-                  (p.pnl_pct ?? 0) >= 0
-                    ? "text-[var(--color-positive)]"
-                    : "text-[var(--color-negative)]"
-                }`}
-              >
+                </span>
+              </>
+            }
+            badge={
+              <span className={`text-sm font-semibold ${pnlColor(p.pnl_pct)}`}>
                 {formatPercent(p.pnl_pct)}
+              </span>
+            }
+            bodyItems={[
+              { label: "Valor Mercado", value: formatBRL(p.market_value) },
+              { label: "Quantidade", value: formatQuantity(p.quantity) },
+            ]}
+            expandedItems={[
+              { label: "Descricao", value: p.description || "\u2014" },
+              {
+                label: "1o Aporte",
+                value: p.first_date
+                  ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
+                  : "\u2014",
+              },
+              { label: "Preco Medio", value: formatBRL(p.avg_price) },
+              { label: "Cotacao Atual", value: formatBRL(p.current_price) },
+              {
+                label: "P&L (R$)",
+                value: (
+                  <span className={pnlColor(p.pnl)}>
+                    {formatBRL(p.pnl)}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        ))}
+
+        {/* Totals card */}
+        <div className="bg-[var(--color-bg-card)] rounded-xl border-2 border-[var(--color-border)] p-4 mt-3">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-sm text-[var(--color-text-primary)]">TOTAL</span>
+            <span className={`text-sm font-semibold ${pnlColor(totalPnlPct)}`}>
+              {formatPercent(totalPnlPct)}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+            <div>
+              <span className="text-xs text-[var(--color-text-muted)]">Valor Mercado</span>
+              <div className="text-sm font-medium text-[var(--color-text-secondary)]">
+                {formatBRL(totalMarketValue)}
+              </div>
+            </div>
+            <div>
+              <span className="text-xs text-[var(--color-text-muted)]">P&L (R$)</span>
+              <div className={`text-sm font-medium ${pnlColor(totalPnl)}`}>
+                {formatBRL(totalPnl)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-x-auto bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-main)]/30">
+              {colHeader("Ticker", "ticker")}
+              <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                Descricao
+              </th>
+              {colHeader("1o Aporte", "first_date")}
+              {colHeader("Qtd", "quantity")}
+              {colHeader("Preco Medio", "avg_price")}
+              {colHeader("Cotacao Atual", "current_price")}
+              {colHeader("Valor Mercado", "market_value")}
+              {colHeader("P&L (R$)", "pnl")}
+              {colHeader("P&L (%)", "pnl_pct")}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((p) => (
+              <tr
+                key={p.asset_id}
+                className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
+              >
+                <td className="px-3 py-2.5 font-medium">
+                  <div className="flex items-center gap-2">
+                    <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+                    {p.ticker}
+                  </div>
+                </td>
+                <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
+                  {p.description}
+                </td>
+                <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                  {p.first_date
+                    ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
+                    : "\u2014"}
+                </td>
+                <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
+                <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
+                <td className="px-3 py-2.5">{formatBRL(p.current_price)}</td>
+                <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
+                <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl)}`}>
+                  {formatBRL(p.pnl)}
+                </td>
+                <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl_pct)}`}>
+                  {formatPercent(p.pnl_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[var(--color-border)] font-bold">
+              <td className="px-3 py-2.5" colSpan={6}>
+                TOTAL
+              </td>
+              <td className="px-3 py-2.5">{formatBRL(totalMarketValue)}</td>
+              <td className={`px-3 py-2.5 ${pnlColor(totalPnl)}`}>
+                {formatBRL(totalPnl)}
+              </td>
+              <td className={`px-3 py-2.5 ${pnlColor(totalPnlPct)}`}>
+                {formatPercent(totalPnlPct)}
               </td>
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-[var(--color-border)] font-bold">
-            <td className="px-3 py-2.5" colSpan={6}>
-              TOTAL
-            </td>
-            <td className="px-3 py-2.5">{formatBRL(totalMarketValue)}</td>
-            <td
-              className={`px-3 py-2.5 ${
-                totalPnl >= 0
-                  ? "text-[var(--color-positive)]"
-                  : "text-[var(--color-negative)]"
-              }`}
-            >
-              {formatBRL(totalPnl)}
-            </td>
-            <td
-              className={`px-3 py-2.5 ${
-                (totalPnlPct ?? 0) >= 0
-                  ? "text-[var(--color-positive)]"
-                  : "text-[var(--color-negative)]"
-              }`}
-            >
-              {formatPercent(totalPnlPct)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+          </tfoot>
+        </table>
+      </div>
+    </>
   );
 }

@@ -50,7 +50,7 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
         <h2 className="text-lg font-bold mb-4">Registrar Aporte em RF</h2>
         <div className="space-y-4">

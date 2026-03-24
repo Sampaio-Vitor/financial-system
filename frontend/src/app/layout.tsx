@@ -20,7 +20,7 @@ export default function RootLayout({
     <html lang="pt-BR" className={`${inter.variable} dark`}>
       <body className="antialiased">
         <AuthProvider>{children}</AuthProvider>
-        <Toaster theme="dark" position="bottom-right" richColors />
+        <Toaster theme="dark" position="bottom-center" richColors />
       </body>
     </html>
   );

@@ -185,12 +185,12 @@ export default function RendaFixaPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-6">
         <h1 className="text-xl font-bold">Renda Fixa</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setAporteOpen(true)}
-            className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+            className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Registrar Aporte
           </button>
@@ -198,13 +198,13 @@ export default function RendaFixaPage() {
             <>
               <button
                 onClick={() => setJurosOpen(true)}
-                className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg bg-amber-600 text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
               >
                 Registrar Juros
               </button>
               <button
                 onClick={() => setResgateOpen(true)}
-                className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
               >
                 Resgatar
               </button>
@@ -218,7 +218,81 @@ export default function RendaFixaPage() {
         {positions.length === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">Nenhuma posicao em Renda Fixa.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile card view */}
+          <div className="md:hidden space-y-2 p-2">
+            {positions.map((p) => (
+              <div key={p.id} className="bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-medium text-sm">{p.ticker}</span>
+                    <span className="text-xs text-[var(--color-text-muted)] ml-2">{p.description}</span>
+                  </div>
+                  <button
+                    onClick={() => startEdit(p)}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                  <div>
+                    <span className="text-xs text-[var(--color-text-muted)]">Saldo Atual</span>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.current_balance)}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[var(--color-text-muted)]">Rendimento</span>
+                    <div className="text-sm text-[var(--color-positive)]">{formatBRL(p.yield_value)} ({formatPercent(p.yield_pct * 100)})</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[var(--color-text-muted)]">Valor Aplicado</span>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.applied_value)}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[var(--color-text-muted)]">Vencimento</span>
+                    <div className="text-sm text-[var(--color-text-muted)]">{p.maturity_date ? new Date(p.maturity_date + "T00:00:00").toLocaleDateString("pt-BR") : "\u2014"}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {/* Totals */}
+            <div className="bg-[var(--color-bg-main)] rounded-xl border-2 border-[var(--color-border)] p-4">
+              <div className="font-bold text-sm mb-2">TOTAL</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <div><span className="text-xs text-[var(--color-text-muted)]">Aplicado</span><div className="text-sm">{formatBRL(totalApplied)}</div></div>
+                <div><span className="text-xs text-[var(--color-text-muted)]">Saldo</span><div className="text-sm">{formatBRL(totalBalance)}</div></div>
+                <div><span className="text-xs text-[var(--color-text-muted)]">Rendimento</span><div className="text-sm text-[var(--color-positive)]">{formatBRL(totalYield)}</div></div>
+                <div><span className="text-xs text-[var(--color-text-muted)]">Rend. %</span><div className="text-sm text-[var(--color-positive)]">{formatPercent(totalApplied > 0 ? (totalYield / totalApplied) * 100 : 0)}</div></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile bottom-sheet edit modal */}
+          {editingId !== null && (
+            <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:hidden">
+              <div className="fixed inset-0 bg-black/50" onClick={cancelEdit} />
+              <div className="relative w-full bg-[var(--color-bg-card)] rounded-t-2xl border-t border-[var(--color-border)] p-6 space-y-4">
+                <h3 className="text-base font-bold">Editar Posicao</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Valor Aplicado</label>
+                    <input type="number" step="any" value={editData.applied_value} onChange={(e) => setEditData({ ...editData, applied_value: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Saldo Atual</label>
+                    <input type="number" step="any" value={editData.current_balance} onChange={(e) => setEditData({ ...editData, current_balance: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={cancelEdit} className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium">Cancelar</button>
+                  <button onClick={() => saveEdit(editingId)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium disabled:opacity-50">{saving ? "Salvando..." : "Salvar"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Desktop table view */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -301,6 +375,7 @@ export default function RendaFixaPage() {
               </tfoot>
             </table>
           </div>
+          </>
         )}
       </div>
 

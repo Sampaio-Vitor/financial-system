@@ -123,18 +123,18 @@ export default function AportesPage() {
   return (
     <div>
       <ConfirmDialog />
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-6">
         <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
         <div className="flex gap-2">
           <button
             onClick={() => { setFormMode("compra"); setShowForm(true); }}
-            className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+            className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Registrar Aporte
           </button>
           <button
             onClick={() => { setFormMode("venda"); setShowForm(true); }}
-            className="px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+            className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Registrar Venda
           </button>
@@ -241,7 +241,102 @@ export default function AportesPage() {
             Nenhum resultado para os filtros selecionados.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile card view */}
+          <div className="md:hidden space-y-2 p-2">
+            {filteredPurchases.map((p) => {
+              const isSale = p.quantity < 0;
+              return (
+                <div key={p.id} className={`bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4 ${isSale ? "border-[var(--color-negative)]/30" : ""}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                      <span className="font-medium text-sm">{p.ticker}</span>
+                      {isSale && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
+                          VENDA
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => startEdit(p)}
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Data</span>
+                      <div className="text-sm text-[var(--color-text-secondary)]">
+                        {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Total</span>
+                      <div className={`text-sm font-medium ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-secondary)]"}`}>
+                        {formatBRL(p.total_value)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Qtd</span>
+                      <div className={`text-sm ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-secondary)]"}`}>
+                        {formatQuantity(p.quantity)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Preco Unit.</span>
+                      <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.unit_price)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Mobile bottom-sheet edit modal */}
+          {editingId !== null && (
+            <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:hidden">
+              <div className="fixed inset-0 bg-black/50" onClick={cancelEdit} />
+              <div className="relative w-full bg-[var(--color-bg-card)] rounded-t-2xl border-t border-[var(--color-border)] p-6 space-y-4">
+                <h3 className="text-base font-bold text-[var(--color-text-primary)]">Editar Aporte</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Data</label>
+                    <input type="date" value={editData.purchase_date} onChange={(e) => setEditData({ ...editData, purchase_date: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Quantidade</label>
+                      <input type="number" step="0.01" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Preco Unit.</label>
+                      <input type="number" step="0.01" value={editData.unit_price} onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                    </div>
+                  </div>
+                  <div className="text-sm text-[var(--color-text-muted)]">
+                    Total: <span className="font-medium text-[var(--color-text-primary)]">{formatBRL(parseFloat(editData.quantity) * parseFloat(editData.unit_price) || 0)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={cancelEdit} className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium">Cancelar</button>
+                  <button onClick={() => saveEdit(editingId)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium disabled:opacity-50">{saving ? "Salvando..." : "Salvar"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Desktop table view */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -262,12 +357,7 @@ export default function AportesPage() {
                     {editingId === p.id ? (
                       <>
                         <td className="px-3 py-1.5">
-                          <input
-                            type="date"
-                            value={editData.purchase_date}
-                            onChange={(e) => setEditData({ ...editData, purchase_date: e.target.value })}
-                            className="w-full px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
-                          />
+                          <input type="date" value={editData.purchase_date} onChange={(e) => setEditData({ ...editData, purchase_date: e.target.value })} className="w-full px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
                         <td className="px-3 py-2.5 font-medium">
                           <div className="flex items-center gap-2">
@@ -277,89 +367,42 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
                         <td className="px-3 py-1.5">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editData.quantity}
-                            onChange={(e) => setEditData({ ...editData, quantity: e.target.value })}
-                            className="w-24 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
-                          />
+                          <input type="number" step="0.01" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-24 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
                         <td className="px-3 py-1.5">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editData.unit_price}
-                            onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })}
-                            className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm"
-                          />
+                          <input type="number" step="0.01" value={editData.unit_price} onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
                         <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)]">
                           {formatBRL(parseFloat(editData.quantity) * parseFloat(editData.unit_price) || 0)}
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => saveEdit(p.id)}
-                              disabled={saving}
-                              className="text-xs text-[var(--color-positive)] hover:underline disabled:opacity-50"
-                            >
-                              {saving ? "..." : "Salvar"}
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="text-xs text-[var(--color-text-muted)] hover:underline"
-                            >
-                              Cancelar
-                            </button>
+                            <button onClick={() => saveEdit(p.id)} disabled={saving} className="text-xs text-[var(--color-positive)] hover:underline disabled:opacity-50">{saving ? "..." : "Salvar"}</button>
+                            <button onClick={cancelEdit} className="text-xs text-[var(--color-text-muted)] hover:underline">Cancelar</button>
                           </div>
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="px-3 py-2.5">
-                          {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
-                        </td>
+                        <td className="px-3 py-2.5">{new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}</td>
                         <td className="px-3 py-2.5 font-medium">
                           <div className="flex items-center gap-2">
                             <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
                             {p.ticker}
-                            {isSale && (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
-                                VENDA
-                              </span>
-                            )}
+                            {isSale && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">VENDA</span>}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
-                        <td className={`px-3 py-2.5 ${isSale ? "text-[var(--color-negative)]" : ""}`}>
-                          {formatQuantity(p.quantity)}
-                        </td>
+                        <td className={`px-3 py-2.5 ${isSale ? "text-[var(--color-negative)]" : ""}`}>{formatQuantity(p.quantity)}</td>
                         <td className="px-3 py-2.5">{formatBRL(p.unit_price)}</td>
-                        <td className={`px-3 py-2.5 font-medium ${isSale ? "text-[var(--color-negative)]" : ""}`}>
-                          {formatBRL(p.total_value)}
-                        </td>
+                        <td className={`px-3 py-2.5 font-medium ${isSale ? "text-[var(--color-negative)]" : ""}`}>{formatBRL(p.total_value)}</td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => startEdit(p)}
-                              className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
-                              title="Editar"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                <path d="m15 5 4 4"/>
-                              </svg>
+                            <button onClick={() => startEdit(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors" title="Editar">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
                             </button>
-                            <button
-                              onClick={() => handleDelete(p.id)}
-                              className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
-                              title="Remover"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                              </svg>
+                            <button onClick={() => handleDelete(p.id)} className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors" title="Remover">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                             </button>
                           </div>
                         </td>
@@ -371,6 +414,7 @@ export default function AportesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

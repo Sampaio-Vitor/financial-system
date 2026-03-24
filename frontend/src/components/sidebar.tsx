@@ -22,18 +22,18 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
-type NavChild = {
+export type NavChild = {
   label: string;
   href: string;
   icon: LucideIcon;
   exact?: boolean;
 };
 
-type NavItem =
+export type NavItem =
   | { label: string; icon: LucideIcon; href: string; exact?: boolean; children?: never }
   | { label: string; icon: LucideIcon; href?: never; exact?: never; children: NavChild[] };
 
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
   {
     label: "Visão Geral",
     href: "/carteira",

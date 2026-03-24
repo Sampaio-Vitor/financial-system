@@ -184,7 +184,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
     <div className="-mt-px overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)]">
       {/* Tabs - only show if both have data */}
       {hasRv && hasRf && (
-        <div className="px-8 pt-4 flex gap-1">
+        <div className="px-4 md:px-8 pt-4 flex gap-1">
           <button
             onClick={() => setActiveTab("rv")}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -208,7 +208,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
         </div>
       )}
 
-      <div className="px-8 pt-5 pb-5">
+      <div className="px-4 md:px-8 pt-5 pb-5">
         {groups.length === 0 ? (
           <p className="text-sm text-[var(--color-text-muted)] text-center">
             {type === "aportes"
@@ -216,7 +216,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
               : "Nenhum resgate neste periodo"}
           </p>
         ) : (
-          <div className="flex flex-wrap gap-x-12 gap-y-5">
+          <div className="flex flex-wrap gap-x-6 md:gap-x-12 gap-y-5">
             {groups.map((group) => {
               const label =
                 rfGroupLabels[group.key] || classLabels[group.key] || group.key;
@@ -255,7 +255,7 @@ export default function DetailDrawer({ type, data }: DetailDrawerProps) {
       </div>
 
       {groups.length > 0 && (
-        <div className="px-8 py-3 border-t border-[var(--color-border)]/40 flex items-center justify-end gap-4">
+        <div className="px-4 md:px-8 py-3 border-t border-[var(--color-border)]/40 flex items-center justify-end gap-4">
           <span className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
             Total
           </span>
