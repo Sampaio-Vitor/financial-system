@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { X, Upload, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Upload, FileText, ChevronDown, ChevronUp, Download } from "lucide-react";
+import readXlsxFile, { type Row } from "read-excel-file/browser";
 import { apiFetch } from "@/lib/api";
 import { AssetType, BulkAssetResponse } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
@@ -96,6 +97,56 @@ function parseCsv(text: string): { rows: ParsedRow[]; errors: string[] } {
   return { rows, errors };
 }
 
+function parseExcelRows(rows: Row[]): { rows: ParsedRow[]; errors: string[] } {
+  if (rows.length === 0) return { rows: [], errors: ["Arquivo vazio"] };
+
+  // Detect header
+  const firstRow = rows[0].map((c) => String(c ?? "").trim());
+  const isHeader =
+    firstRow.length >= 2 &&
+    !VALID_TYPES.includes(firstRow[1].toUpperCase() as AssetType);
+  const dataRows = isHeader ? rows.slice(1) : rows;
+
+  if (dataRows.length === 0) return { rows: [], errors: ["Nenhuma linha de dados encontrada"] };
+  if (dataRows.length > 200) return { rows: [], errors: ["Máximo de 200 linhas por importação"] };
+
+  const parsed: ParsedRow[] = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const lineNum = isHeader ? i + 2 : i + 1;
+    const cols = dataRows[i].map((c) => String(c ?? "").trim());
+
+    if (cols.length < 2 || !cols[0] || !cols[1]) {
+      errors.push(`Linha ${lineNum}: formato inválido (esperado: ticker, tipo)`);
+      continue;
+    }
+
+    const ticker = cols[0].toUpperCase();
+    const typeRaw = cols[1].toUpperCase();
+
+    if (ticker.length > 20) {
+      errors.push(`Linha ${lineNum}: ticker "${cols[0]}" excede 20 caracteres`);
+      continue;
+    }
+
+    if (!VALID_TYPES.includes(typeRaw as AssetType)) {
+      errors.push(`Linha ${lineNum}: tipo "${cols[1]}" inválido (use: STOCK, ACAO, FII, RF)`);
+      continue;
+    }
+
+    if (seen.has(ticker)) {
+      parsed.push({ ticker, type: typeRaw as AssetType, error: "Duplicado" });
+    } else {
+      seen.add(ticker);
+      parsed.push({ ticker, type: typeRaw as AssetType });
+    }
+  }
+
+  return { rows: parsed, errors };
+}
+
 export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps) {
   const [step, setStep] = useState<ModalStep>("upload");
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
@@ -110,19 +161,36 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
 
   const handleFile = useCallback((file: File) => {
     setError("");
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const { rows, errors } = parseCsv(text);
-      setParsedRows(rows);
-      setParseErrors(errors);
-      if (rows.length > 0) {
-        setStep("preview");
-      } else if (errors.length > 0) {
-        setError(errors.join("\n"));
-      }
-    };
-    reader.readAsText(file);
+    const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
+
+    if (isExcel) {
+      readXlsxFile(file).then((excelRows) => {
+        const { rows, errors } = parseExcelRows(excelRows);
+        setParsedRows(rows);
+        setParseErrors(errors);
+        if (rows.length > 0) {
+          setStep("preview");
+        } else if (errors.length > 0) {
+          setError(errors.join("\n"));
+        }
+      }).catch(() => {
+        setError("Erro ao ler arquivo Excel");
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const { rows, errors } = parseCsv(text);
+        setParsedRows(rows);
+        setParseErrors(errors);
+        if (rows.length > 0) {
+          setStep("preview");
+        } else if (errors.length > 0) {
+          setError(errors.join("\n"));
+        }
+      };
+      reader.readAsText(file);
+    }
   }, []);
 
   const handleDrop = useCallback(
@@ -166,7 +234,7 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-lg max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">Importar CSV</h2>
+          <h2 className="text-lg font-bold">Importar Ativos</h2>
           <button
             onClick={handleClose}
             className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
@@ -200,12 +268,12 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                 Arraste um arquivo ou clique para selecionar
               </p>
               <p className="text-xs text-[var(--color-text-muted)]">
-                Formato: ticker,tipo (STOCK, ACAO, FII, RF)
+                CSV ou Excel — Colunas: ticker, tipo (STOCK, ACAO, FII, RF)
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.txt"
+                accept=".csv,.txt,.xlsx,.xls"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -213,6 +281,15 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                 }}
               />
             </div>
+
+            <a
+              href="/modelo-importacao.xlsx"
+              download
+              className="flex items-center justify-center gap-2 text-sm text-[var(--color-accent)] hover:underline"
+            >
+              <Download size={14} />
+              Baixar modelo Excel
+            </a>
 
             {error && (
               <pre className="text-sm text-[var(--color-negative)] whitespace-pre-wrap">
@@ -332,41 +409,13 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
         {/* Step: Result */}
         {step === "result" && result && (
           <div className="flex flex-col gap-4 min-h-0">
-            {result.created.length > 0 && (
+            {(result.created.length > 0 || result.linked.length > 0) && (
               <div>
                 <p className="text-sm font-medium text-[var(--color-positive)] mb-3">
-                  {result.created.length} ativo(s) criado(s)
+                  {result.created.length + result.linked.length} ativo(s) adicionado(s) ao seu catálogo
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-52 overflow-y-auto">
-                  {result.created.map((item) => (
-                    <div
-                      key={item.ticker}
-                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg bg-[var(--color-bg-main)]"
-                    >
-                      <TickerLogo
-                        ticker={item.ticker}
-                        type={item.type}
-                        size={32}
-                      />
-                      <span className="text-xs font-medium text-[var(--color-text-primary)]">
-                        {item.ticker}
-                      </span>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {CLASS_LABELS[item.type]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {result.linked.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-[var(--color-accent)] mb-3">
-                  {result.linked.length} ativo(s) vinculado(s) ao seu catálogo
-                </p>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-52 overflow-y-auto">
-                  {result.linked.map((item) => (
+                  {[...result.created, ...result.linked].map((item) => (
                     <div
                       key={item.ticker}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-lg bg-[var(--color-bg-main)]"

@@ -34,3 +34,4 @@ Thumbs.db
 
 # Excel source (not needed in repo)
 *.xlsx
+!frontend/public/modelo-importacao.xlsx
