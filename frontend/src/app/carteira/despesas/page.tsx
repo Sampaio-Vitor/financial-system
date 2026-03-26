@@ -124,9 +124,9 @@ export default function DespesasPage() {
     try {
       const [txData, summaryData] = await Promise.all([
         apiFetch<TransactionListResponse>(
-          `/transactions?year=${year}&month=${monthNum}${categoryFilter ? `&category=${encodeURIComponent(categoryFilter)}` : ""}`
+          `/transactions?year=${year}&month=${monthNum}&account_type=credit_card${categoryFilter ? `&category=${encodeURIComponent(categoryFilter)}` : ""}`
         ),
-        apiFetch<TransactionSummary>(`/transactions/summary?year=${year}&month=${monthNum}`),
+        apiFetch<TransactionSummary>(`/transactions/summary?year=${year}&month=${monthNum}&account_type=credit_card`),
       ]);
       setTransactions(txData.transactions);
       setSummary(summaryData);
@@ -247,7 +247,7 @@ export default function DespesasPage() {
   if (!hasCredentials) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Despesas</h1>
+        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Cartão de Crédito</h1>
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center max-w-md mx-auto">
           <div className="w-16 h-16 bg-[var(--color-accent)]/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <Settings size={28} className="text-[var(--color-accent)]" />
@@ -281,7 +281,7 @@ export default function DespesasPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Despesas</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Cartão de Crédito</h1>
           <button
             onClick={() => setShowCredentialsDialog(true)}
             className="p-2 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-muted)]"
@@ -473,7 +473,7 @@ function ConnectedView({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Despesas</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Cartão de Crédito</h1>
           <span className="text-2xl text-[var(--color-text-muted)] font-light hidden sm:inline">&mdash;</span>
           {/* Month navigation inline */}
           <div className="flex items-center gap-1">
@@ -671,10 +671,10 @@ function ConnectedView({
         />
       </div>
 
-      {/* Despesas por Categoria */}
+      {/* Gastos por Categoria */}
       {summary && summary.categories.length > 0 && (
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
-          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-4">Despesas por Categoria</h2>
+          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-4">Gastos por Categoria</h2>
           <div className="space-y-3">
             {summary.categories.map((cat) => {
               const pct = totalExpenses > 0 ? (cat.total / totalExpenses) * 100 : 0;
@@ -728,19 +728,6 @@ function ConnectedView({
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
-
-        {bankNames.length > 1 && (
-          <select
-            value={bankFilter}
-            onChange={(e) => setBankFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-          >
-            <option value="">Todos bancos</option>
-            {bankNames.map((b) => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
-        )}
 
         <select
           value={typeFilter}
@@ -799,9 +786,6 @@ function ConnectedView({
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-sm text-[var(--color-text-muted)] whitespace-nowrap w-28">
-                            {getBankName(txn.account_id)}
-                          </td>
                           <td className="px-4 py-3 w-32">
                             <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${getCategoryStyle(txn.category)}`}>
                               {txn.category}
@@ -835,7 +819,7 @@ function ConnectedView({
                       <p className="text-xs text-[var(--color-text-secondary)] truncate">{txn.payee}</p>
                     )}
                     <p className="text-xs text-[var(--color-text-muted)]">
-                      {formatDate(txn.date)} · {getBankName(txn.account_id)}
+                      {formatDate(txn.date)}
                     </p>
                   </div>
                 }
