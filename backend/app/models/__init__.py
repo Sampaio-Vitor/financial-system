@@ -11,6 +11,10 @@ from app.models.fixed_income_interest import FixedIncomeInterest
 from app.models.allowed_username import AllowedUsername
 from app.models.system_setting import SystemSetting
 from app.models.user_asset import UserAsset
+from app.models.pluggy_credentials import PluggyCredentials
+from app.models.bank_connection import BankConnection
+from app.models.bank_account import BankAccount
+from app.models.transaction import Transaction
 
 __all__ = [
     "User",
@@ -27,4 +31,8 @@ __all__ = [
     "AllowedUsername",
     "SystemSetting",
     "UserAsset",
+    "PluggyCredentials",
+    "BankConnection",
+    "BankAccount",
+    "Transaction",
 ]
