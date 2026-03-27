@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Briefcase,
   BookOpen,
+  Receipt,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -45,6 +46,11 @@ export const navItems: NavItem[] = [
     href: "/carteira/mensal",
     icon: Calendar,
     exact: true,
+  },
+  {
+    label: "Despesas",
+    href: "/carteira/despesas",
+    icon: Receipt,
   },
   {
     label: "Ativos",

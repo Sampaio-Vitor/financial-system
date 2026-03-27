@@ -242,3 +242,54 @@ export interface BulkAssetResponse {
   linked: BulkAssetLinked[];
   skipped: BulkAssetSkipped[];
 }
+
+// --- Expenses / Pluggy ---
+
+export interface BankAccount {
+  id: number;
+  name: string;
+  type: "checking" | "savings" | "credit_card";
+  balance: number;
+  currency: string;
+}
+
+export interface BankConnection {
+  id: number;
+  institution_name: string;
+  status: "active" | "error" | "expired";
+  last_sync_at: string | null;
+  created_at: string;
+  accounts: BankAccount[];
+}
+
+export interface ExpenseTransaction {
+  id: number;
+  account_id: number;
+  description: string;
+  payee: string | null;
+  amount: number;
+  date: string;
+  type: "debit" | "credit";
+  category: string;
+  pluggy_category: string | null;
+  status: "posted" | "pending";
+  created_at: string;
+}
+
+export interface TransactionSummaryItem {
+  category: string;
+  total: number;
+  count: number;
+}
+
+export interface TransactionSummary {
+  month: string;
+  total_expenses: number;
+  total_income: number;
+  categories: TransactionSummaryItem[];
+}
+
+export interface TransactionListResponse {
+  transactions: ExpenseTransaction[];
+  total_count: number;
+}
