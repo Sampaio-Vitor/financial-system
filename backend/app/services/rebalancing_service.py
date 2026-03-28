@@ -1,4 +1,5 @@
 import random
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -8,12 +9,12 @@ from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user_asset import UserAsset
-from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
+from app.models.financial_reserve import FinancialReserveTarget
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.user import User
 from app.constants import CLASS_LABELS
-from app.services.portfolio_service import get_class_values
+from app.services.portfolio_service import get_class_values, get_reserve_for_month
 from app.schemas.rebalancing import RebalancingResponse, ClassRebalancing, AssetRebalancing
 
 
@@ -174,13 +175,8 @@ class RebalancingService:
         )
 
     async def _get_reserve_value(self) -> Decimal:
-        result = await self.db.execute(
-            select(FinancialReserveEntry)
-            .where(FinancialReserveEntry.user_id == self.user.id)
-            .order_by(FinancialReserveEntry.recorded_at.desc())
-            .limit(1)
-        )
-        entry = result.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        entry = await get_reserve_for_month(self.db, self.user.id, now.year, now.month)
         return entry.amount if entry else Decimal("0")
 
     async def _get_reserve_target(self) -> Decimal | None:
