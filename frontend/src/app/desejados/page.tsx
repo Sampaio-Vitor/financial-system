@@ -19,6 +19,18 @@ export default function PlanejadorAportePage() {
   );
 
   const hasTargets = targets.length > 0;
+  const reserveGap = Number(rebalancing?.reserva_gap ?? 0);
+  const contributionValue = Number(rebalancing?.contribution ?? 0);
+  const reserveAllocation = Math.min(reserveGap, contributionValue);
+  const reserveConsumesAllContribution = reserveGap >= contributionValue;
+  const reserveShortfallAfterContribution = Math.max(
+    reserveGap - contributionValue,
+    0
+  );
+  const remainingForInvestments = Math.max(
+    contributionValue - reserveAllocation,
+    0
+  );
 
   const fetchTargets = useCallback(async () => {
     try {
@@ -152,28 +164,19 @@ export default function PlanejadorAportePage() {
                       {formatBRL(rebalancing.reserva_target!)} | Aportar na
                       reserva:{" "}
                       <span className="font-bold text-cyan-400">
-                        {formatBRL(
-                          Math.min(
-                            rebalancing.reserva_gap,
-                            rebalancing.contribution
-                          )
-                        )}
+                        {formatBRL(reserveAllocation)}
                       </span>
                     </p>
-                    {rebalancing.reserva_gap >= rebalancing.contribution ? (
+                    {reserveConsumesAllContribution ? (
                       <p className="text-xs text-[var(--color-warning)] mt-1">
                         Todo o aporte vai para a reserva. Faltam{" "}
-                        {formatBRL(
-                          rebalancing.reserva_gap - rebalancing.contribution
-                        )}{" "}
+                        {formatBRL(reserveShortfallAfterContribution)}{" "}
                         após este aporte.
                       </p>
                     ) : (
                       <p className="text-xs text-[var(--color-text-muted)] mt-1">
                         Restante para investimentos:{" "}
-                        {formatBRL(
-                          rebalancing.contribution - rebalancing.reserva_gap
-                        )}
+                        {formatBRL(remainingForInvestments)}
                       </p>
                     )}
                   </div>
@@ -313,12 +316,7 @@ export default function PlanejadorAportePage() {
                             {formatBRL(rebalancing.reserva_gap)}
                           </td>
                           <td className="px-3 py-2 font-bold text-cyan-400">
-                            {formatBRL(
-                              Math.min(
-                                rebalancing.reserva_gap,
-                                rebalancing.contribution
-                              )
-                            )}
+                            {formatBRL(reserveAllocation)}
                           </td>
                           <td className="px-3 py-2 text-[var(--color-text-muted)]">
                             —
@@ -371,12 +369,8 @@ export default function PlanejadorAportePage() {
                       <td className="px-3 py-2">
                         {formatBRL(
                           Number(rebalancing.total_planned || 0) +
-                            (rebalancing.reserva_gap != null &&
-                            Number(rebalancing.reserva_gap) > 0
-                              ? Math.min(
-                                  Number(rebalancing.reserva_gap),
-                                  Number(rebalancing.contribution)
-                                )
+                            (rebalancing.reserva_gap != null && reserveGap > 0
+                              ? reserveAllocation
                               : 0)
                         )}
                       </td>
