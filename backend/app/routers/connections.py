@@ -13,6 +13,7 @@ from app.models.bank_connection import BankConnection
 from app.models.pluggy_credentials import PluggyCredentials
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.asset import Asset
 from app.schemas.expenses import (
     BankConnectionResponse,
     ConnectionCallbackRequest,
@@ -236,6 +237,59 @@ async def rename_connection(
     await db.commit()
     await db.refresh(connection)
     return connection
+
+
+@router.get("/{connection_id}/investments-test")
+async def test_investments_overlap(
+    connection_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Temporary test endpoint: fetch Pluggy investments and compare with existing assets."""
+    result = await db.execute(
+        select(BankConnection)
+        .where(BankConnection.id == connection_id, BankConnection.user_id == user.id)
+    )
+    connection = result.scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada")
+
+    client_id, client_secret, _ = await _get_user_pluggy_creds(user.id, db)
+    api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
+
+    # Fetch Pluggy investments
+    raw_investments = await pluggy_service.get_investments(api_key, connection.external_id)
+
+    # Fetch all user's assets from DB
+    assets_result = await db.execute(select(Asset))
+    all_assets = {a.ticker: {"type": a.type.value, "current_price": float(a.current_price) if a.current_price else None} for a in assets_result.scalars().all()}
+
+    # Compare
+    pluggy_items = []
+    for inv in raw_investments:
+        if inv.get("status") != "ACTIVE":
+            continue
+        code = inv.get("code")
+        match = all_assets.get(code) if code else None
+        pluggy_items.append({
+            "name": inv.get("name"),
+            "code": code,
+            "type": inv.get("type"),
+            "subtype": inv.get("subtype"),
+            "value_pluggy": inv.get("value"),
+            "quantity": inv.get("quantity"),
+            "balance": inv.get("balance"),
+            "amount_original": inv.get("amountOriginal"),
+            "existing_asset": match,
+            "price_match": match and match["current_price"] and code and abs(match["current_price"] - (inv.get("value") or 0)) < 1 if match else False,
+        })
+
+    return {
+        "connection": connection.institution_name,
+        "total_pluggy_active": len(pluggy_items),
+        "matched_with_assets": sum(1 for i in pluggy_items if i["existing_asset"]),
+        "investments": pluggy_items,
+    }
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

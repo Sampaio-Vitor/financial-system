@@ -195,6 +195,40 @@ async def get_transactions(
     return all_txns
 
 
+async def get_investments(api_key: str, item_id: str) -> list[dict]:
+    """Fetch all investments for an item, paginated."""
+    all_investments: list[dict] = []
+    page = 1
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            params: dict = {
+                "itemId": item_id,
+                "pageSize": 500,
+                "page": page,
+            }
+            resp = await client.get(
+                f"{PLUGGY_API_BASE}/investments",
+                headers={"X-API-KEY": api_key},
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = data.get("results", [])
+            if not results:
+                break
+
+            all_investments.extend(results)
+
+            total_pages = data.get("totalPages", 1)
+            if page >= total_pages:
+                break
+            page += 1
+
+    return all_investments
+
+
 def _extract_payee(txn: dict, txn_type: str) -> str | None:
     """Extract payee from description (split on |) or paymentData."""
     # Try description "Transferência enviada|Nome Pessoa" pattern
