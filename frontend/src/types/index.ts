@@ -293,3 +293,43 @@ export interface TransactionListResponse {
   transactions: ExpenseTransaction[];
   total_count: number;
 }
+
+// --- Saved Plans ---
+
+export interface SavedPlanItem {
+  id: number;
+  ticker: string;
+  asset_class: string;
+  current_value: number;
+  target_value: number;
+  gap: number;
+  amount_to_invest: number;
+  amount_to_invest_usd: number | null;
+  is_reserve: boolean;
+  checked: boolean;
+}
+
+export interface SavedPlan {
+  id: number;
+  label: string;
+  contribution: number;
+  patrimonio_atual: number;
+  patrimonio_pos_aporte: number;
+  reserva_valor: number;
+  reserva_target: number | null;
+  reserva_gap: number | null;
+  total_planned: number;
+  class_breakdown_json: string;
+  created_at: string;
+  items: SavedPlanItem[];
+}
+
+export interface SavedPlanSummary {
+  id: number;
+  label: string;
+  contribution: number;
+  total_planned: number;
+  created_at: string;
+  items_count: number;
+  checked_count: number;
+}
