@@ -6,7 +6,7 @@ import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
 import { AllocationTarget, AssetType, RebalancingResponse } from "@/types";
 import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
-import { Calculator, Info, ShieldCheck } from "lucide-react";
+import { Calculator, Info, ShieldCheck, Save, FolderOpen } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 import Link from "next/link";
 
@@ -24,6 +24,8 @@ export default function PlanejadorAportePage() {
   const [rebalancing, setRebalancing] = useState<RebalancingResponse | null>(
     null
   );
+
+  const [saving, setSaving] = useState(false);
 
   const hasTargets = targets.length > 0;
   const reserveGap = Number(rebalancing?.reserva_gap ?? 0);
@@ -137,9 +139,86 @@ export default function PlanejadorAportePage() {
     }
   };
 
+  const handleSave = async () => {
+    if (!rebalancing) return;
+    setSaving(true);
+    try {
+      const now = new Date();
+      const label = `Plano ${now.toLocaleDateString("pt-BR")} ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+
+      const items: { ticker: string; asset_class: string; current_value: number; target_value: number; gap: number; amount_to_invest: number; amount_to_invest_usd: number | null; is_reserve: boolean }[] = [];
+
+      // Add reserve as item if applicable
+      if (rebalancing.reserva_gap != null && Number(rebalancing.reserva_gap) > 0) {
+        items.push({
+          ticker: "RESERVA",
+          asset_class: "RESERVA",
+          current_value: Number(rebalancing.reserva_valor),
+          target_value: Number(rebalancing.reserva_target ?? 0),
+          gap: Number(rebalancing.reserva_gap),
+          amount_to_invest: reserveAllocation,
+          amount_to_invest_usd: null,
+          is_reserve: true,
+        });
+      }
+
+      for (const a of rebalancing.asset_plan) {
+        items.push({
+          ticker: a.ticker,
+          asset_class: a.asset_class,
+          current_value: Number(a.current_value),
+          target_value: Number(a.target_value),
+          gap: Number(a.gap),
+          amount_to_invest: Number(a.amount_to_invest),
+          amount_to_invest_usd:
+            a.amount_to_invest_usd != null
+              ? Number(a.amount_to_invest_usd)
+              : null,
+          is_reserve: false,
+        });
+      }
+
+      await apiFetch("/saved-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          label,
+          contribution: Number(rebalancing.contribution),
+          patrimonio_atual: Number(rebalancing.patrimonio_atual),
+          patrimonio_pos_aporte: Number(rebalancing.patrimonio_pos_aporte),
+          reserva_valor: Number(rebalancing.reserva_valor),
+          reserva_target:
+            rebalancing.reserva_target != null
+              ? Number(rebalancing.reserva_target)
+              : null,
+          reserva_gap:
+            rebalancing.reserva_gap != null
+              ? Number(rebalancing.reserva_gap)
+              : null,
+          total_planned:
+            Number(rebalancing.total_planned || 0) + reserveAllocation,
+          class_breakdown_json: JSON.stringify(rebalancing.class_breakdown),
+          items,
+        }),
+      });
+      toast.success("Recomendação salva!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
-      <h1 className="text-xl font-bold">Planejador de Aporte</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold">Planejador de Aporte</h1>
+        <Link
+          href="/desejados/salvos"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] transition-colors"
+        >
+          <FolderOpen size={16} /> Planejamentos Salvos
+        </Link>
+      </div>
 
       {/* Banner: no targets configured */}
       {!hasTargets && (
@@ -648,6 +727,17 @@ export default function PlanejadorAportePage() {
               </div>
               </div>
             )}
+
+            {/* Save button */}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                <Save size={16} /> {saving ? "Salvando..." : "Salvar Recomendação"}
+              </button>
+            </div>
           </div>
         )}
       </div>
