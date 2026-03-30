@@ -15,6 +15,7 @@ from app.models.pluggy_credentials import PluggyCredentials
 from app.models.bank_connection import BankConnection
 from app.models.bank_account import BankAccount
 from app.models.transaction import Transaction
+from app.models.saved_plan import SavedPlan, SavedPlanItem
 
 __all__ = [
     "User",
@@ -35,4 +36,6 @@ __all__ = [
     "BankConnection",
     "BankAccount",
     "Transaction",
+    "SavedPlan",
+    "SavedPlanItem",
 ]
