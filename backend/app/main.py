@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine
 from app.limiter import limiter
-from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans
+from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends
 
 
 @asynccontextmanager
@@ -76,6 +76,7 @@ app.include_router(snapshots.router, prefix="/api/snapshots", tags=["snapshots"]
 app.include_router(pluggy_credentials.router, prefix="/api/pluggy-credentials", tags=["pluggy-credentials"])
 app.include_router(connections.router, prefix="/api/connections", tags=["connections"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["transactions"])
+app.include_router(dividends.router, prefix="/api/dividends", tags=["dividends"])
 app.include_router(saved_plans.router, prefix="/api/saved-plans", tags=["saved-plans"])
 
 
