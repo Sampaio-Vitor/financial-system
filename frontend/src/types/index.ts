@@ -118,6 +118,8 @@ export interface MonthlyOverview {
   fi_interest: FixedIncomeTransactionItem[];
   reserva_depositos: number;
   reserva_resgates: number;
+  proventos_do_mes: number;
+  dividend_events: DividendEvent[];
 }
 
 export interface PositionItem {
@@ -291,6 +293,32 @@ export interface TransactionSummary {
 
 export interface TransactionListResponse {
   transactions: ExpenseTransaction[];
+  total_count: number;
+}
+
+// --- Dividend Events ---
+
+export interface DividendEvent {
+  id: number;
+  transaction_id: number;
+  asset_id: number | null;
+  ticker: string | null;
+  asset_type: string | null;
+  event_type: string;
+  credited_amount: number;
+  gross_amount: number | null;
+  withholding_tax: number | null;
+  quantity_base: number | null;
+  amount_per_unit: number | null;
+  payment_date: string;
+  description: string;
+  source_category: string | null;
+  source_confidence: string;
+  created_at: string;
+}
+
+export interface DividendEventListResponse {
+  events: DividendEvent[];
   total_count: number;
 }
 
