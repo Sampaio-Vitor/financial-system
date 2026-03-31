@@ -118,6 +118,8 @@ export interface MonthlyOverview {
   fi_interest: FixedIncomeTransactionItem[];
   reserva_depositos: number;
   reserva_resgates: number;
+  proventos_do_mes: number;
+  dividend_events: DividendEvent[];
 }
 
 export interface PositionItem {

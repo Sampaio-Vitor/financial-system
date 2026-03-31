@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.models.asset import AssetType
 from app.schemas.purchase import PurchaseResponse
+from app.schemas.dividend import DividendEventResponse
 
 
 class FixedIncomeTransactionItem(BaseModel):
@@ -56,6 +57,8 @@ class MonthlyOverview(BaseModel):
     fi_interest: list[FixedIncomeTransactionItem]
     reserva_depositos: Decimal
     reserva_resgates: Decimal
+    proventos_do_mes: Decimal
+    dividend_events: list[DividendEventResponse]
 
 
 class PositionsResponse(BaseModel):

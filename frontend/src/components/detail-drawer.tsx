@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatBRL } from "@/lib/format";
-import { MonthlyOverview, AssetType, Purchase } from "@/types";
+import { MonthlyOverview, AssetType, Purchase, DividendEvent } from "@/types";
 
 const classLabels: Record<string, string> = {
   STOCK: "Stocks (EUA)",
@@ -148,13 +148,84 @@ const rfGroupLabels: Record<string, string> = {
   RF_JUROS: "Juros RF",
 };
 
+function buildProventosGroups(data: MonthlyOverview): Group[] {
+  if (!data.dividend_events || data.dividend_events.length === 0) return [];
+
+  const byTicker: Record<string, DividendEvent[]> = {};
+  for (const d of data.dividend_events) {
+    const t = d.ticker || "?";
+    if (!byTicker[t]) byTicker[t] = [];
+    byTicker[t].push(d);
+  }
+
+  return Object.entries(byTicker)
+    .map(([ticker, events]) => ({
+      key: ticker,
+      items: events.map((e) => ({
+        label: new Date(e.payment_date + "T00:00:00").toLocaleDateString("pt-BR"),
+        amount: Number(e.credited_amount),
+      })),
+      subtotal: events.reduce((sum, e) => sum + Number(e.credited_amount), 0),
+    }))
+    .sort((a, b) => b.subtotal - a.subtotal);
+}
+
 interface DetailDrawerProps {
-  type: "aportes" | "resgates";
+  type: "aportes" | "resgates" | "proventos";
   data: MonthlyOverview;
 }
 
 export default function DetailDrawer({ type, data }: DetailDrawerProps) {
   const [activeTab, setActiveTab] = useState<"rv" | "rf">("rv");
+
+  // Proventos drawer — simple single-view
+  if (type === "proventos") {
+    const groups = buildProventosGroups(data);
+    const grandTotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
+
+    if (groups.length === 0) {
+      return (
+        <div className="-mt-px overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] px-6 py-6">
+          <p className="text-sm text-[var(--color-text-muted)] text-center">
+            Nenhum provento neste periodo
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="-mt-px overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)]">
+        <div className="px-4 md:px-8 pt-5 pb-5">
+          <div className="flex flex-wrap gap-x-6 md:gap-x-12 gap-y-5">
+            {groups.map((group) => (
+              <div key={group.key} className="min-w-[180px]">
+                <div className="flex items-baseline justify-between gap-4 mb-2.5 pb-2 border-b border-[var(--color-border)]/50">
+                  <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">
+                    {group.key}
+                  </span>
+                  <span className="text-[13px] font-bold tabular-nums text-[var(--color-positive)]">
+                    {formatBRL(group.subtotal)}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between gap-6">
+                      <span className="text-[13px] text-[var(--color-text-muted)]">{item.label}</span>
+                      <span className="text-[13px] tabular-nums text-[var(--color-text-muted)]">{formatBRL(item.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-4 md:px-8 py-3 border-t border-[var(--color-border)]/40 flex items-center justify-end gap-4">
+          <span className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Total</span>
+          <span className="text-sm font-bold tabular-nums text-[var(--color-positive)]">{formatBRL(grandTotal)}</span>
+        </div>
+      </div>
+    );
+  }
 
   const rvGroups =
     type === "aportes" ? buildRvAportesGroups(data) : buildRvResgatesGroups(data);

@@ -46,9 +46,9 @@ export default function MensalPage() {
           <MonthNavigator month={month} onChange={setMonth} />
         </div>
         <div className="animate-pulse space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-[104px] rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-[80px] rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
             ))}
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -87,6 +87,7 @@ export default function MensalPage() {
             { label: "Patrimônio Total", value: data.patrimonio_total, format: "brl" },
             { label: "Aportes do Mês", value: data.aportes_do_mes, format: "brl", expandable: true },
             { label: "Resgates do Mês", value: data.resgates_do_mes, format: "brl", expandable: true },
+            { label: "Proventos do Mês", value: data.proventos_do_mes, format: "brl", expandable: true },
             { label: "Variação do Mês", value: data.variacao_mes, format: "brl", colorBySign: true },
             { label: "Variação (%)", value: data.variacao_mes_pct, format: "percent", colorBySign: true },
           ]}
@@ -98,6 +99,9 @@ export default function MensalPage() {
         )}
         {expandedCard === "Resgates do Mês" && (
           <DetailDrawer type="resgates" data={data} />
+        )}
+        {expandedCard === "Proventos do Mês" && (
+          <DetailDrawer type="proventos" data={data} />
         )}
       </div>
 
