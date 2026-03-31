@@ -15,6 +15,7 @@ from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.allocation_target import AllocationTarget
 from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
+from app.models.dividend_event import DividendEvent
 from app.models.user import User
 from app.constants import CLASS_LABELS
 from app.services.portfolio_service import get_reserve_for_month, get_class_values
@@ -26,6 +27,7 @@ from app.schemas.portfolio import (
     PositionItem,
 )
 from app.schemas.purchase import PurchaseResponse
+from app.schemas.dividend import DividendEventResponse
 
 router = APIRouter()
 
@@ -278,6 +280,40 @@ async def get_overview(
         for fi in fi_interest_detail.scalars().all()
     ]
 
+    # Dividend events for the month
+    div_result = await db.execute(
+        select(DividendEvent)
+        .where(
+            DividendEvent.user_id == user.id,
+            DividendEvent.payment_date >= month_start,
+            DividendEvent.payment_date < month_end,
+        )
+        .order_by(DividendEvent.payment_date.desc())
+    )
+    month_dividends = div_result.scalars().all()
+    proventos_do_mes = sum(d.credited_amount for d in month_dividends)
+    dividend_events = [
+        DividendEventResponse(
+            id=d.id,
+            transaction_id=d.transaction_id,
+            asset_id=d.asset_id,
+            ticker=d.ticker,
+            asset_type=d.asset.type.value if d.asset else None,
+            event_type=d.event_type,
+            credited_amount=d.credited_amount,
+            gross_amount=d.gross_amount,
+            withholding_tax=d.withholding_tax,
+            quantity_base=d.quantity_base,
+            amount_per_unit=d.amount_per_unit,
+            payment_date=d.payment_date,
+            description=d.description,
+            source_category=d.source_category,
+            source_confidence=d.source_confidence,
+            created_at=d.created_at,
+        )
+        for d in month_dividends
+    ]
+
     # Transactions for the month
     transactions = [
         PurchaseResponse(
@@ -312,6 +348,8 @@ async def get_overview(
         fi_interest=fi_interest_list,
         reserva_depositos=round(reserva_depositos, 4),
         reserva_resgates=round(reserva_resgates, 4),
+        proventos_do_mes=round(proventos_do_mes, 4),
+        dividend_events=dividend_events,
     )
 
 
