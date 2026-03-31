@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { SavedPlan, ClassRebalancing, AssetType } from "@/types";
 import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
-import { ChevronLeft, ShieldCheck, CheckCircle2, Circle } from "lucide-react";
+import {
+  ChevronLeft,
+  ShieldCheck,
+  CheckCircle2,
+  Circle,
+  MoveVertical,
+} from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 import Link from "next/link";
 
@@ -23,6 +29,11 @@ export default function SavedPlanDetailPage() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingChecks, setSavingChecks] = useState(false);
+  const [rulerIndex, setRulerIndex] = useState<number | null>(null);
+  const [rulerTop, setRulerTop] = useState<number | null>(null);
+  const [draggingRuler, setDraggingRuler] = useState(false);
+  const tableCanvasRef = useRef<HTMLDivElement | null>(null);
+  const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
   const fetchPlan = useCallback(async () => {
     try {
@@ -38,6 +49,111 @@ export default function SavedPlanDetailPage() {
   useEffect(() => {
     fetchPlan();
   }, [fetchPlan]);
+
+  useEffect(() => {
+    if (!plan?.items.length) {
+      setRulerIndex(null);
+      return;
+    }
+
+    setRulerIndex((prev) => {
+      if (prev == null) return plan.items.length - 1;
+      return Math.min(prev, plan.items.length - 1);
+    });
+  }, [plan?.items.length]);
+
+  const updateRulerTop = useCallback(() => {
+    if (rulerIndex == null) {
+      setRulerTop(null);
+      return;
+    }
+
+    const row = rowRefs.current[rulerIndex];
+    const canvas = tableCanvasRef.current;
+    if (!row || !canvas) {
+      setRulerTop(null);
+      return;
+    }
+
+    const rowRect = row.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    setRulerTop(rowRect.bottom - canvasRect.top);
+  }, [rulerIndex]);
+
+  useEffect(() => {
+    updateRulerTop();
+  }, [updateRulerTop, plan?.items.length]);
+
+  useEffect(() => {
+    const canvas = tableCanvasRef.current;
+    if (!canvas || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      updateRulerTop();
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [updateRulerTop, plan?.items.length]);
+
+  useEffect(() => {
+    if (!draggingRuler) return;
+
+    const syncRulerFromPointer = (clientY: number) => {
+      let closestIndex = 0;
+      let smallestDistance = Number.POSITIVE_INFINITY;
+
+      rowRefs.current.forEach((row, index) => {
+        if (!row) return;
+        const distance = Math.abs(clientY - row.getBoundingClientRect().bottom);
+        if (distance < smallestDistance) {
+          smallestDistance = distance;
+          closestIndex = index;
+        }
+      });
+
+      setRulerIndex(closestIndex);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      syncRulerFromPointer(event.clientY);
+    };
+
+    const stopDragging = () => {
+      setDraggingRuler(false);
+    };
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopDragging);
+    window.addEventListener("pointercancel", stopDragging);
+
+    return () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopDragging);
+      window.removeEventListener("pointercancel", stopDragging);
+    };
+  }, [draggingRuler]);
+
+  const handleRulerPointerDown = (clientY: number) => {
+    let closestIndex = 0;
+    let smallestDistance = Number.POSITIVE_INFINITY;
+
+    rowRefs.current.forEach((row, index) => {
+      if (!row) return;
+      const distance = Math.abs(clientY - row.getBoundingClientRect().bottom);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    setRulerIndex(closestIndex);
+    setDraggingRuler(true);
+  };
 
   const toggleCheck = async (itemId: number) => {
     if (!plan) return;
@@ -115,6 +231,16 @@ export default function SavedPlanDetailPage() {
     (sum, i) => sum + Number(i.amount_to_invest_usd ?? 0),
     0
   );
+  const rulerSum =
+    rulerIndex == null
+      ? 0
+      : plan.items
+          .slice(0, rulerIndex + 1)
+          .reduce((sum, item) => sum + Number(item.amount_to_invest), 0);
+  const rulerLabel =
+    rulerIndex == null ? null : plan.items[rulerIndex]?.is_reserve
+      ? "Reserva"
+      : plan.items[rulerIndex]?.ticker;
 
   return (
     <div className="space-y-6">
@@ -265,141 +391,205 @@ export default function SavedPlanDetailPage() {
       {/* Items checklist */}
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
-            Plano por Ativo
-          </h2>
-          {savingChecks && (
-            <span className="text-[10px] text-[var(--color-text-muted)]">
-              Salvando...
-            </span>
-          )}
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
+              Plano por Ativo
+            </h2>
+            {plan.items.length > 0 && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Arraste a régua horizontal para somar a coluna de aporte até a
+                linha selecionada.
+              </p>
+            )}
+          </div>
+          <div className="text-right">
+            {rulerIndex != null && (
+              <p className="text-xs font-medium text-[var(--color-text-secondary)]">
+                Soma até a régua: {formatBRL(rulerSum)}
+              </p>
+            )}
+            {savingChecks && (
+              <span className="text-[10px] text-[var(--color-text-muted)]">
+                Salvando...
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-border)]">
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)] w-10"></th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Ticker
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Classe
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Valor Atual
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Valor Alvo
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Gap
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Aportar (R$)
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Aportar (USD)
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {plan.items.map((item) => (
-                <tr
-                  key={item.id}
-                  className={`border-b border-[var(--color-border)]/50 transition-colors ${
-                    item.is_reserve
-                      ? "bg-cyan-500/5"
-                      : item.checked
-                        ? "bg-[var(--color-positive)]/5"
-                        : ""
-                  }`}
-                >
-                  <td className="px-3 py-2">
-                    <button
-                      onClick={() => toggleCheck(item.id)}
-                      className="p-0.5 transition-colors"
+        <div className="relative overflow-x-auto">
+          <div ref={tableCanvasRef} className="relative min-w-max">
+            {rulerTop != null && (
+              <div
+                className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-cyan-400/80"
+                style={{ top: rulerTop }}
+              />
+            )}
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)]">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)] w-10"></th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Ticker
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Classe
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Valor Atual
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Valor Alvo
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Gap
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Aportar (R$)
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                    Aportar (USD)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {plan.items.map((item, index) => {
+                  const isInsideRuler = rulerIndex != null && index <= rulerIndex;
+
+                  return (
+                    <tr
+                      key={item.id}
+                      ref={(node) => {
+                        rowRefs.current[index] = node;
+                      }}
+                      className={`border-b border-[var(--color-border)]/50 transition-colors ${
+                        item.is_reserve
+                          ? "bg-cyan-500/5"
+                          : item.checked
+                            ? "bg-[var(--color-positive)]/5"
+                            : ""
+                      } ${isInsideRuler ? "shadow-[inset_3px_0_0_0_rgba(34,211,238,0.75)]" : ""}`}
                     >
-                      {item.checked ? (
-                        <CheckCircle2
-                          size={20}
-                          className="text-[var(--color-positive)]"
-                        />
-                      ) : (
-                        <Circle
-                          size={20}
-                          className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                        />
-                      )}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 font-medium">
-                    {item.is_reserve ? (
-                      <div className="flex items-center gap-2 text-cyan-400">
-                        <ShieldCheck size={20} />
-                        Reserva Financeira
-                      </div>
-                    ) : (
-                      <div
-                        className={`flex items-center gap-2 ${item.checked ? "line-through opacity-60" : ""}`}
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => toggleCheck(item.id)}
+                          className="p-0.5 transition-colors"
+                        >
+                          {item.checked ? (
+                            <CheckCircle2
+                              size={20}
+                              className="text-[var(--color-positive)]"
+                            />
+                          ) : (
+                            <Circle
+                              size={20}
+                              className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                            />
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 font-medium">
+                        {item.is_reserve ? (
+                          <div className="flex items-center gap-2 text-cyan-400">
+                            <ShieldCheck size={20} />
+                            Reserva Financeira
+                          </div>
+                        ) : (
+                          <div
+                            className={`flex items-center gap-2 ${item.checked ? "line-through opacity-60" : ""}`}
+                          >
+                            <TickerLogo
+                              ticker={item.ticker}
+                              type={item.asset_class as AssetType}
+                              size={20}
+                            />
+                            {item.ticker}
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${item.is_reserve ? "text-cyan-400 text-xs font-semibold" : "text-[var(--color-text-secondary)]"} ${item.checked && !item.is_reserve ? "line-through opacity-60" : ""}`}
                       >
-                        <TickerLogo
-                          ticker={item.ticker}
-                          type={item.asset_class as AssetType}
-                          size={20}
-                        />
-                        {item.ticker}
-                      </div>
-                    )}
+                        {item.is_reserve ? "PRIORIDADE" : item.asset_class}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${item.checked ? "line-through opacity-60" : ""}`}
+                      >
+                        {formatBRL(item.current_value)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${item.checked ? "line-through opacity-60" : ""}`}
+                      >
+                        {formatBRL(item.target_value)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${item.is_reserve ? "text-cyan-400" : "text-[var(--color-positive)]"} ${item.checked ? "line-through opacity-60" : ""}`}
+                      >
+                        {formatBRL(item.gap)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 font-bold ${item.is_reserve ? "text-cyan-400" : ""} ${item.checked ? "line-through opacity-60" : ""}`}
+                      >
+                        {formatBRL(item.amount_to_invest)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-[var(--color-text-muted)] ${item.checked ? "line-through opacity-60" : ""}`}
+                      >
+                        {item.amount_to_invest_usd
+                          ? formatUSD(item.amount_to_invest_usd)
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-[var(--color-border)] font-bold">
+                  <td className="px-3 py-2" />
+                  <td className="px-3 py-2" colSpan={5}>
+                    TOTAL PLANEJADO
                   </td>
-                  <td
-                    className={`px-3 py-2 ${item.is_reserve ? "text-cyan-400 text-xs font-semibold" : "text-[var(--color-text-secondary)]"} ${item.checked && !item.is_reserve ? "line-through opacity-60" : ""}`}
-                  >
-                    {item.is_reserve ? "PRIORIDADE" : item.asset_class}
-                  </td>
-                  <td
-                    className={`px-3 py-2 ${item.checked ? "line-through opacity-60" : ""}`}
-                  >
-                    {formatBRL(item.current_value)}
-                  </td>
-                  <td
-                    className={`px-3 py-2 ${item.checked ? "line-through opacity-60" : ""}`}
-                  >
-                    {formatBRL(item.target_value)}
-                  </td>
-                  <td
-                    className={`px-3 py-2 ${item.is_reserve ? "text-cyan-400" : "text-[var(--color-positive)]"} ${item.checked ? "line-through opacity-60" : ""}`}
-                  >
-                    {formatBRL(item.gap)}
-                  </td>
-                  <td
-                    className={`px-3 py-2 font-bold ${item.is_reserve ? "text-cyan-400" : ""} ${item.checked ? "line-through opacity-60" : ""}`}
-                  >
-                    {formatBRL(item.amount_to_invest)}
-                  </td>
-                  <td
-                    className={`px-3 py-2 text-[var(--color-text-muted)] ${item.checked ? "line-through opacity-60" : ""}`}
-                  >
-                    {item.amount_to_invest_usd
-                      ? formatUSD(item.amount_to_invest_usd)
-                      : "—"}
+                  <td className="px-3 py-2">{formatBRL(totalPlannedBrl)}</td>
+                  <td className="px-3 py-2">
+                    {totalPlannedUsd > 0 ? formatUSD(totalPlannedUsd) : "—"}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                <td className="px-3 py-2" />
-                <td className="px-3 py-2" colSpan={5}>
-                  TOTAL PLANEJADO
-                </td>
-                <td className="px-3 py-2">{formatBRL(totalPlannedBrl)}</td>
-                <td className="px-3 py-2">
-                  {totalPlannedUsd > 0 ? formatUSD(totalPlannedUsd) : "—"}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
+
+          {rulerTop != null && (
+            <div
+              className="pointer-events-none absolute inset-x-0 z-30"
+              style={{ top: rulerTop }}
+            >
+              <button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  handleRulerPointerDown(event.clientY);
+                }}
+                className="pointer-events-auto absolute left-2 -top-4 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/50 bg-slate-950/90 text-cyan-300 shadow-lg transition-colors hover:bg-slate-900 cursor-row-resize"
+                aria-label="Arrastar régua de soma"
+              >
+                <MoveVertical size={16} />
+              </button>
+              <button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  handleRulerPointerDown(event.clientY);
+                }}
+                className="pointer-events-auto absolute right-2 -top-5 flex cursor-row-resize items-center gap-2 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg transition-colors hover:bg-slate-900"
+              >
+                <MoveVertical size={14} className="text-cyan-300" />
+                <span>
+                  {rulerLabel ? `${rulerLabel} • ` : ""}
+                  {formatBRL(rulerSum)}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
