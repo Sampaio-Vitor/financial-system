@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { formatBRL, formatPercent, formatQuantity } from "@/lib/format";
 import { PositionItem } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
+import AssetDetailCharts from "@/components/asset-detail-charts";
 
 interface PositionsTableProps {
   positions: PositionItem[];
@@ -35,6 +37,7 @@ export default function PositionsTable({
 }: PositionsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -97,45 +100,66 @@ export default function PositionsTable({
         </div>
 
         {sorted.map((p) => (
-          <MobileCard
-            key={p.asset_id}
-            header={
-              <>
-                <TickerLogo ticker={p.ticker} type={p.type} size={22} />
-                <span className="font-medium text-sm text-[var(--color-text-primary)]">
-                  {p.ticker}
-                </span>
-              </>
-            }
-            badge={
-              <span className={`text-sm font-semibold ${pnlColor(p.pnl_pct)}`}>
-                {formatPercent(p.pnl_pct)}
-              </span>
-            }
-            bodyItems={[
-              { label: "Valor Mercado", value: formatBRL(p.market_value) },
-              { label: "Quantidade", value: formatQuantity(p.quantity) },
-            ]}
-            expandedItems={[
-              { label: "Descricao", value: p.description || "\u2014" },
-              {
-                label: "1o Aporte",
-                value: p.first_date
-                  ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
-                  : "\u2014",
-              },
-              { label: "Preco Medio", value: formatBRL(p.avg_price) },
-              { label: "Cotacao Atual", value: formatBRL(p.current_price) },
-              {
-                label: "P&L (R$)",
-                value: (
-                  <span className={pnlColor(p.pnl)}>
-                    {formatBRL(p.pnl)}
+          <div key={p.asset_id}>
+            <MobileCard
+              header={
+                <>
+                  <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+                  <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                    {p.ticker}
                   </span>
-                ),
-              },
-            ]}
-          />
+                </>
+              }
+              badge={
+                <span className={`text-sm font-semibold ${pnlColor(p.pnl_pct)}`}>
+                  {formatPercent(p.pnl_pct)}
+                </span>
+              }
+              bodyItems={[
+                { label: "Valor Mercado", value: formatBRL(p.market_value) },
+                { label: "Quantidade", value: formatQuantity(p.quantity) },
+              ]}
+              expandedItems={[
+                { label: "Descricao", value: p.description || "\u2014" },
+                {
+                  label: "1o Aporte",
+                  value: p.first_date
+                    ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
+                    : "\u2014",
+                },
+                { label: "Preco Medio", value: formatBRL(p.avg_price) },
+                { label: "Cotacao Atual", value: formatBRL(p.current_price) },
+                {
+                  label: "P&L (R$)",
+                  value: (
+                    <span className={pnlColor(p.pnl)}>
+                      {formatBRL(p.pnl)}
+                    </span>
+                  ),
+                },
+              ]}
+              actions={
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedId(expandedId === p.asset_id ? null : p.asset_id);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-[var(--color-bg-main)] text-[var(--color-text-muted)] transition-colors text-xs"
+                >
+                  Graficos
+                </button>
+              }
+            />
+            {expandedId === p.asset_id && (
+              <div className="mt-1 bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+                <AssetDetailCharts
+                  ticker={p.ticker}
+                  assetId={p.asset_id}
+                  currentPrice={p.current_price}
+                />
+              </div>
+            )}
+          </div>
         ))}
 
         {/* Totals card */}
@@ -182,37 +206,57 @@ export default function PositionsTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((p) => (
-              <tr
-                key={p.asset_id}
-                className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50"
-              >
-                <td className="px-3 py-2.5 font-medium">
-                  <div className="flex items-center gap-2">
-                    <TickerLogo ticker={p.ticker} type={p.type} size={22} />
-                    {p.ticker}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
-                  {p.description}
-                </td>
-                <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-                  {p.first_date
-                    ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
-                    : "\u2014"}
-                </td>
-                <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
-                <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
-                <td className="px-3 py-2.5">{formatBRL(p.current_price)}</td>
-                <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
-                <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl)}`}>
-                  {formatBRL(p.pnl)}
-                </td>
-                <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl_pct)}`}>
-                  {formatPercent(p.pnl_pct)}
-                </td>
-              </tr>
-            ))}
+            {sorted.map((p) => {
+              const isExpanded = expandedId === p.asset_id;
+              return (
+                <Fragment key={p.asset_id}>
+                  <tr
+                    className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50 cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : p.asset_id)}
+                  >
+                    <td className="px-3 py-2.5 font-medium">
+                      <div className="flex items-center gap-2">
+                        <TickerLogo ticker={p.ticker} type={p.type} size={22} />
+                        {p.ticker}
+                        <ChevronDown
+                          size={14}
+                          className={`text-[var(--color-text-muted)] transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
+                      {p.description}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                      {p.first_date
+                        ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
+                        : "\u2014"}
+                    </td>
+                    <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
+                    <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
+                    <td className="px-3 py-2.5">{formatBRL(p.current_price)}</td>
+                    <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
+                    <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl)}`}>
+                      {formatBRL(p.pnl)}
+                    </td>
+                    <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl_pct)}`}>
+                      {formatPercent(p.pnl_pct)}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="border-b border-[var(--color-border)]/50">
+                      <td colSpan={9} className="p-0 bg-[var(--color-bg-main)]/40">
+                        <AssetDetailCharts
+                          ticker={p.ticker}
+                          assetId={p.asset_id}
+                          currentPrice={p.current_price}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[var(--color-border)] font-bold">

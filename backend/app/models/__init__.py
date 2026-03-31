@@ -16,6 +16,7 @@ from app.models.bank_connection import BankConnection
 from app.models.bank_account import BankAccount
 from app.models.transaction import Transaction
 from app.models.saved_plan import SavedPlan, SavedPlanItem
+from app.models.dividend_event import DividendEvent
 
 __all__ = [
     "User",
@@ -36,6 +37,7 @@ __all__ = [
     "BankConnection",
     "BankAccount",
     "Transaction",
+    "DividendEvent",
     "SavedPlan",
     "SavedPlanItem",
 ]

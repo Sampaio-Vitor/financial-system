@@ -17,7 +17,7 @@ interface SummaryCardsProps {
 
 export default function SummaryCards({ cards, expandedCard, onToggleCard }: SummaryCardsProps) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 items-start">
       {cards.map((card) => {
         const formatted =
           card.format === "brl" ? formatBRL(card.value) : formatPercent(card.value);
@@ -38,12 +38,12 @@ export default function SummaryCards({ cards, expandedCard, onToggleCard }: Summ
             onClick={isExpandable ? () => onToggleCard(card.label) : undefined}
             className={`border flex flex-col justify-between transition-all duration-200 ${
               isExpanded
-                ? "bg-[var(--color-bg-card)] rounded-t-2xl rounded-b-none border-[var(--color-border)] border-b-transparent shadow-none z-10 relative px-6 pt-6 pb-8"
-                : "bg-[var(--color-bg-card)] rounded-2xl border-[var(--color-border)] shadow-sm hover:border-[var(--color-text-muted)]/30 p-4 md:p-6"
+                ? "bg-[var(--color-bg-card)] rounded-t-2xl rounded-b-none border-[var(--color-border)] border-b-transparent shadow-none z-10 relative px-4 pt-4 pb-6"
+                : "bg-[var(--color-bg-card)] rounded-2xl border-[var(--color-border)] shadow-sm hover:border-[var(--color-text-muted)]/30 p-3 md:p-4"
             } ${isExpandable ? "cursor-pointer group" : ""}`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <p className={`text-sm font-medium transition-colors duration-200 ${
+            <div className="flex items-center justify-between mb-1">
+              <p className={`text-xs font-medium transition-colors duration-200 ${
                 isExpanded
                   ? "text-[var(--color-text-primary)]"
                   : "text-[var(--color-text-secondary)]"
@@ -61,7 +61,7 @@ export default function SummaryCards({ cards, expandedCard, onToggleCard }: Summ
                 />
               )}
             </div>
-            <p className={`text-2xl font-bold tracking-tight ${colorClass}`}>{formatted}</p>
+            <p className={`text-lg font-bold tracking-tight ${colorClass}`}>{formatted}</p>
           </div>
         );
       })}
