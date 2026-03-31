@@ -19,6 +19,7 @@ import {
   Briefcase,
   BookOpen,
   Receipt,
+  Coins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -51,6 +52,11 @@ export const navItems: NavItem[] = [
     label: "Despesas",
     href: "/carteira/despesas",
     icon: Receipt,
+  },
+  {
+    label: "Proventos",
+    href: "/carteira/proventos",
+    icon: Coins,
   },
   {
     label: "Ativos",
