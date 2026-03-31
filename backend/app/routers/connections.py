@@ -21,7 +21,7 @@ from app.schemas.expenses import (
     SyncResponse,
 )
 from app.services.encryption_service import decrypt
-from app.services import pluggy_service
+from app.services import dividend_service, pluggy_service
 
 router = APIRouter()
 
@@ -38,6 +38,24 @@ async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, s
     client_secret = decrypt(creds.encrypted_client_secret)
     owner_names = creds.owner_names or []
     return client_id, client_secret, owner_names
+
+
+async def _create_transaction_with_dividend(
+    db: AsyncSession,
+    *,
+    account_id: int,
+    user_id: int,
+    parsed: dict,
+) -> Transaction:
+    txn = Transaction(
+        account_id=account_id,
+        user_id=user_id,
+        **parsed,
+    )
+    db.add(txn)
+    await db.flush()
+    await dividend_service.upsert_dividend_event_for_transaction(db, txn)
+    return txn
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
@@ -99,12 +117,18 @@ async def handle_callback(
         raw_txns = await pluggy_service.get_transactions(api_key, acc["id"])
         for raw_txn in raw_txns:
             parsed = pluggy_service.parse_transaction(raw_txn, owner_names=owner_names)
-            txn = Transaction(
+            await _create_transaction_with_dividend(
+                db,
                 account_id=account.id,
                 user_id=user.id,
-                **parsed,
+                parsed=parsed,
             )
-            db.add(txn)
+
+        await dividend_service.backfill_dividend_events_for_account(
+            db,
+            user_id=user.id,
+            account_id=account.id,
+        )
 
     await db.commit()
     await db.refresh(connection)
@@ -182,13 +206,19 @@ async def sync_connection(
             if existing.scalar_one_or_none():
                 continue
 
-            txn = Transaction(
+            await _create_transaction_with_dividend(
+                db,
                 account_id=account.id,
                 user_id=user.id,
-                **parsed,
+                parsed=parsed,
             )
-            db.add(txn)
             new_count += 1
+
+        await dividend_service.backfill_dividend_events_for_account(
+            db,
+            user_id=user.id,
+            account_id=account.id,
+        )
 
     connection.status = "active"
     connection.last_sync_at = datetime.now(timezone.utc)
