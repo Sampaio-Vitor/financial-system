@@ -94,6 +94,18 @@ async def handle_callback(
     if item_status in ("LOGIN_ERROR", "OUTDATED"):
         raise HTTPException(status_code=400, detail=f"Conexão com status: {item_status}")
 
+    existing_result = await db.execute(
+        select(BankConnection)
+        .options(selectinload(BankConnection.accounts))
+        .where(BankConnection.user_id == user.id, BankConnection.external_id == body.item_id)
+    )
+    existing_connection = existing_result.scalar_one_or_none()
+    if existing_connection:
+        if body.connection_name and existing_connection.institution_name != body.connection_name:
+            existing_connection.institution_name = body.connection_name
+            await db.commit()
+        return existing_connection
+
     # Create bank connection
     connection = BankConnection(
         user_id=user.id,
@@ -138,8 +150,13 @@ async def handle_callback(
         )
 
     await db.commit()
-    await db.refresh(connection)
-    return connection
+    result = await db.execute(
+        select(BankConnection)
+        .options(selectinload(BankConnection.accounts))
+        .where(BankConnection.id == connection.id, BankConnection.user_id == user.id)
+    )
+    created_connection = result.scalar_one()
+    return created_connection
 
 
 @router.get("", response_model=list[BankConnectionResponse])
