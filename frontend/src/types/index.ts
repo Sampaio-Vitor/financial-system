@@ -24,8 +24,12 @@ export interface Purchase {
   asset_id: number;
   purchase_date: string;
   quantity: number;
+  trade_currency: "BRL" | "USD";
   unit_price: number;
   total_value: number;
+  unit_price_native: number;
+  total_value_native: number;
+  fx_rate: number;
   created_at: string;
   ticker?: string;
   asset_type?: AssetType;
@@ -199,6 +203,11 @@ export interface PriceUpdateResult {
   updated: { ticker: string; price: number }[];
   failed: { ticker: string; error: string }[];
   usd_brl_rate: number | null;
+}
+
+export interface PriceContextResponse {
+  usd_brl_rate: number | null;
+  rate_updated_at: string | null;
 }
 
 export interface SnapshotResponse {

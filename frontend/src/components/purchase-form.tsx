@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/lib/api";
-import { Asset, PositionsResponse, PositionItem } from "@/types";
-import { formatBRL } from "@/lib/format";
-import { X, Search, ChevronDown } from "lucide-react";
+import { Asset, PositionsResponse, PositionItem, PriceContextResponse } from "@/types";
+import { formatBRL, formatUSD } from "@/lib/format";
+import { X, Search, ChevronDown, ArrowRightLeft } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 
 interface PurchaseFormProps {
@@ -22,6 +22,10 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const [quantity, setQuantity] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [search, setSearch] = useState("");
+  const [priceContext, setPriceContext] = useState<PriceContextResponse>({
+    usd_brl_rate: null,
+    rate_updated_at: null,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -58,6 +62,12 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
     }
   }, [isVenda]);
 
+  useEffect(() => {
+    apiFetch<PriceContextResponse>("/prices/context")
+      .then((data) => setPriceContext(data))
+      .catch(() => {});
+  }, []);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -80,15 +90,36 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
   const selectedAsset = assets.find((a) => a.id === assetId);
   const selectedPosition = ownedPositions.find((p) => p.asset_id === assetId);
-  const total =
+  const isUsdTrade = selectedAsset?.type === "STOCK";
+  const usdBrlRate = priceContext.usd_brl_rate;
+  const totalNative =
     quantity && unitPrice ? parseFloat(quantity) * parseFloat(unitPrice) : 0;
+  const totalBrl = isUsdTrade && usdBrlRate ? totalNative * usdBrlRate : totalNative;
+  const unitPriceBrl =
+    isUsdTrade && unitPrice && usdBrlRate ? parseFloat(unitPrice) * usdBrlRate : null;
+  const rateUpdatedLabel = priceContext.rate_updated_at
+    ? new Date(priceContext.rate_updated_at).toLocaleString("pt-BR")
+    : null;
+
+  useEffect(() => {
+    if (!selectedAsset || selectedAsset.type !== "STOCK" || !usdBrlRate || unitPrice) {
+      return;
+    }
+    if (selectedAsset.current_price) {
+      setUnitPrice((Number(selectedAsset.current_price) / usdBrlRate).toFixed(2));
+    }
+  }, [selectedAsset, unitPrice, usdBrlRate]);
 
   const handleSelectAsset = (asset: Asset) => {
     setAssetId(asset.id);
     setSearch(asset.ticker);
     setDropdownOpen(false);
     if (asset.current_price) {
-      setUnitPrice(Number(asset.current_price).toFixed(2));
+      if (asset.type === "STOCK" && usdBrlRate) {
+        setUnitPrice((Number(asset.current_price) / usdBrlRate).toFixed(2));
+      } else {
+        setUnitPrice(Number(asset.current_price).toFixed(2));
+      }
     }
   };
 
@@ -101,19 +132,32 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
       setError(`Quantidade excede a posicao atual (${selectedPosition.quantity})`);
       return;
     }
+    if (isUsdTrade && (!usdBrlRate || usdBrlRate <= 0)) {
+      setError("Cotacao USD/BRL indisponivel. Atualize os precos antes de registrar.");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
 
     try {
+      const payload = {
+        asset_id: assetId,
+        purchase_date: date,
+        quantity: isVenda ? -qty : qty,
+        ...(isUsdTrade
+          ? {
+              trade_currency: "USD" as const,
+              unit_price_native: parseFloat(unitPrice),
+              fx_rate: usdBrlRate,
+            }
+          : {
+              unit_price: parseFloat(unitPrice),
+            }),
+      };
       await apiFetch("/purchases", {
         method: "POST",
-        body: JSON.stringify({
-          asset_id: assetId,
-          purchase_date: date,
-          quantity: isVenda ? -qty : qty,
-          unit_price: parseFloat(unitPrice),
-        }),
+        body: JSON.stringify(payload),
       });
       onSaved();
     } catch (err) {
@@ -220,29 +264,72 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
             </div>
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
-                {isVenda ? "Preco de Venda (R$)" : "Preco Unitario (R$)"}
+                {isVenda ? "Preco de Venda" : "Preco Unitario"}
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-                required
-              />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[var(--color-text-muted)]">
+                  {isUsdTrade ? "US$" : "R$"}
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={unitPrice}
+                  onChange={(e) => setUnitPrice(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                  required
+                />
+              </div>
             </div>
           </div>
 
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            Total: <span className="font-bold text-[var(--color-text-primary)]">{formatBRL(total)}</span>
+          {isUsdTrade && (
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <ArrowRightLeft size={12} className="text-[var(--color-accent)]" />
+                <span className="text-xs font-medium text-[var(--color-text-secondary)]">Conversao Cambial</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                <div className="text-[var(--color-text-muted)]">Cambio USD/BRL</div>
+                <div className="text-right font-medium text-[var(--color-text-primary)]">
+                  {usdBrlRate ? `R$ ${usdBrlRate.toFixed(4)}` : "indisponivel"}
+                </div>
+                {unitPriceBrl !== null && (
+                  <>
+                    <div className="text-[var(--color-text-muted)]">Preco em BRL</div>
+                    <div className="text-right font-medium text-[var(--color-text-primary)]">{formatBRL(unitPriceBrl)}</div>
+                  </>
+                )}
+                {rateUpdatedLabel && (
+                  <>
+                    <div className="text-[var(--color-text-muted)]">Atualizado em</div>
+                    <div className="text-right text-[var(--color-text-muted)]">{rateUpdatedLabel}</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-[var(--color-text-muted)]">Total</span>
+              <span className="text-base font-bold text-[var(--color-text-primary)]">
+                {isUsdTrade ? formatUSD(totalNative) : formatBRL(totalBrl)}
+              </span>
+            </div>
+            {isUsdTrade && (
+              <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
+                <span className="text-xs text-[var(--color-text-muted)]">Equivalente em BRL</span>
+                <span className="text-sm font-semibold text-[var(--color-text-secondary)]">{formatBRL(totalBrl)}</span>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-sm text-[var(--color-negative)]">{error}</p>}
 
           <button
             type="submit"
-            disabled={submitting || !assetId}
+            disabled={submitting || !assetId || (isUsdTrade && !usdBrlRate)}
             className={`w-full py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-opacity ${
               isVenda
                 ? "bg-[var(--color-negative)] text-white"
