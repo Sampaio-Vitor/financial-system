@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
+from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,8 +35,14 @@ async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, s
     creds = result.scalar_one_or_none()
     if not creds:
         raise HTTPException(status_code=400, detail="Credenciais Pluggy não configuradas")
-    client_id = decrypt(creds.encrypted_client_id)
-    client_secret = decrypt(creds.encrypted_client_secret)
+    try:
+        client_id = decrypt(creds.encrypted_client_id)
+        client_secret = decrypt(creds.encrypted_client_secret)
+    except InvalidToken as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível descriptografar as credenciais Pluggy. Verifique a configuração de ENCRYPTION_KEY no backend.",
+        ) from exc
     owner_names = creds.owner_names or []
     return client_id, client_secret, owner_names
 
