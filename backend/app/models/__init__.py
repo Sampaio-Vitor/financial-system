@@ -17,6 +17,7 @@ from app.models.bank_account import BankAccount
 from app.models.transaction import Transaction
 from app.models.saved_plan import SavedPlan, SavedPlanItem
 from app.models.dividend_event import DividendEvent
+from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
@@ -38,6 +39,7 @@ __all__ = [
     "BankAccount",
     "Transaction",
     "DividendEvent",
+    "RefreshToken",
     "SavedPlan",
     "SavedPlanItem",
 ]

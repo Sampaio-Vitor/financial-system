@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Asset, AssetType } from "@/types";
 import { X } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 interface AssetFormProps {
   onClose: () => void;
@@ -11,6 +12,7 @@ interface AssetFormProps {
 }
 
 export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
+  const { isAdmin } = useAuth();
   const [ticker, setTicker] = useState("");
   const [type, setType] = useState<AssetType>("STOCK");
   const [description, setDescription] = useState("");
@@ -64,6 +66,15 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!isAdmin && (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Usuarios comuns podem adicionar ao proprio catalogo apenas ativos ja existentes no catalogo global.
+                  Se o ticker ainda nao existir, um administrador precisa cadastrá-lo primeiro.
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ticker</label>
               <input
@@ -97,6 +108,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Nome da empresa ou descricao"
+                disabled={!isAdmin}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
               />
             </div>

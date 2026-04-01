@@ -6,6 +6,7 @@ import readXlsxFile, { type Row } from "read-excel-file/browser";
 import { apiFetch } from "@/lib/api";
 import { AssetType, BulkAssetResponse } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
+import { useAuth } from "@/lib/auth";
 
 interface CsvImportModalProps {
   onClose: () => void;
@@ -148,6 +149,7 @@ function parseExcelRows(rows: Row[]): { rows: ParsedRow[]; errors: string[] } {
 }
 
 export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps) {
+  const { isAdmin } = useAuth();
   const [step, setStep] = useState<ModalStep>("upload");
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -164,7 +166,8 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
     const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
 
     if (isExcel) {
-      readXlsxFile(file).then((excelRows) => {
+      readXlsxFile(file).then((workbook) => {
+        const excelRows = workbook[0]?.data ?? [];
         const { rows, errors } = parseExcelRows(excelRows);
         setParsedRows(rows);
         setParseErrors(errors);
@@ -246,6 +249,14 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
         {/* Step: Upload */}
         {step === "upload" && (
           <div className="space-y-4">
+            {!isAdmin && (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  A importacao em massa para usuarios comuns apenas vincula ativos que ja existem no catalogo global.
+                  Tickers novos serao ignorados e precisarao de cadastro por um administrador.
+                </p>
+              </div>
+            )}
             <div
               onDragOver={(e) => {
                 e.preventDefault();

@@ -4,20 +4,30 @@
 services:
   backend:
     user: appuser
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
     environment:
       SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_EXPIRATION_MINUTES: "30"
+      REFRESH_TOKEN_EXPIRATION_DAYS: "30"
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
+      TURNSTILE_REQUIRED: "true"
+      API_DOCS_ENABLED: "false"
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_SAMESITE: "strict"
 
   frontend:
     build:
       target: production
+      args:
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     user: appuser
     environment:
       API_URL: http://backend:8000
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
       NODE_ENV: production
     command: ["node", "server.js"]
 

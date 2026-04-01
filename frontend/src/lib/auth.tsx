@@ -8,8 +8,10 @@ import {
   useCallback,
   ReactNode,
 } from "react";
+import { refreshAuthSession } from "@/lib/api";
 
 interface AuthContextType {
+  isLoading: boolean;
   isAuthenticated: boolean;
   userId: number | null;
   isAdmin: boolean;
@@ -18,7 +20,18 @@ interface AuthContextType {
   logout: () => void;
 }
 
+interface SessionResponse {
+  user_id: number;
+  username: string;
+  is_admin: boolean;
+}
+
+interface TokenResponse {
+  user: SessionResponse;
+}
+
 const AuthContext = createContext<AuthContextType>({
+  isLoading: true,
   isAuthenticated: false,
   userId: null,
   isAdmin: false,
@@ -37,32 +50,61 @@ function extractErrorMessage(data: Record<string, unknown>, fallback: string): s
   return fallback;
 }
 
-function getUserIdFromToken(): number | null {
-  if (typeof window === "undefined") return null;
-  const token = localStorage.getItem("token");
-  if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return parseInt(payload.sub, 10) || null;
-  } catch {
-    return null;
-  }
+function buildAuthState(session: SessionResponse | null) {
+  return {
+    isAuthenticated: !!session,
+    userId: session?.user_id ?? null,
+    isAdmin: session?.is_admin ?? false,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const applySession = useCallback((session: SessionResponse | null) => {
+    const next = buildAuthState(session);
+    setIsAuthenticated(next.isAuthenticated);
+    setUserId(next.userId);
+    setIsAdmin(next.isAdmin);
+  }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    setIsAuthenticated(!!token);
-    setUserId(getUserIdFromToken());
-  }, []);
+    const syncSession = async () => {
+      try {
+        let res = await fetch("/api/auth/me", {
+          credentials: "include",
+        });
+        if (res.status === 401) {
+          const refreshed = await refreshAuthSession();
+          if (refreshed) {
+            res = await fetch("/api/auth/me", {
+              credentials: "include",
+            });
+          }
+        }
+        if (!res.ok) {
+          throw new Error("Session invalid");
+        }
+        const session = (await res.json()) as SessionResponse;
+        applySession(session);
+      } catch {
+        applySession(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    syncSession();
+  }, [applySession]);
 
   const login = useCallback(async (username: string, password: string, turnstileToken?: string) => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
     });
 
@@ -71,16 +113,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(extractErrorMessage(err, "Falha no login"));
     }
 
-    const data = await res.json();
-    localStorage.setItem("token", data.access_token);
-    setIsAuthenticated(true);
-    setUserId(getUserIdFromToken());
-  }, []);
+    const data = (await res.json()) as TokenResponse;
+    applySession(data.user);
+  }, [applySession]);
 
   const register = useCallback(async (username: string, password: string, turnstileToken?: string) => {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
     });
 
@@ -89,23 +130,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(extractErrorMessage(err, "Falha no registro"));
     }
 
-    const data = await res.json();
-    localStorage.setItem("token", data.access_token);
-    setIsAuthenticated(true);
-    setUserId(getUserIdFromToken());
-  }, []);
+    const data = (await res.json()) as TokenResponse;
+    applySession(data.user);
+  }, [applySession]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    setIsAuthenticated(false);
-    setUserId(null);
-    window.location.href = "/login";
-  }, []);
+    const runLogout = async () => {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+      } finally {
+        applySession(null);
+        window.location.href = "/login";
+      }
+    };
 
-  const isAdmin = userId === 1;
+    void runLogout();
+  }, [applySession]);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userId, isAdmin, login, register, logout }}>
+    <AuthContext.Provider value={{ isLoading, isAuthenticated, userId, isAdmin, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

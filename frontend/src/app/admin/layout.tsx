@@ -6,15 +6,16 @@ import { useAuth } from "@/lib/auth";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isLoading, isAuthenticated, isAdmin } = useAuth();
 
   useEffect(() => {
+    if (isLoading) return;
     if (!isAuthenticated || !isAdmin) {
       router.replace("/carteira");
     }
-  }, [isAuthenticated, isAdmin, router]);
+  }, [isLoading, isAuthenticated, isAdmin, router]);
 
-  if (!isAuthenticated || !isAdmin) {
+  if (isLoading || !isAuthenticated || !isAdmin) {
     return null;
   }
 

@@ -105,6 +105,14 @@ async def bulk_create_assets(
     for ticker, asset_type in unique_items:
         if ticker in existing_assets:
             asset = existing_assets[ticker]
+            if asset.type != asset_type:
+                skipped.append(
+                    BulkAssetSkipped(
+                        ticker=ticker,
+                        reason=f"Já existe no catálogo como {asset.type}",
+                    )
+                )
+                continue
             if asset.id in linked_asset_ids:
                 skipped.append(BulkAssetSkipped(ticker=ticker, reason="Já está no seu catálogo"))
             else:
@@ -113,6 +121,14 @@ async def bulk_create_assets(
                 linked_asset_ids.add(asset.id)
                 linked.append(BulkAssetLinked(ticker=ticker, type=asset.type))
         else:
+            if not user.is_admin:
+                skipped.append(
+                    BulkAssetSkipped(
+                        ticker=ticker,
+                        reason="Ativo ainda não existe no catálogo global",
+                    )
+                )
+                continue
             # Create new global asset + user link
             asset = Asset(ticker=ticker, type=asset_type, description="")
             db.add(asset)
@@ -147,7 +163,7 @@ async def get_rebalancing_info(
     count_result = await db.execute(
         select(Asset.type, func.count(Asset.id))
         .join(UserAsset, UserAsset.asset_id == Asset.id)
-        .where(UserAsset.user_id == user.id, UserAsset.paused == False)
+        .where(UserAsset.user_id == user.id, UserAsset.paused.is_(False))
         .group_by(Asset.type)
     )
     active_counts: dict[AssetType, int] = dict(count_result.all())
@@ -228,6 +244,11 @@ async def create_asset(
     asset = result.scalar_one_or_none()
 
     if asset:
+        if asset.type != data.type:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ativo já existe no catálogo como {asset.type}",
+            )
         # Check if user already has a link
         link_result = await db.execute(
             select(UserAsset).where(
@@ -237,6 +258,11 @@ async def create_asset(
         if link_result.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Você já rastreia este ativo")
     else:
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Apenas administradores podem cadastrar novos ativos globais",
+            )
         # Create new global asset
         asset = Asset(ticker=ticker, type=data.type, description=data.description)
         db.add(asset)
@@ -276,6 +302,13 @@ async def update_asset(
     asset, user_asset = row
 
     # Update global fields
+    wants_global_update = data.ticker is not None or data.description is not None
+    if wants_global_update and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas administradores podem editar dados globais do ativo",
+        )
+
     if data.ticker is not None:
         asset.ticker = data.ticker.upper()
     if data.description is not None:
