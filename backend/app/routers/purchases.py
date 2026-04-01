@@ -1,4 +1,5 @@
 from datetime import date
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -10,7 +11,12 @@ from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.user import User
 from app.models.user_asset import UserAsset
-from app.schemas.purchase import PurchaseCreate, PurchaseUpdate, PurchaseResponse
+from app.schemas.purchase import (
+    PurchaseCreate,
+    PurchasePageResponse,
+    PurchaseResponse,
+    PurchaseUpdate,
+)
 
 router = APIRouter()
 
@@ -38,7 +44,12 @@ async def list_purchases(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    query = select(Purchase).join(Asset).where(Purchase.user_id == user.id).order_by(Purchase.purchase_date.desc())
+    query = (
+        select(Purchase)
+        .join(Asset)
+        .where(Purchase.user_id == user.id)
+        .order_by(Purchase.purchase_date.desc())
+    )
     if asset_id:
         query = query.where(Purchase.asset_id == asset_id)
     if asset_type:
@@ -50,6 +61,79 @@ async def list_purchases(
 
     result = await db.execute(query)
     return [_to_response(p) for p in result.scalars().all()]
+
+
+@router.get("/rv", response_model=PurchasePageResponse)
+async def list_variable_income_purchases(
+    asset_type: AssetType | None = Query(None),
+    ticker: str | None = Query(None),
+    operation: str | None = Query(None, pattern="^(compras|vendas)$"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if asset_type == AssetType.RF:
+        raise HTTPException(
+            status_code=400,
+            detail="Este endpoint aceita apenas ativos de renda variável",
+        )
+
+    filters = [
+        Purchase.user_id == user.id,
+        Asset.type.in_([AssetType.STOCK, AssetType.ACAO, AssetType.FII]),
+    ]
+
+    if asset_type:
+        filters.append(Asset.type == asset_type)
+    if ticker:
+        filters.append(Asset.ticker.ilike(f"%{ticker.strip()}%"))
+    if operation == "compras":
+        filters.append(Purchase.quantity >= 0)
+    elif operation == "vendas":
+        filters.append(Purchase.quantity < 0)
+    if date_from:
+        filters.append(Purchase.purchase_date >= date_from)
+    if date_to:
+        filters.append(Purchase.purchase_date <= date_to)
+
+    total_count_query = (
+        select(func.count(Purchase.id))
+        .select_from(Purchase)
+        .join(Asset)
+        .where(*filters)
+    )
+    total_value_query = (
+        select(func.coalesce(func.sum(Purchase.total_value), 0))
+        .select_from(Purchase)
+        .join(Asset)
+        .where(*filters)
+    )
+    items_query = (
+        select(Purchase)
+        .join(Asset)
+        .where(*filters)
+        .order_by(Purchase.purchase_date.desc(), Purchase.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    total_count = (await db.execute(total_count_query)).scalar() or 0
+    total_value = (await db.execute(total_value_query)).scalar() or 0
+    items_result = await db.execute(items_query)
+    items = items_result.scalars().all()
+    total_pages = max(1, ceil(total_count / page_size)) if page_size else 1
+
+    return PurchasePageResponse(
+        items=[_to_response(p) for p in items],
+        total_count=total_count,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        total_value=total_value,
+    )
 
 
 @router.post("", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)
@@ -74,8 +158,9 @@ async def create_purchase(
     # Validate sale: quantity negative means selling
     if data.quantity < 0:
         pos_result = await db.execute(
-            select(func.sum(Purchase.quantity))
-            .where(Purchase.user_id == user.id, Purchase.asset_id == data.asset_id)
+            select(func.sum(Purchase.quantity)).where(
+                Purchase.user_id == user.id, Purchase.asset_id == data.asset_id
+            )
         )
         current_qty = pos_result.scalar() or 0
         if abs(data.quantity) > current_qty:
