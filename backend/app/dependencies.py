@@ -1,5 +1,6 @@
 from fastapi import Depends, HTTPException, Request, status
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,7 +43,7 @@ async def get_current_user(
         user_id: int | None = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+    except PyJWTError:
         raise credentials_exception
 
     result = await db.execute(select(User).where(User.id == int(user_id)))

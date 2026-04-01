@@ -1,5 +1,5 @@
-import os
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,7 +58,41 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+csrf_trusted_origins = [
+    origin.strip()
+    for origin in (settings.CSRF_TRUSTED_ORIGINS or settings.CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+
+
+class CSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if not request.cookies.get(settings.SESSION_COOKIE_NAME):
+            return await call_next(request)
+
+        origin = request.headers.get("origin")
+        if origin and origin in csrf_trusted_origins:
+            return await call_next(request)
+
+        referer = request.headers.get("referer")
+        if referer:
+            parts = urlsplit(referer)
+            referer_origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+            if referer_origin in csrf_trusted_origins:
+                return await call_next(request)
+
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CSRF validation failed"},
+        )
+
+
+app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

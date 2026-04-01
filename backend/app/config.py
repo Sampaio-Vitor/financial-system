@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+aiomysql://portfolio_user:portfolio_pass@localhost:3307/portfolio"
+    CORS_ORIGINS: str = "http://localhost:3000"
     SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: str = "lax"
     API_DOCS_ENABLED: bool = True
+    CSRF_TRUSTED_ORIGINS: str = ""
 
     model_config = {"env_file": "../.env", "extra": "ignore"}
 
