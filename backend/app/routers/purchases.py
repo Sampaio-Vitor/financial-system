@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,12 +28,73 @@ def _to_response(p: Purchase) -> PurchaseResponse:
         asset_id=p.asset_id,
         purchase_date=p.purchase_date,
         quantity=p.quantity,
+        trade_currency=p.trade_currency,
         unit_price=p.unit_price,
         total_value=p.total_value,
+        unit_price_native=p.unit_price_native,
+        total_value_native=p.total_value_native,
+        fx_rate=p.fx_rate,
         created_at=p.created_at,
         ticker=p.asset.ticker if p.asset else None,
         asset_type=p.asset.type if p.asset else None,
     )
+
+
+def _normalize_purchase_values(
+    *,
+    asset_type: AssetType,
+    quantity: Decimal,
+    trade_currency: str | None,
+    unit_price: Decimal | None,
+    unit_price_native: Decimal | None,
+    fx_rate: Decimal | None,
+) -> dict[str, Decimal | str]:
+    currency = trade_currency or "BRL"
+    if currency not in {"BRL", "USD"}:
+        raise HTTPException(status_code=400, detail="Moeda de operacao invalida")
+
+    if currency == "USD":
+        if asset_type != AssetType.STOCK:
+            raise HTTPException(
+                status_code=400,
+                detail="Operacoes em USD sao permitidas apenas para stocks",
+            )
+        if unit_price_native is None or unit_price_native <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Preco unitario em USD deve ser informado",
+            )
+        if fx_rate is None or fx_rate <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cotacao USD/BRL invalida para esta operacao",
+            )
+
+        unit_price_brl = round(unit_price_native * fx_rate, 4)
+        return {
+            "trade_currency": currency,
+            "unit_price": unit_price_brl,
+            "total_value": round(quantity * unit_price_brl, 4),
+            "unit_price_native": round(unit_price_native, 4),
+            "total_value_native": round(quantity * unit_price_native, 4),
+            "fx_rate": round(fx_rate, 4),
+        }
+
+    price_brl = unit_price if unit_price is not None else unit_price_native
+    if price_brl is None or price_brl <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Preco unitario em BRL deve ser informado",
+        )
+
+    return {
+        "trade_currency": "BRL",
+        "unit_price": round(price_brl, 4),
+        "total_value": round(quantity * price_brl, 4),
+        "unit_price_native": round(price_brl, 4),
+        "total_value_native": round(quantity * price_brl, 4),
+        "fx_rate": Decimal("1.0000"),
+    }
 
 
 @router.get("", response_model=list[PurchaseResponse])
@@ -142,8 +204,9 @@ async def create_purchase(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    asset = await db.execute(select(Asset).where(Asset.id == data.asset_id))
-    if not asset.scalar_one_or_none():
+    asset_result = await db.execute(select(Asset).where(Asset.id == data.asset_id))
+    asset = asset_result.scalar_one_or_none()
+    if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
     # Validate user has this asset in their catalog
@@ -169,14 +232,25 @@ async def create_purchase(
                 detail=f"Quantidade de venda ({abs(data.quantity)}) excede a posicao atual ({current_qty})",
             )
 
-    total_value = data.quantity * data.unit_price
+    normalized = _normalize_purchase_values(
+        asset_type=asset.type,
+        quantity=data.quantity,
+        trade_currency=data.trade_currency,
+        unit_price=data.unit_price,
+        unit_price_native=data.unit_price_native,
+        fx_rate=data.fx_rate,
+    )
     purchase = Purchase(
         asset_id=data.asset_id,
         user_id=user.id,
         purchase_date=data.purchase_date,
         quantity=data.quantity,
-        unit_price=data.unit_price,
-        total_value=total_value,
+        trade_currency=str(normalized["trade_currency"]),
+        unit_price=normalized["unit_price"],
+        total_value=normalized["total_value"],
+        unit_price_native=normalized["unit_price_native"],
+        total_value_native=normalized["total_value_native"],
+        fx_rate=normalized["fx_rate"],
     )
     db.add(purchase)
     await db.commit()
@@ -201,11 +275,47 @@ async def update_purchase(
 
     if data.purchase_date is not None:
         purchase.purchase_date = data.purchase_date
-    if data.quantity is not None:
-        purchase.quantity = data.quantity
-    if data.unit_price is not None:
-        purchase.unit_price = data.unit_price
-    purchase.total_value = purchase.quantity * purchase.unit_price
+    next_quantity = data.quantity if data.quantity is not None else purchase.quantity
+    next_trade_currency = data.trade_currency or purchase.trade_currency
+    next_unit_price = data.unit_price if data.unit_price is not None else purchase.unit_price
+    next_unit_price_native = (
+        data.unit_price_native
+        if data.unit_price_native is not None
+        else purchase.unit_price_native
+    )
+    next_fx_rate = data.fx_rate if data.fx_rate is not None else purchase.fx_rate
+
+    if next_quantity < 0:
+        pos_result = await db.execute(
+            select(func.sum(Purchase.quantity)).where(
+                Purchase.user_id == user.id,
+                Purchase.asset_id == purchase.asset_id,
+                Purchase.id != purchase.id,
+            )
+        )
+        current_qty_excluding_row = pos_result.scalar() or 0
+        if current_qty_excluding_row + next_quantity < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Quantidade de venda excede a posicao atual disponivel",
+            )
+
+    normalized = _normalize_purchase_values(
+        asset_type=purchase.asset.type,
+        quantity=next_quantity,
+        trade_currency=next_trade_currency,
+        unit_price=next_unit_price,
+        unit_price_native=next_unit_price_native,
+        fx_rate=next_fx_rate,
+    )
+
+    purchase.quantity = next_quantity
+    purchase.trade_currency = str(normalized["trade_currency"])
+    purchase.unit_price = normalized["unit_price"]
+    purchase.total_value = normalized["total_value"]
+    purchase.unit_price_native = normalized["unit_price_native"]
+    purchase.total_value_native = normalized["total_value_native"]
+    purchase.fx_rate = normalized["fx_rate"]
 
     await db.commit()
     result = await db.execute(select(Purchase).where(Purchase.id == purchase.id))
