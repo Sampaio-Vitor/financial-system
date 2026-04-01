@@ -11,7 +11,12 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "change-me"
     TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_REQUIRED: bool = False
     ENCRYPTION_KEY: str
+    SESSION_COOKIE_NAME: str = "access_token"
+    SESSION_COOKIE_SECURE: bool = False
+    SESSION_COOKIE_SAMESITE: str = "lax"
+    API_DOCS_ENABLED: bool = True
 
     model_config = {"env_file": "../.env", "extra": "ignore"}
 
@@ -25,6 +30,14 @@ class Settings(BaseSettings):
                 "ENCRYPTION_KEY must be a valid Fernet key."
             ) from exc
         return value
+
+    @field_validator("SESSION_COOKIE_SAMESITE")
+    @classmethod
+    def validate_session_cookie_samesite(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("SESSION_COOKIE_SAMESITE must be one of: lax, strict, none.")
+        return normalized
 
 
 settings = Settings()
