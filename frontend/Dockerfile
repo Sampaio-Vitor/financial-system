@@ -11,7 +11,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG API_URL=http://backend:8000
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
 ENV API_URL=${API_URL}
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
 RUN npm run build
 
 # ---- Stage 3: Production ----

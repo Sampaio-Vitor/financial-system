@@ -164,7 +164,8 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
     const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
 
     if (isExcel) {
-      readXlsxFile(file).then((excelRows) => {
+      readXlsxFile(file).then((workbook) => {
+        const excelRows = workbook[0]?.data ?? [];
         const { rows, errors } = parseExcelRows(excelRows);
         setParsedRows(rows);
         setParseErrors(errors);

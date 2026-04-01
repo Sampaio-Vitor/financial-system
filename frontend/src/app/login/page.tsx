@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const { login, register } = useAuth();
+  const { login, register, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
 
   const resetTurnstile = useCallback(() => {
@@ -44,6 +44,13 @@ export default function LoginPage() {
       renderTurnstile();
     }
   }, [renderTurnstile]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated) {
+      router.replace("/carteira");
+    }
+  }, [isLoading, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

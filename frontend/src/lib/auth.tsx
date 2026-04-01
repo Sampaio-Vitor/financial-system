@@ -26,8 +26,6 @@ interface SessionResponse {
 }
 
 interface TokenResponse {
-  access_token: string;
-  token_type: string;
   user: SessionResponse;
 }
 
@@ -73,19 +71,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      applySession(null);
-      setIsLoading(false);
-      return;
-    }
-
     const syncSession = async () => {
       try {
         const res = await fetch("/api/auth/me", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          credentials: "include",
         });
         if (!res.ok) {
           throw new Error("Session invalid");
@@ -93,7 +82,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const session = (await res.json()) as SessionResponse;
         applySession(session);
       } catch {
-        localStorage.removeItem("token");
         applySession(null);
       } finally {
         setIsLoading(false);
@@ -107,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
     });
 
@@ -116,7 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = (await res.json()) as TokenResponse;
-    localStorage.setItem("token", data.access_token);
     applySession(data.user);
   }, [applySession]);
 
@@ -124,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password, turnstile_token: turnstileToken || "" }),
     });
 
@@ -133,14 +122,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = (await res.json()) as TokenResponse;
-    localStorage.setItem("token", data.access_token);
     applySession(data.user);
   }, [applySession]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    applySession(null);
-    window.location.href = "/login";
+    const runLogout = async () => {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+      } finally {
+        applySession(null);
+        window.location.href = "/login";
+      }
+    };
+
+    void runLogout();
   }, [applySession]);
 
   return (

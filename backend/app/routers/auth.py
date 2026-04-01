@@ -1,5 +1,5 @@
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,7 @@ from app.models.allowed_username import AllowedUsername
 from app.models.settings import UserSettings
 from app.models.system_setting import SystemSetting
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, SessionResponse, TokenResponse
+from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, SessionResponse
 from app.services.auth_service import (
     create_access_token,
     hash_password,
@@ -31,8 +31,35 @@ def _build_session_response(user: User) -> SessionResponse:
     )
 
 
+def _set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        max_age=settings.JWT_EXPIRATION_MINUTES * 60,
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.SESSION_COOKIE_NAME,
+        path="/",
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        httponly=True,
+    )
+
+
 async def verify_turnstile(token: str) -> None:
     """Verify Cloudflare Turnstile token. Skip if secret key is not configured."""
+    if settings.TURNSTILE_REQUIRED and not settings.TURNSTILE_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CAPTCHA obrigatório, mas não configurado no servidor",
+        )
     if not settings.TURNSTILE_SECRET_KEY:
         return
 
@@ -59,9 +86,14 @@ async def verify_turnstile(token: str) -> None:
         )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=AuthResponse)
 @limiter.limit("10/minute")
-async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: Request,
+    response: Response,
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
     await verify_turnstile(body.turnstile_token)
 
     result = await db.execute(select(User).where(User.username == body.username))
@@ -74,12 +106,18 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
         )
 
     token = create_access_token(user.id, user.is_admin)
-    return TokenResponse(access_token=token, user=_build_session_response(user))
+    _set_auth_cookie(response, token)
+    return AuthResponse(user=_build_session_response(user))
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    request: Request,
+    response: Response,
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
     await verify_turnstile(body.turnstile_token)
 
     # Check whitelist if enabled
@@ -125,7 +163,13 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     await db.commit()
 
     token = create_access_token(user.id, user.is_admin)
-    return TokenResponse(access_token=token, user=_build_session_response(user))
+    _set_auth_cookie(response, token)
+    return AuthResponse(user=_build_session_response(user))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(response: Response):
+    _clear_auth_cookie(response)
 
 
 @router.get("/me", response_model=SessionResponse)
