@@ -44,6 +44,7 @@ jobs:
           script: |
             cd "${APP_DIR}"
             set -e
+            DOCKER_BIN="$(command -v docker)"
             git pull origin main
             touch .env
             if grep -q '^ENCRYPTION_KEY=' .env; then
@@ -51,12 +52,12 @@ jobs:
             else
               printf '\nENCRYPTION_KEY=%s\n' "${ENCRYPTION_KEY}" >> .env
             fi
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
-            until docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent; do
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml build
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
+            until sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent; do
               sleep 2
             done
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql sh -lc '
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql sh -lc '
               HAS_ALEMBIC=$(MYSQL_PWD="${MYSQL_PASSWORD}" mysql -N -B -u"${MYSQL_USER}" -D "${MYSQL_DATABASE}" -e "
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -68,10 +69,10 @@ jobs:
                 "
               fi
             '
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-            docker image prune -f
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            sudo "${DOCKER_BIN}" image prune -f
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           APP_DIR: ${{ secrets.VPS_APP_DIR }}
