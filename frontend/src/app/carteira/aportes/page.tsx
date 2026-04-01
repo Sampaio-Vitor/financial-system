@@ -15,7 +15,6 @@ export default function AportesPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [filteredTotal, setFilteredTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"compra" | "venda">("compra");
@@ -85,7 +84,6 @@ export default function AportesPage() {
 
       setPurchases(normalizedItems);
       setTotalCount(data.total_count);
-      setFilteredTotal(Number(data.total_value));
 
       if (data.total_count > 0 && normalizedItems.length === 0 && page > 1) {
         setPage(Math.min(page - 1, data.total_pages));
@@ -93,7 +91,6 @@ export default function AportesPage() {
     } catch {
       setPurchases([]);
       setTotalCount(0);
-      setFilteredTotal(0);
     } finally {
       setLoading(false);
     }
@@ -312,10 +309,7 @@ export default function AportesPage() {
           </div>
           {(hasActiveFilters || totalCount > 0) && (
             <div className="mt-3 pt-3 border-t border-[var(--color-border)]/50 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-              <div className="flex items-center gap-4">
-                <span>{totalCount} registros encontrados</span>
-                <span>Total filtrado: <span className="font-medium text-[var(--color-text-primary)]">{formatBRL(filteredTotal)}</span></span>
-              </div>
+              <div>{totalCount} registros encontrados</div>
               <button
                 onClick={clearFilters}
                 className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"

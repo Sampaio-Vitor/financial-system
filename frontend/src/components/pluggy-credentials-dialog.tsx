@@ -211,7 +211,7 @@ export default function PluggyCredentialsDialog({
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAddName();
               }}
-              placeholder="Ex: Vitor Carvalho Sampaio"
+              placeholder="Ex: João da Silva"
               className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
             />
             <button
