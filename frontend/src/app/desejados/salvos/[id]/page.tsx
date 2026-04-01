@@ -231,12 +231,18 @@ export default function SavedPlanDetailPage() {
     (sum, i) => sum + Number(i.amount_to_invest_usd ?? 0),
     0
   );
-  const rulerSum =
+  const rulerSumBrl =
     rulerIndex == null
       ? 0
       : plan.items
           .slice(0, rulerIndex + 1)
           .reduce((sum, item) => sum + Number(item.amount_to_invest), 0);
+  const rulerSumUsd =
+    rulerIndex == null
+      ? 0
+      : plan.items
+          .slice(0, rulerIndex + 1)
+          .reduce((sum, item) => sum + Number(item.amount_to_invest_usd ?? 0), 0);
   const rulerLabel =
     rulerIndex == null ? null : plan.items[rulerIndex]?.is_reserve
       ? "Reserva"
@@ -397,16 +403,17 @@ export default function SavedPlanDetailPage() {
             </h2>
             {plan.items.length > 0 && (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Arraste a régua horizontal para somar a coluna de aporte até a
-                linha selecionada.
+                Arraste a régua horizontal para somar as colunas de aporte até
+                a linha selecionada.
               </p>
             )}
           </div>
           <div className="text-right">
             {rulerIndex != null && (
-              <p className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Soma até a régua: {formatBRL(rulerSum)}
-              </p>
+              <div className="space-y-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
+                <p>Soma até a régua: {formatBRL(rulerSumBrl)}</p>
+                <p>USD até a régua: {rulerSumUsd > 0 ? formatUSD(rulerSumUsd) : "—"}</p>
+              </div>
             )}
             {savingChecks && (
               <span className="text-[10px] text-[var(--color-text-muted)]">
@@ -585,7 +592,8 @@ export default function SavedPlanDetailPage() {
                 <MoveVertical size={14} className="text-cyan-300" />
                 <span>
                   {rulerLabel ? `${rulerLabel} • ` : ""}
-                  {formatBRL(rulerSum)}
+                  {formatBRL(rulerSumBrl)}
+                  {rulerSumUsd > 0 ? ` • ${formatUSD(rulerSumUsd)}` : ""}
                 </span>
               </button>
             </div>
