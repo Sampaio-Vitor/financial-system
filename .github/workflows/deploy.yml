@@ -40,8 +40,17 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: ENCRYPTION_KEY
           script: |
             cd /root/financial-system
             git pull origin main
+            touch .env
+            if grep -q '^ENCRYPTION_KEY=' .env; then
+              sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
+            else
+              printf '\nENCRYPTION_KEY=%s\n' "${ENCRYPTION_KEY}" >> .env
+            fi
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
             docker image prune -f
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
