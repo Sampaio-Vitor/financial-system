@@ -22,12 +22,16 @@ async def seed():
         existing = result.scalar_one_or_none()
 
         if existing:
-            print(f"User '{settings.ADMIN_USERNAME}' already exists (id={existing.id})")
+            existing.password_hash = hash_password(settings.ADMIN_PASSWORD)
+            existing.is_admin = True
+            await db.commit()
+            print(f"Updated admin user '{settings.ADMIN_USERNAME}' (id={existing.id})")
             return
 
         user = User(
             username=settings.ADMIN_USERNAME,
             password_hash=hash_password(settings.ADMIN_PASSWORD),
+            is_admin=True,
         )
         db.add(user)
         await db.flush()

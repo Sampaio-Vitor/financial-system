@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.limiter import limiter
 from app.models.allowed_username import AllowedUsername
 from app.models.settings import UserSettings
 from app.models.system_setting import SystemSetting
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.auth import LoginRequest, RegisterRequest, SessionResponse, TokenResponse
 from app.services.auth_service import (
     create_access_token,
     hash_password,
@@ -20,6 +21,14 @@ from app.services.auth_service import (
 router = APIRouter()
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+
+def _build_session_response(user: User) -> SessionResponse:
+    return SessionResponse(
+        user_id=user.id,
+        username=user.username,
+        is_admin=user.is_admin,
+    )
 
 
 async def verify_turnstile(token: str) -> None:
@@ -64,8 +73,8 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
             detail="Usuário ou senha inválidos",
         )
 
-    token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    token = create_access_token(user.id, user.is_admin)
+    return TokenResponse(access_token=token, user=_build_session_response(user))
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -104,6 +113,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     user = User(
         username=body.username,
         password_hash=hash_password(body.password),
+        is_admin=False,
     )
     db.add(user)
     await db.flush()
@@ -114,5 +124,12 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
 
     await db.commit()
 
-    token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    token = create_access_token(user.id, user.is_admin)
+    return TokenResponse(access_token=token, user=_build_session_response(user))
+
+
+@router.get("/me", response_model=SessionResponse)
+async def get_session(
+    user: User = Depends(get_current_user),
+):
+    return _build_session_response(user)
