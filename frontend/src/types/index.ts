@@ -31,6 +31,15 @@ export interface Purchase {
   asset_type?: AssetType;
 }
 
+export interface PurchasePageResponse {
+  items: Purchase[];
+  total_count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  total_value: number;
+}
+
 export interface FixedIncomePosition {
   id: number;
   asset_id: number;

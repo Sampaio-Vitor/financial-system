@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
-import { AssetType, Purchase } from "@/types";
+import { AssetType, Purchase, PurchasePageResponse } from "@/types";
 import { formatBRL, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 import TickerLogo from "@/components/ticker-logo";
@@ -14,6 +14,8 @@ type OperationFilter = "todos" | "compras" | "vendas";
 export default function AportesPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"compra" | "venda">("compra");
@@ -31,11 +33,19 @@ export default function AportesPage() {
   const [filterOperation, setFilterOperation] = useState<OperationFilter>("todos");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const dateFromRef = useRef<HTMLInputElement>(null);
   const dateToRef = useRef<HTMLInputElement>(null);
 
   const hasActiveFilters = filterType !== "" || filterTicker !== "" || filterOperation !== "todos" || filterDateFrom !== "" || filterDateTo !== "";
+  const filtersKey = [filterType, filterTicker, filterOperation, filterDateFrom, filterDateTo].join("|");
+  const lastFiltersKeyRef = useRef(filtersKey);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pageStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = totalCount === 0 ? 0 : pageStart + purchases.length - 1;
+  const pageSubtotal = purchases.reduce((sum, purchase) => sum + purchase.total_value, 0);
 
   const clearFilters = () => {
     setFilterType("");
@@ -43,49 +53,88 @@ export default function AportesPage() {
     setFilterOperation("todos");
     setFilterDateFrom("");
     setFilterDateTo("");
+    setPage(1);
   };
 
-  const filteredPurchases = useMemo(() => {
-    return purchases.filter((p) => {
-      if (filterType && p.asset_type !== filterType) return false;
-      if (filterTicker && !p.ticker?.toLowerCase().includes(filterTicker.toLowerCase())) return false;
-      if (filterOperation === "compras" && p.quantity < 0) return false;
-      if (filterOperation === "vendas" && p.quantity >= 0) return false;
-      if (filterDateFrom && p.purchase_date < filterDateFrom) return false;
-      if (filterDateTo && p.purchase_date > filterDateTo) return false;
-      return true;
-    });
-  }, [purchases, filterType, filterTicker, filterOperation, filterDateFrom, filterDateTo]);
-
-  const filteredTotal = useMemo(() => {
-    return filteredPurchases.reduce((sum, p) => sum + p.total_value, 0);
-  }, [filteredPurchases]);
-
   const fetchPurchases = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await apiFetch<Purchase[]>("/purchases");
-      setPurchases(data.filter((p) => p.asset_type !== "RF"));
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+      });
+
+      if (filterType) params.set("asset_type", filterType);
+      if (filterTicker.trim()) params.set("ticker", filterTicker.trim());
+      if (filterOperation !== "todos") params.set("operation", filterOperation);
+      if (filterDateFrom) params.set("date_from", filterDateFrom);
+      if (filterDateTo) params.set("date_to", filterDateTo);
+
+      const data = await apiFetch<PurchasePageResponse>(`/purchases/rv?${params.toString()}`);
+      const normalizedItems = data.items.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity),
+        unit_price: Number(item.unit_price),
+        total_value: Number(item.total_value),
+      }));
+
+      setPurchases(normalizedItems);
+      setTotalCount(data.total_count);
+      setFilteredTotal(Number(data.total_value));
+
+      if (data.total_count > 0 && normalizedItems.length === 0 && page > 1) {
+        setPage(Math.min(page - 1, data.total_pages));
+      }
     } catch {
       setPurchases([]);
+      setTotalCount(0);
+      setFilteredTotal(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterDateFrom, filterDateTo, filterOperation, filterTicker, filterType, page, pageSize]);
 
   useEffect(() => {
-    fetchPurchases();
-  }, [fetchPurchases]);
-
-  const handleDelete = async (id: number) => {
-    const ok = await confirm("Remover Aporte", "Remover este aporte? Isso afetara os calculos da carteira.");
-    if (!ok) return;
-    try {
-      await apiFetch(`/purchases/${id}`, { method: "DELETE" });
-      fetchPurchases();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao remover");
+    const filtersChanged = lastFiltersKeyRef.current !== filtersKey;
+    if (filtersChanged) {
+      lastFiltersKeyRef.current = filtersKey;
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
     }
-  };
+
+    fetchPurchases();
+  }, [fetchPurchases, filtersKey, page]);
+
+  const refreshPurchases = useCallback(() => {
+    if (page === 1) {
+      fetchPurchases();
+      return;
+    }
+    setPage(1);
+  }, [fetchPurchases, page]);
+
+  const handleDelete = useCallback(
+    async (id: number) => {
+      const ok = await confirm(
+        "Remover Aporte",
+        "Remover este aporte? Isso afetara os calculos da carteira."
+      );
+      if (!ok) return;
+      try {
+        await apiFetch(`/purchases/${id}`, { method: "DELETE" });
+        if (purchases.length === 1 && page > 1) {
+          setPage((current) => Math.max(1, current - 1));
+        } else {
+          fetchPurchases();
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erro ao remover");
+      }
+    },
+    [confirm, fetchPurchases, page, purchases.length]
+  );
 
   const startEdit = (p: Purchase) => {
     setEditingId(p.id);
@@ -100,25 +149,28 @@ export default function AportesPage() {
     setEditingId(null);
   };
 
-  const saveEdit = async (id: number) => {
-    setSaving(true);
-    try {
-      await apiFetch(`/purchases/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          purchase_date: editData.purchase_date,
-          quantity: parseFloat(editData.quantity),
-          unit_price: parseFloat(editData.unit_price),
-        }),
-      });
-      setEditingId(null);
-      fetchPurchases();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const saveEdit = useCallback(
+    async (id: number) => {
+      setSaving(true);
+      try {
+        await apiFetch(`/purchases/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            purchase_date: editData.purchase_date,
+            quantity: parseFloat(editData.quantity),
+            unit_price: parseFloat(editData.unit_price),
+          }),
+        });
+        setEditingId(null);
+        fetchPurchases();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [editData, fetchPurchases]
+  );
 
   return (
     <div>
@@ -147,13 +199,13 @@ export default function AportesPage() {
           onClose={() => setShowForm(false)}
           onSaved={() => {
             setShowForm(false);
-            fetchPurchases();
+            refreshPurchases();
           }}
         />
       )}
 
       {/* Filters */}
-      {!loading && purchases.length > 0 && (
+      {!loading && (totalCount > 0 || hasActiveFilters) && (
         <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="flex flex-col gap-1">
@@ -212,10 +264,10 @@ export default function AportesPage() {
               />
             </div>
           </div>
-          {hasActiveFilters && (
+          {(hasActiveFilters || totalCount > 0) && (
             <div className="mt-3 pt-3 border-t border-[var(--color-border)]/50 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
               <div className="flex items-center gap-4">
-                <span>{filteredPurchases.length} de {purchases.length} registros</span>
+                <span>{totalCount} registros encontrados</span>
                 <span>Total filtrado: <span className="font-medium text-[var(--color-text-primary)]">{formatBRL(filteredTotal)}</span></span>
               </div>
               <button
@@ -232,19 +284,30 @@ export default function AportesPage() {
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         {loading ? (
           <div className="animate-pulse h-64" />
-        ) : purchases.length === 0 ? (
+        ) : totalCount === 0 && !hasActiveFilters ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">
             Nenhum aporte registrado.
           </p>
-        ) : filteredPurchases.length === 0 ? (
+        ) : totalCount === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">
             Nenhum resultado para os filtros selecionados.
           </p>
         ) : (
           <>
+          <div className="mb-4 flex items-center justify-end">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 py-2 text-right">
+              <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
+                Subtotal exibido
+              </div>
+              <div className="text-sm font-semibold text-[var(--color-text-primary)]">
+                {formatBRL(pageSubtotal)}
+              </div>
+            </div>
+          </div>
+
           {/* Mobile card view */}
           <div className="md:hidden space-y-2 p-2">
-            {filteredPurchases.map((p) => {
+            {purchases.map((p) => {
               const isSale = p.quantity < 0;
               return (
                 <div key={p.id} className={`bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4 ${isSale ? "border-[var(--color-negative)]/30" : ""}`}>
@@ -350,7 +413,7 @@ export default function AportesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredPurchases.map((p) => {
+                {purchases.map((p) => {
                   const isSale = p.quantity < 0;
                   return (
                   <tr key={p.id} className={`border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50 ${isSale ? "bg-[var(--color-negative)]/5" : ""}`}>
@@ -413,6 +476,49 @@ export default function AportesPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)]/50 pt-4 md:flex-row md:items-center md:justify-between">
+            <div className="text-xs text-[var(--color-text-muted)]">
+              Exibindo {pageStart}-{pageEnd} de {totalCount} registros
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                <span>Por página</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2 py-1 text-sm text-[var(--color-text-primary)]"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-main)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <span className="min-w-24 text-center text-sm text-[var(--color-text-muted)]">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page >= totalPages}
+                  className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-main)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
           </div>
           </>
         )}
