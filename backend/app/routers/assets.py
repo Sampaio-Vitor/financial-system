@@ -163,7 +163,7 @@ async def get_rebalancing_info(
     count_result = await db.execute(
         select(Asset.type, func.count(Asset.id))
         .join(UserAsset, UserAsset.asset_id == Asset.id)
-        .where(UserAsset.user_id == user.id, UserAsset.paused == False)
+        .where(UserAsset.user_id == user.id, UserAsset.paused.is_(False))
         .group_by(Asset.type)
     )
     active_counts: dict[AssetType, int] = dict(count_result.all())
