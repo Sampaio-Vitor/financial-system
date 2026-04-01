@@ -8,6 +8,7 @@ import {
   useCallback,
   ReactNode,
 } from "react";
+import { refreshAuthSession } from "@/lib/api";
 
 interface AuthContextType {
   isLoading: boolean;
@@ -73,9 +74,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const syncSession = async () => {
       try {
-        const res = await fetch("/api/auth/me", {
+        let res = await fetch("/api/auth/me", {
           credentials: "include",
         });
+        if (res.status === 401) {
+          const refreshed = await refreshAuthSession();
+          if (refreshed) {
+            res = await fetch("/api/auth/me", {
+              credentials: "include",
+            });
+          }
+        }
         if (!res.ok) {
           throw new Error("Session invalid");
         }
