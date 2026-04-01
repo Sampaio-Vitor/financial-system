@@ -4,14 +4,20 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { PriceUpdateResult } from "@/types";
+import { useAuth } from "@/lib/auth";
 
 export default function PriceUpdateButton({
   onComplete,
 }: {
   onComplete?: () => void;
 }) {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PriceUpdateResult | null>(null);
+
+  if (!isAdmin) {
+    return null;
+  }
 
   const handleUpdate = async () => {
     setLoading(true);

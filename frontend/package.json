@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "lucide-react": "^0.474.0",
-    "next": "^15.3.0",
+    "next": "^15.5.14",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-pluggy-connect": "^2.12.0",
-    "read-excel-file": "^7.0.2",
+    "read-excel-file": "^8.0.3",
     "recharts": "^2.15.3",
     "sonner": "^2.0.7"
   },
@@ -25,10 +25,13 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9",
-    "eslint-config-next": "^15.3.0",
+    "eslint-config-next": "^15.5.14",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0",
     "write-excel-file": "^3.0.6"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "^0.9.9"
   }
 }

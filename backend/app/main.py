@@ -1,5 +1,5 @@
-import os
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine
+from app.config import settings
 from app.limiter import limiter
 from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends
 
@@ -18,7 +19,14 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="Carteira de Investimentos API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Carteira de Investimentos API",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.API_DOCS_ENABLED else None,
+)
 app.state.limiter = limiter
 
 
@@ -31,28 +39,60 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
-app.state.limiter = limiter
-
-
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(status_code=429, content={"detail": "Too many requests"})
-
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'none'; "
+            "form-action 'self'"
+        )
         return response
 
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+csrf_trusted_origins = [
+    origin.strip()
+    for origin in (settings.CSRF_TRUSTED_ORIGINS or settings.CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+
+
+class CSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if not request.cookies.get(settings.SESSION_COOKIE_NAME):
+            return await call_next(request)
+
+        origin = request.headers.get("origin")
+        if origin and origin in csrf_trusted_origins:
+            return await call_next(request)
+
+        referer = request.headers.get("referer")
+        if referer:
+            parts = urlsplit(referer)
+            referer_origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+            if referer_origin in csrf_trusted_origins:
+                return await call_next(request)
+
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CSRF validation failed"},
+        )
+
+
+app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

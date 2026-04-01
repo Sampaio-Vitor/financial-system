@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import MobileHeader from "@/components/mobile-header";
 import MobileDrawer from "@/components/mobile-drawer";
+import { useAuth } from "@/lib/auth";
 
 export default function CarteiraLayout({
   children,
@@ -12,14 +13,20 @@ export default function CarteiraLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const { isLoading, isAuthenticated } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
-    if (!localStorage.getItem("token")) {
+    if (isLoading) return;
+    if (!isAuthenticated) {
       router.replace("/login");
     }
-  }, [router]);
+  }, [isLoading, isAuthenticated, router]);
+
+  if (isLoading || !isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-main)]">
