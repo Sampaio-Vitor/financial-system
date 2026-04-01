@@ -29,9 +29,13 @@ export default function SavedPlanDetailPage() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingChecks, setSavingChecks] = useState(false);
-  const [rulerIndex, setRulerIndex] = useState<number | null>(null);
-  const [rulerTop, setRulerTop] = useState<number | null>(null);
-  const [draggingRuler, setDraggingRuler] = useState(false);
+  const [topRulerIndex, setTopRulerIndex] = useState<number | null>(null);
+  const [bottomRulerIndex, setBottomRulerIndex] = useState<number | null>(null);
+  const [topRulerTop, setTopRulerTop] = useState<number | null>(null);
+  const [bottomRulerTop, setBottomRulerTop] = useState<number | null>(null);
+  const [draggingRuler, setDraggingRuler] = useState<"top" | "bottom" | null>(
+    null
+  );
   const tableCanvasRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
@@ -52,74 +56,117 @@ export default function SavedPlanDetailPage() {
 
   useEffect(() => {
     if (!plan?.items.length) {
-      setRulerIndex(null);
+      setTopRulerIndex(null);
+      setBottomRulerIndex(null);
       return;
     }
 
-    setRulerIndex((prev) => {
-      if (prev == null) return plan.items.length - 1;
-      return Math.min(prev, plan.items.length - 1);
+    const lastIndex = plan.items.length - 1;
+
+    setTopRulerIndex((prev) => {
+      if (prev == null) return 0;
+      return Math.min(prev, lastIndex);
+    });
+
+    setBottomRulerIndex((prev) => {
+      if (prev == null) return lastIndex;
+      return Math.min(prev, lastIndex);
     });
   }, [plan?.items.length]);
 
-  const updateRulerTop = useCallback(() => {
-    if (rulerIndex == null) {
-      setRulerTop(null);
-      return;
+  useEffect(() => {
+    if (topRulerIndex == null || bottomRulerIndex == null) return;
+    if (topRulerIndex > bottomRulerIndex) {
+      setTopRulerIndex(bottomRulerIndex);
     }
+  }, [topRulerIndex, bottomRulerIndex]);
 
-    const row = rowRefs.current[rulerIndex];
+  const updateRulerPositions = useCallback(() => {
     const canvas = tableCanvasRef.current;
-    if (!row || !canvas) {
-      setRulerTop(null);
+    if (!canvas) {
+      setTopRulerTop(null);
+      setBottomRulerTop(null);
       return;
     }
 
-    const rowRect = row.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
-    setRulerTop(rowRect.bottom - canvasRect.top);
-  }, [rulerIndex]);
+    const topRow = topRulerIndex == null ? null : rowRefs.current[topRulerIndex];
+    const bottomRow =
+      bottomRulerIndex == null ? null : rowRefs.current[bottomRulerIndex];
+
+    if (!topRow) {
+      setTopRulerTop(null);
+    } else {
+      const topRowRect = topRow.getBoundingClientRect();
+      setTopRulerTop(topRowRect.top - canvasRect.top);
+    }
+
+    if (!bottomRow) {
+      setBottomRulerTop(null);
+    } else {
+      const bottomRowRect = bottomRow.getBoundingClientRect();
+      setBottomRulerTop(bottomRowRect.bottom - canvasRect.top);
+    }
+  }, [topRulerIndex, bottomRulerIndex]);
 
   useEffect(() => {
-    updateRulerTop();
-  }, [updateRulerTop, plan?.items.length]);
+    updateRulerPositions();
+  }, [updateRulerPositions, plan?.items.length]);
 
   useEffect(() => {
     const canvas = tableCanvasRef.current;
     if (!canvas || typeof ResizeObserver === "undefined") return;
 
     const observer = new ResizeObserver(() => {
-      updateRulerTop();
+      updateRulerPositions();
     });
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [updateRulerTop, plan?.items.length]);
+  }, [updateRulerPositions, plan?.items.length]);
 
-  useEffect(() => {
-    if (!draggingRuler) return;
-
-    const syncRulerFromPointer = (clientY: number) => {
+  const getClosestRowIndex = useCallback(
+    (clientY: number, ruler: "top" | "bottom") => {
       let closestIndex = 0;
       let smallestDistance = Number.POSITIVE_INFINITY;
 
       rowRefs.current.forEach((row, index) => {
         if (!row) return;
-        const distance = Math.abs(clientY - row.getBoundingClientRect().bottom);
+        const rect = row.getBoundingClientRect();
+        const anchorY = ruler === "top" ? rect.top : rect.bottom;
+        const distance = Math.abs(clientY - anchorY);
         if (distance < smallestDistance) {
           smallestDistance = distance;
           closestIndex = index;
         }
       });
 
-      setRulerIndex(closestIndex);
-    };
+      return closestIndex;
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!draggingRuler) return;
 
     const handlePointerMove = (event: PointerEvent) => {
-      syncRulerFromPointer(event.clientY);
+      const closestIndex = getClosestRowIndex(event.clientY, draggingRuler);
+
+      if (draggingRuler === "top") {
+        setTopRulerIndex(
+          bottomRulerIndex == null
+            ? closestIndex
+            : Math.min(closestIndex, bottomRulerIndex)
+        );
+        return;
+      }
+
+      setBottomRulerIndex(
+        topRulerIndex == null ? closestIndex : Math.max(closestIndex, topRulerIndex)
+      );
     };
 
     const stopDragging = () => {
-      setDraggingRuler(false);
+      setDraggingRuler(null);
     };
 
     document.body.style.userSelect = "none";
@@ -136,23 +183,25 @@ export default function SavedPlanDetailPage() {
       window.removeEventListener("pointerup", stopDragging);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [draggingRuler]);
+  }, [draggingRuler, getClosestRowIndex, topRulerIndex, bottomRulerIndex]);
 
-  const handleRulerPointerDown = (clientY: number) => {
-    let closestIndex = 0;
-    let smallestDistance = Number.POSITIVE_INFINITY;
+  const handleRulerPointerDown = (ruler: "top" | "bottom", clientY: number) => {
+    const closestIndex = getClosestRowIndex(clientY, ruler);
 
-    rowRefs.current.forEach((row, index) => {
-      if (!row) return;
-      const distance = Math.abs(clientY - row.getBoundingClientRect().bottom);
-      if (distance < smallestDistance) {
-        smallestDistance = distance;
-        closestIndex = index;
-      }
-    });
+    if (ruler === "top") {
+      setTopRulerIndex(
+        bottomRulerIndex == null
+          ? closestIndex
+          : Math.min(closestIndex, bottomRulerIndex)
+      );
+      setDraggingRuler("top");
+      return;
+    }
 
-    setRulerIndex(closestIndex);
-    setDraggingRuler(true);
+    setBottomRulerIndex(
+      topRulerIndex == null ? closestIndex : Math.max(closestIndex, topRulerIndex)
+    );
+    setDraggingRuler("bottom");
   };
 
   const toggleCheck = async (itemId: number) => {
@@ -231,22 +280,38 @@ export default function SavedPlanDetailPage() {
     (sum, i) => sum + Number(i.amount_to_invest_usd ?? 0),
     0
   );
+  const selectedStartIndex =
+    topRulerIndex == null || bottomRulerIndex == null
+      ? null
+      : Math.min(topRulerIndex, bottomRulerIndex);
+  const selectedEndIndex =
+    topRulerIndex == null || bottomRulerIndex == null
+      ? null
+      : Math.max(topRulerIndex, bottomRulerIndex);
+  const selectedItems =
+    selectedStartIndex == null || selectedEndIndex == null
+      ? []
+      : plan.items.slice(selectedStartIndex, selectedEndIndex + 1);
   const rulerSumBrl =
-    rulerIndex == null
-      ? 0
-      : plan.items
-          .slice(0, rulerIndex + 1)
-          .reduce((sum, item) => sum + Number(item.amount_to_invest), 0);
-  const rulerSumUsd =
-    rulerIndex == null
-      ? 0
-      : plan.items
-          .slice(0, rulerIndex + 1)
-          .reduce((sum, item) => sum + Number(item.amount_to_invest_usd ?? 0), 0);
-  const rulerLabel =
-    rulerIndex == null ? null : plan.items[rulerIndex]?.is_reserve
+    selectedItems.reduce(
+      (sum, item) =>
+        item.asset_class === "STOCK"
+          ? sum
+          : sum + Number(item.amount_to_invest),
+      0
+    );
+  const rulerSumUsd = selectedItems.reduce(
+    (sum, item) => sum + Number(item.amount_to_invest_usd ?? 0),
+    0
+  );
+  const topRulerLabel =
+    topRulerIndex == null ? null : plan.items[topRulerIndex]?.is_reserve
       ? "Reserva"
-      : plan.items[rulerIndex]?.ticker;
+      : plan.items[topRulerIndex]?.ticker;
+  const bottomRulerLabel =
+    bottomRulerIndex == null ? null : plan.items[bottomRulerIndex]?.is_reserve
+      ? "Reserva"
+      : plan.items[bottomRulerIndex]?.ticker;
 
   return (
     <div className="space-y-6">
@@ -403,16 +468,19 @@ export default function SavedPlanDetailPage() {
             </h2>
             {plan.items.length > 0 && (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Arraste a régua horizontal para somar as colunas de aporte até
-                a linha selecionada.
+                Arraste as réguas superior e inferior para somar as colunas de
+                aporte entre as linhas selecionadas.
               </p>
             )}
           </div>
           <div className="text-right">
-            {rulerIndex != null && (
+            {selectedStartIndex != null && selectedEndIndex != null && (
               <div className="space-y-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
-                <p>Soma até a régua: {formatBRL(rulerSumBrl)}</p>
-                <p>USD até a régua: {rulerSumUsd > 0 ? formatUSD(rulerSumUsd) : "—"}</p>
+                <p>
+                  Intervalo: {topRulerLabel ?? "—"} até {bottomRulerLabel ?? "—"}
+                </p>
+                <p>Total no intervalo: {formatBRL(rulerSumBrl)}</p>
+                <p>USD no intervalo: {rulerSumUsd > 0 ? formatUSD(rulerSumUsd) : "—"}</p>
               </div>
             )}
             {savingChecks && (
@@ -425,10 +493,27 @@ export default function SavedPlanDetailPage() {
 
         <div className="relative overflow-x-auto">
           <div ref={tableCanvasRef} className="relative min-w-max">
-            {rulerTop != null && (
+            {topRulerTop != null && bottomRulerTop != null && (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-10 bg-cyan-400/5"
+                style={{
+                  top: topRulerTop,
+                  height: Math.max(bottomRulerTop - topRulerTop, 0),
+                }}
+              />
+            )}
+
+            {topRulerTop != null && (
               <div
                 className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-cyan-400/80"
-                style={{ top: rulerTop }}
+                style={{ top: topRulerTop }}
+              />
+            )}
+
+            {bottomRulerTop != null && (
+              <div
+                className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-cyan-400/80"
+                style={{ top: bottomRulerTop }}
               />
             )}
 
@@ -461,7 +546,11 @@ export default function SavedPlanDetailPage() {
               </thead>
               <tbody>
                 {plan.items.map((item, index) => {
-                  const isInsideRuler = rulerIndex != null && index <= rulerIndex;
+                  const isInsideRuler =
+                    selectedStartIndex != null &&
+                    selectedEndIndex != null &&
+                    index >= selectedStartIndex &&
+                    index <= selectedEndIndex;
 
                   return (
                     <tr
@@ -475,7 +564,7 @@ export default function SavedPlanDetailPage() {
                           : item.checked
                             ? "bg-[var(--color-positive)]/5"
                             : ""
-                      } ${isInsideRuler ? "shadow-[inset_3px_0_0_0_rgba(34,211,238,0.75)]" : ""}`}
+                      } ${isInsideRuler ? "bg-cyan-400/10" : ""}`}
                     >
                       <td className="px-3 py-2">
                         <button
@@ -565,37 +654,48 @@ export default function SavedPlanDetailPage() {
             </table>
           </div>
 
-          {rulerTop != null && (
+          {topRulerTop != null && (
             <div
               className="pointer-events-none absolute inset-x-0 z-30"
-              style={{ top: rulerTop }}
+              style={{ top: topRulerTop }}
             >
               <button
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault();
-                  handleRulerPointerDown(event.clientY);
+                  handleRulerPointerDown("top", event.clientY);
                 }}
                 className="pointer-events-auto absolute left-2 -top-4 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/50 bg-slate-950/90 text-cyan-300 shadow-lg transition-colors hover:bg-slate-900 cursor-row-resize"
-                aria-label="Arrastar régua de soma"
+                aria-label="Arrastar régua superior"
               >
                 <MoveVertical size={16} />
               </button>
+              <div className="absolute right-2 -top-5 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg">
+                Início: {topRulerLabel ?? "—"}
+              </div>
+            </div>
+          )}
+
+          {bottomRulerTop != null && (
+            <div
+              className="pointer-events-none absolute inset-x-0 z-30"
+              style={{ top: bottomRulerTop }}
+            >
               <button
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault();
-                  handleRulerPointerDown(event.clientY);
+                  handleRulerPointerDown("bottom", event.clientY);
                 }}
-                className="pointer-events-auto absolute right-2 -top-5 flex cursor-row-resize items-center gap-2 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg transition-colors hover:bg-slate-900"
+                className="pointer-events-auto absolute left-2 -top-4 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/50 bg-slate-950/90 text-cyan-300 shadow-lg transition-colors hover:bg-slate-900 cursor-row-resize"
+                aria-label="Arrastar régua inferior"
               >
-                <MoveVertical size={14} className="text-cyan-300" />
-                <span>
-                  {rulerLabel ? `${rulerLabel} • ` : ""}
-                  {formatBRL(rulerSumBrl)}
-                  {rulerSumUsd > 0 ? ` • ${formatUSD(rulerSumUsd)}` : ""}
-                </span>
+                <MoveVertical size={16} />
               </button>
+              <div className="absolute right-2 -top-5 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg">
+                Fim: {bottomRulerLabel ?? "—"} • {formatBRL(rulerSumBrl)}
+                {rulerSumUsd > 0 ? ` • ${formatUSD(rulerSumUsd)}` : ""}
+              </div>
             </div>
           )}
         </div>
