@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
@@ -38,11 +38,20 @@ export default function SavedPlanDetailPage() {
   );
   const tableCanvasRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
+  const rowByIdRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const flipPositions = useRef<Map<number, number>>(new Map());
+  const flipPending = useRef(false);
+
+  const sortItems = (items: SavedPlan["items"]) => {
+    const unchecked = items.filter((i) => !i.checked);
+    const checked = items.filter((i) => i.checked);
+    return [...unchecked, ...checked];
+  };
 
   const fetchPlan = useCallback(async () => {
     try {
       const data = await apiFetch<SavedPlan>(`/saved-plans/${id}`);
-      setPlan(data);
+      setPlan({ ...data, items: sortItems(data.items) });
     } catch {
       toast.error("Erro ao carregar plano");
     } finally {
@@ -53,6 +62,35 @@ export default function SavedPlanDetailPage() {
   useEffect(() => {
     fetchPlan();
   }, [fetchPlan]);
+
+  // FLIP animation: after reorder, animate rows from old position to new
+  useLayoutEffect(() => {
+    if (!flipPending.current) return;
+    flipPending.current = false;
+
+    rowByIdRefs.current.forEach((row, itemId) => {
+      const oldTop = flipPositions.current.get(itemId);
+      if (oldTop == null) return;
+      const newTop = row.getBoundingClientRect().top;
+      const delta = oldTop - newTop;
+      if (delta === 0) return;
+
+      row.style.transition = "none";
+      row.style.transform = `translateY(${delta}px)`;
+
+      requestAnimationFrame(() => {
+        row.style.transition = "transform 300ms ease";
+        row.style.transform = "";
+        row.addEventListener(
+          "transitionend",
+          () => { row.style.transition = ""; },
+          { once: true }
+        );
+      });
+    });
+
+    flipPositions.current.clear();
+  });
 
   useEffect(() => {
     if (!plan?.items.length) {
@@ -206,9 +244,20 @@ export default function SavedPlanDetailPage() {
 
   const toggleCheck = async (itemId: number) => {
     if (!plan) return;
-    const updated = plan.items.map((item) =>
+    const toggled = plan.items.map((item) =>
       item.id === itemId ? { ...item, checked: !item.checked } : item
     );
+    // Show check immediately, then reorder after a short delay (Apple Notes style)
+    setPlan({ ...plan, items: toggled });
+    await new Promise((r) => setTimeout(r, 350));
+
+    // Capture current positions for FLIP animation
+    rowByIdRefs.current.forEach((row, itemId) => {
+      flipPositions.current.set(itemId, row.getBoundingClientRect().top);
+    });
+    flipPending.current = true;
+
+    const updated = sortItems(toggled);
     setPlan({ ...plan, items: updated });
 
     setSavingChecks(true);
@@ -221,16 +270,13 @@ export default function SavedPlanDetailPage() {
     } catch {
       toast.error("Erro ao salvar progresso");
       // revert
-      setPlan((prev) =>
-        prev
-          ? {
-              ...prev,
-              items: prev.items.map((item) =>
-                item.id === itemId ? { ...item, checked: !item.checked } : item
-              ),
-            }
-          : prev
-      );
+      setPlan((prev) => {
+        if (!prev) return prev;
+        const reverted = prev.items.map((item) =>
+          item.id === itemId ? { ...item, checked: !item.checked } : item
+        );
+        return { ...prev, items: sortItems(reverted) };
+      });
     } finally {
       setSavingChecks(false);
     }
@@ -557,6 +603,9 @@ export default function SavedPlanDetailPage() {
                       key={item.id}
                       ref={(node) => {
                         rowRefs.current[index] = node;
+                        if (node) {
+                          rowByIdRefs.current.set(item.id, node);
+                        }
                       }}
                       className={`border-b border-[var(--color-border)]/50 transition-colors ${
                         item.is_reserve
