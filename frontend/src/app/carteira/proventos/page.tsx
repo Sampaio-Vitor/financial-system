@@ -15,6 +15,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import Link from "next/link";
+import { Plug } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { DividendEventListResponse, DividendEvent } from "@/types";
@@ -229,8 +231,23 @@ export default function ProventosPage() {
       </div>
 
       {events.length === 0 ? (
-        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center">
-          <p className="text-[var(--color-text-muted)]">Nenhum provento registrado em {year}.</p>
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center max-w-md mx-auto">
+          <div className="w-16 h-16 bg-[var(--color-accent)]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Plug size={28} className="text-[var(--color-accent)]" />
+          </div>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+            Nenhum provento registrado em {year}.
+          </p>
+          <p className="text-sm text-[var(--color-text-muted)] mb-6">
+            Conecte um banco em <strong>Conexões Bancárias</strong> para detectar proventos automaticamente.
+          </p>
+          <Link
+            href="/carteira/conexoes"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90"
+          >
+            <Plug size={16} />
+            Conexões Bancárias
+          </Link>
         </div>
       ) : (
         <>

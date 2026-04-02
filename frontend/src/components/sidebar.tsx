@@ -18,7 +18,7 @@ import {
   ShieldCheck,
   Briefcase,
   BookOpen,
-  Receipt,
+  Plug,
   Coins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -49,9 +49,9 @@ export const navItems: NavItem[] = [
     exact: true,
   },
   {
-    label: "Despesas",
-    href: "/carteira/despesas",
-    icon: Receipt,
+    label: "Conexões",
+    href: "/carteira/conexoes",
+    icon: Plug,
   },
   {
     label: "Proventos",
