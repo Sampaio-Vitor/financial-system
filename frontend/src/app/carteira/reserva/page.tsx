@@ -285,7 +285,9 @@ export default function ReservaPage() {
             {monthData?.entry && (
               <p className="text-xs text-[var(--color-text-muted)] mt-2">
                 Atualizado em{" "}
-                {new Date(monthData.entry.recorded_at).toLocaleDateString("pt-BR")}
+                {new Date(monthData.entry.recorded_at).toLocaleDateString("pt-BR", {
+                  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                })}
               </p>
             )}
           </div>
