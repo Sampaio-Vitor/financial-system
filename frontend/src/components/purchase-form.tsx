@@ -98,7 +98,9 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const unitPriceBrl =
     isUsdTrade && unitPrice && usdBrlRate ? parseFloat(unitPrice) * usdBrlRate : null;
   const rateUpdatedLabel = priceContext.rate_updated_at
-    ? new Date(priceContext.rate_updated_at).toLocaleString("pt-BR")
+    ? new Date(priceContext.rate_updated_at).toLocaleString("pt-BR", {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      })
     : null;
 
   useEffect(() => {
