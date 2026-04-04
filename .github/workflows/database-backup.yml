@@ -15,14 +15,11 @@ jobs:
     timeout-minutes: 30
     env:
       APP_DIR: ${{ secrets.VPS_APP_DIR }}
-      BACKUP_PREFIX: financial-system-mysql
       COMPOSE_FILES: -f docker-compose.yml -f docker-compose.prod.yml
       DEPLOY_TARGET: ${{ secrets.VPS_DEPLOY_USER }}@${{ secrets.VPS_HOST }}
-      GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      BACKUP_DIR: /var/backups/financial-system
+      BACKUP_FILE: financial-system-mysql-latest.sql.gz
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Install SSH key
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -34,61 +31,22 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts
 
-      - name: Install rclone
+      - name: Create production backup on VPS
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y rclone
-
-      - name: Configure Google Drive remote
-        env:
-          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          service_account_file="${RUNNER_TEMP}/gdrive-service-account.json"
-          printf '%s' "${GDRIVE_SERVICE_ACCOUNT_JSON}" > "${service_account_file}"
-          chmod 600 "${service_account_file}"
-          rclone config create backup_drive drive \
-            scope drive \
-            service_account_file "${service_account_file}" \
-            root_folder_id "${GDRIVE_FOLDER_ID}"
-
-      - name: Dump production database
-        id: dump
-        run: |
-          set -euo pipefail
-          timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
-          archive_name="${BACKUP_PREFIX}-${timestamp}.sql.gz"
-          archive_path="${RUNNER_TEMP}/${archive_name}"
-          checksum_path="${archive_path}.sha256"
-
-          ssh "${DEPLOY_TARGET}" "cd \"${APP_DIR}\" && sudo docker compose ${COMPOSE_FILES} exec -T mysql sh -lc 'exec mysqldump --single-transaction --quick --routines --triggers --events -u\"\$MYSQL_USER\" -p\"\$MYSQL_PASSWORD\" --databases \"\$MYSQL_DATABASE\"'" | gzip -9 > "${archive_path}"
-
-          sha256sum "${archive_path}" > "${checksum_path}"
-
-          {
-            echo "archive_name=${archive_name}"
-            echo "archive_path=${archive_path}"
-            echo "checksum_path=${checksum_path}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Upload backup to Google Drive
-        run: |
-          set -euo pipefail
-          rclone copyto "${{ steps.dump.outputs.archive_path }}" "backup_drive:${{ steps.dump.outputs.archive_name }}"
-          rclone copyto "${{ steps.dump.outputs.checksum_path }}" "backup_drive:${{ steps.dump.outputs.archive_name }}.sha256"
-
-      - name: Prune old backups
-        run: |
-          set -euo pipefail
-          mapfile -t backups < <(rclone lsf backup_drive: --files-only --include "${BACKUP_PREFIX}-*.sql.gz" | sort)
-          keep=12
-
-          if [ "${#backups[@]}" -le "${keep}" ]; then
-            exit 0
-          fi
-
-          for old_backup in "${backups[@]:0:${#backups[@]}-${keep}}"; do
-            rclone deletefile "backup_drive:${old_backup}"
-            rclone deletefile "backup_drive:${old_backup}.sha256" || true
-          done
+          ssh "${DEPLOY_TARGET}" "set -euo pipefail
+            sudo mkdir -p \"${BACKUP_DIR}\"
+            sudo chown \$(id -un):\$(id -gn) \"${BACKUP_DIR}\"
+            cd \"${APP_DIR}\"
+            tmp_file=\"${BACKUP_DIR}/${BACKUP_FILE}.tmp\"
+            final_file=\"${BACKUP_DIR}/${BACKUP_FILE}\"
+            checksum_file=\"${BACKUP_DIR}/${BACKUP_FILE}.sha256\"
+            timestamp_file=\"${BACKUP_DIR}/${BACKUP_FILE}.timestamp\"
+            sudo docker compose ${COMPOSE_FILES} exec -T mysql sh -lc 'exec mysqldump --single-transaction --quick --no-tablespaces --routines --triggers --events -u\"\$MYSQL_USER\" -p\"\$MYSQL_PASSWORD\" --databases \"\$MYSQL_DATABASE\"' | gzip -9 > \"\${tmp_file}\"
+            sha256sum \"\${tmp_file}\" > \"\${checksum_file}.tmp\"
+            date -u +'%Y-%m-%dT%H:%M:%SZ' > \"\${timestamp_file}.tmp\"
+            mv \"\${tmp_file}\" \"\${final_file}\"
+            mv \"\${checksum_file}.tmp\" \"\${checksum_file}\"
+            mv \"\${timestamp_file}.tmp\" \"\${timestamp_file}\"
+            ls -lh \"\${final_file}\" \"\${checksum_file}\" \"\${timestamp_file}\"
+          "
