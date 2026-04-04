@@ -15,7 +15,11 @@ from app.routers import admin, auth, assets, purchases, fixed_income, portfolio,
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.scheduler import setup_scheduler
+    sched = setup_scheduler()
+    sched.start()
     yield
+    sched.shutdown()
     await engine.dispose()
 
 

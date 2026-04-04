@@ -2,16 +2,21 @@ import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Optional
 
 import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset, AssetType
-from app.models.settings import UserSettings
+from app.models.system_setting import SystemSetting
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+def _is_demo_asset(asset: Asset) -> bool:
+    return asset.description.strip().endswith(" Demo")
 
 
 def _extract_close(data, yf_ticker: str) -> float | None:
@@ -25,13 +30,32 @@ def _extract_close(data, yf_ticker: str) -> float | None:
         return None
 
 
+async def _get_system_setting(db: AsyncSession, key: str) -> str | None:
+    result = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == key)
+    )
+    setting = result.scalar_one_or_none()
+    return setting.value if setting else None
+
+
+async def _upsert_system_setting(db: AsyncSession, key: str, value: str) -> None:
+    result = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == key)
+    )
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = value
+    else:
+        db.add(SystemSetting(key=key, value=value))
+
+
 class PriceService:
-    def __init__(self, db: AsyncSession, user: User):
+    def __init__(self, db: AsyncSession, user: Optional[User] = None):
         self.db = db
         self.user = user
 
     async def update_all_prices(self) -> dict:
-        results = {"updated": [], "failed": [], "usd_brl_rate": None}
+        results = {"updated": [], "failed": [], "skipped": [], "usd_brl_rate": None}
 
         # Fetch USD/BRL rate first
         rate = None
@@ -45,7 +69,13 @@ class PriceService:
 
         # Get all assets
         asset_result = await self.db.execute(select(Asset))
-        assets = asset_result.scalars().all()
+        all_assets = asset_result.scalars().all()
+        assets = [asset for asset in all_assets if not _is_demo_asset(asset)]
+        results["skipped"].extend(
+            {"ticker": asset.ticker, "reason": "demo asset"}
+            for asset in all_assets
+            if _is_demo_asset(asset)
+        )
 
         # Split by type
         us_stocks = [a for a in assets if a.type == AssetType.STOCK]
@@ -79,26 +109,14 @@ class PriceService:
         return None
 
     async def _save_usd_brl(self, rate: Decimal):
-        result = await self.db.execute(
-            select(UserSettings).where(UserSettings.user_id == self.user.id)
+        await _upsert_system_setting(self.db, "usd_brl_rate", str(rate))
+        await _upsert_system_setting(
+            self.db, "usd_brl_rate_updated_at", datetime.now(timezone.utc).isoformat()
         )
-        user_settings = result.scalar_one_or_none()
-        if user_settings:
-            user_settings.usd_brl_rate = rate
-            user_settings.rate_updated_at = datetime.now(timezone.utc)
-        else:
-            user_settings = UserSettings(
-                user_id=self.user.id, usd_brl_rate=rate,
-                rate_updated_at=datetime.now(timezone.utc),
-            )
-            self.db.add(user_settings)
 
     async def _get_usd_brl(self) -> Decimal | None:
-        result = await self.db.execute(
-            select(UserSettings).where(UserSettings.user_id == self.user.id)
-        )
-        s = result.scalar_one_or_none()
-        return s.usd_brl_rate if s else None
+        val = await _get_system_setting(self.db, "usd_brl_rate")
+        return Decimal(val) if val else None
 
     async def _fetch_yf_prices(self, assets: list[Asset], usd_brl_rate: Decimal | None, convert_to_brl: bool) -> dict:
         results = {"updated": [], "failed": []}

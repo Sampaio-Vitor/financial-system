@@ -199,12 +199,6 @@ export interface RebalancingResponse {
   total_planned: number;
 }
 
-export interface PriceUpdateResult {
-  updated: { ticker: string; price: number }[];
-  failed: { ticker: string; error: string }[];
-  usd_brl_rate: number | null;
-}
-
 export interface PriceContextResponse {
   usd_brl_rate: number | null;
   rate_updated_at: string | null;
@@ -240,6 +234,20 @@ export interface PatrimonioEvolutionPoint {
   total_invested: number;
   total_pnl: number;
   pnl_pct: number;
+}
+
+export interface DailyEvolutionPoint {
+  date: string;
+  total_patrimonio: number;
+  total_invested: number;
+  total_pnl: number;
+  pnl_pct: number;
+}
+
+export interface PriceStatusResponse {
+  next_run_utc: string;
+  last_run_utc: string | null;
+  last_run_status: string | null;
 }
 
 export interface BulkAssetCreated {

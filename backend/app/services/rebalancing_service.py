@@ -11,7 +11,6 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.user_asset import UserAsset
 from app.models.financial_reserve import FinancialReserveTarget
 from app.models.allocation_target import AllocationTarget
-from app.models.settings import UserSettings
 from app.models.user import User
 from app.constants import CLASS_LABELS
 from app.services.portfolio_service import get_class_values, get_reserve_for_month
@@ -193,11 +192,9 @@ class RebalancingService:
         return {t.asset_class: t.target_pct for t in result.scalars().all()}
 
     async def _get_usd_brl(self) -> Decimal | None:
-        result = await self.db.execute(
-            select(UserSettings).where(UserSettings.user_id == self.user.id)
-        )
-        s = result.scalar_one_or_none()
-        return s.usd_brl_rate if s else None
+        from app.services.price_service import _get_system_setting
+        val = await _get_system_setting(self.db, "usd_brl_rate")
+        return Decimal(val) if val else None
 
     async def _get_assets_with_values(self, asset_class: AssetType) -> dict[str, Decimal]:
         """Get current market value for each non-paused asset the user tracks in a class."""
