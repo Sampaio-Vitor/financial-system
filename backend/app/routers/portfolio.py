@@ -13,7 +13,6 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_interest import FixedIncomeInterest
 from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.allocation_target import AllocationTarget
-from app.models.settings import UserSettings
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.dividend_event import DividendEvent
 from app.models.user import User

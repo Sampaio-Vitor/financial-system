@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -35,6 +35,14 @@ class SnapshotAssetItem(BaseModel):
 
 class PatrimonioEvolutionPoint(BaseModel):
     month: str
+    total_patrimonio: Decimal
+    total_invested: Decimal
+    total_pnl: Decimal
+    pnl_pct: Decimal
+
+
+class DailyEvolutionPoint(BaseModel):
+    date: date
     total_patrimonio: Decimal
     total_invested: Decimal
     total_pnl: Decimal

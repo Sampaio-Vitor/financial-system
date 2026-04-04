@@ -9,6 +9,7 @@ from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_redemption import FixedIncomeRedemption
+from app.models.daily_snapshot import DailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.constants import CLASS_LABELS
@@ -247,6 +248,102 @@ class SnapshotService:
 
         await self.db.commit()
         await self.db.refresh(snapshot)
+        return snapshot
+
+    async def generate_daily_snapshot(self, target_date: date) -> DailySnapshot:
+        """Generate a lightweight daily snapshot using current Asset.current_price (no API calls)."""
+        today = target_date
+
+        # ── 1. Variable income positions ──
+        rv_query = (
+            select(
+                Asset.id,
+                Asset.type,
+                Asset.current_price,
+                func.sum(Purchase.quantity).label("total_qty"),
+                func.sum(Purchase.total_value).label("total_cost"),
+            )
+            .join(Asset, Purchase.asset_id == Asset.id)
+            .where(
+                Purchase.user_id == self.user.id,
+                Asset.type != AssetType.RF,
+                Purchase.purchase_date <= today,
+            )
+            .group_by(Asset.id, Asset.type, Asset.current_price)
+        )
+        rv_result = await self.db.execute(rv_query)
+        rv_rows = rv_result.all()
+
+        class_values: dict[AssetType, Decimal] = {t: Decimal("0") for t in AssetType}
+        total_rv_cost = Decimal("0")
+
+        for row in rv_rows:
+            _asset_id, asset_type, current_price, qty, cost = row
+            if current_price and qty:
+                market_value = current_price * qty
+                class_values[asset_type] += market_value
+            cost_val = cost or Decimal("0")
+            total_rv_cost += cost_val
+
+        # ── 2. Fixed income ──
+        fi_positions_result = await self.db.execute(
+            select(FixedIncomePosition).where(
+                FixedIncomePosition.user_id == self.user.id,
+                FixedIncomePosition.start_date <= today,
+            )
+        )
+        fi_positions = fi_positions_result.scalars().all()
+        fi_applied = sum(p.applied_value for p in fi_positions)
+
+        redemption_result = await self.db.execute(
+            select(func.sum(FixedIncomeRedemption.amount)).where(
+                FixedIncomeRedemption.user_id == self.user.id,
+                FixedIncomeRedemption.redemption_date <= today,
+            )
+        )
+        fi_redeemed = redemption_result.scalar() or Decimal("0")
+        rf_value = fi_applied - fi_redeemed
+        class_values[AssetType.RF] = rf_value
+
+        # ── 3. Reserve ──
+        reserve_entry = await get_reserve_for_month(self.db, self.user.id, today.year, today.month)
+        reserva = reserve_entry.amount if reserve_entry else Decimal("0")
+
+        # ── 4. Totals ──
+        patrimonio_investivel = sum(class_values.values())
+        patrimonio_total = patrimonio_investivel + reserva
+
+        total_invested = total_rv_cost + fi_applied + reserva
+        total_pnl = patrimonio_total - total_invested
+        pnl_pct = (total_pnl / total_invested * 100) if total_invested else Decimal("0")
+
+        # ── 5. Upsert ──
+        existing = await self.db.execute(
+            select(DailySnapshot).where(
+                DailySnapshot.user_id == self.user.id,
+                DailySnapshot.date == today,
+            )
+        )
+        snapshot = existing.scalar_one_or_none()
+
+        if snapshot:
+            snapshot.total_patrimonio = round(patrimonio_total, 4)
+            snapshot.total_invested = round(total_invested, 4)
+            snapshot.total_pnl = round(total_pnl, 4)
+            snapshot.pnl_pct = round(pnl_pct, 4)
+            snapshot.snapshot_at = datetime.now(timezone.utc)
+        else:
+            snapshot = DailySnapshot(
+                user_id=self.user.id,
+                date=today,
+                total_patrimonio=round(patrimonio_total, 4),
+                total_invested=round(total_invested, 4),
+                total_pnl=round(total_pnl, 4),
+                pnl_pct=round(pnl_pct, 4),
+                snapshot_at=datetime.now(timezone.utc),
+            )
+            self.db.add(snapshot)
+
         return snapshot
 
     async def generate_all(self) -> list[MonthlySnapshot]:
