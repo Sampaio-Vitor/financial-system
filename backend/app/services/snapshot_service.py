@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -13,7 +13,7 @@ from app.models.daily_snapshot import DailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.constants import CLASS_LABELS
-from app.services.portfolio_service import get_reserve_for_month
+from app.services.portfolio_service import get_class_values, get_reserve_for_date, get_reserve_for_month
 from app.services.price_service import PriceService
 
 
@@ -253,6 +253,7 @@ class SnapshotService:
     async def generate_daily_snapshot(self, target_date: date) -> DailySnapshot:
         """Generate a lightweight daily snapshot using current Asset.current_price (no API calls)."""
         today = target_date
+        tomorrow = today + timedelta(days=1)
 
         # ── 1. Variable income positions ──
         rv_query = (
@@ -294,19 +295,11 @@ class SnapshotService:
         )
         fi_positions = fi_positions_result.scalars().all()
         fi_applied = sum(p.applied_value for p in fi_positions)
-
-        redemption_result = await self.db.execute(
-            select(func.sum(FixedIncomeRedemption.amount)).where(
-                FixedIncomeRedemption.user_id == self.user.id,
-                FixedIncomeRedemption.redemption_date <= today,
-            )
-        )
-        fi_redeemed = redemption_result.scalar() or Decimal("0")
-        rf_value = fi_applied - fi_redeemed
-        class_values[AssetType.RF] = rf_value
+        current_class_values = await get_class_values(self.db, self.user, cutoff=tomorrow)
+        class_values[AssetType.RF] = current_class_values[AssetType.RF]
 
         # ── 3. Reserve ──
-        reserve_entry = await get_reserve_for_month(self.db, self.user.id, today.year, today.month)
+        reserve_entry = await get_reserve_for_date(self.db, self.user.id, today)
         reserva = reserve_entry.amount if reserve_entry else Decimal("0")
 
         # ── 4. Totals ──
