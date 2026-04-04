@@ -60,7 +60,7 @@ jobs:
             sync_env_var TURNSTILE_SECRET_KEY "${TURNSTILE_SECRET_KEY}"
             sync_env_var NEXT_PUBLIC_TURNSTILE_SITE_KEY "${NEXT_PUBLIC_TURNSTILE_SITE_KEY}"
             sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml build
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml start mysql || sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
             until sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent; do
               sleep 2
             done
@@ -78,7 +78,7 @@ jobs:
             '
             sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
             sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d backend frontend caddy
             sudo "${DOCKER_BIN}" image prune -f
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
