@@ -13,40 +13,36 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      APP_DIR: ${{ secrets.VPS_APP_DIR }}
-      COMPOSE_FILES: -f docker-compose.yml -f docker-compose.prod.yml
-      DEPLOY_TARGET: ${{ secrets.VPS_DEPLOY_USER }}@${{ secrets.VPS_HOST }}
-      BACKUP_DIR: /var/backups/financial-system
-      BACKUP_FILE: financial-system-mysql-latest.sql.gz
     steps:
-      - name: Install SSH key
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts
-
       - name: Create production backup on VPS
-        run: |
-          set -euo pipefail
-          ssh "${DEPLOY_TARGET}" "set -euo pipefail
-            sudo mkdir -p \"${BACKUP_DIR}\"
-            sudo chown \$(id -un):\$(id -gn) \"${BACKUP_DIR}\"
-            cd \"${APP_DIR}\"
-            tmp_file=\"${BACKUP_DIR}/${BACKUP_FILE}.tmp\"
-            final_file=\"${BACKUP_DIR}/${BACKUP_FILE}\"
-            checksum_file=\"${BACKUP_DIR}/${BACKUP_FILE}.sha256\"
-            timestamp_file=\"${BACKUP_DIR}/${BACKUP_FILE}.timestamp\"
-            sudo docker compose ${COMPOSE_FILES} exec -T mysql sh -lc 'exec mysqldump --single-transaction --quick --no-tablespaces --routines --triggers --events -u\"\$MYSQL_USER\" -p\"\$MYSQL_PASSWORD\" --databases \"\$MYSQL_DATABASE\"' | gzip -9 > \"\${tmp_file}\"
-            sha256sum \"\${tmp_file}\" > \"\${checksum_file}.tmp\"
-            date -u +'%Y-%m-%dT%H:%M:%SZ' > \"\${timestamp_file}.tmp\"
-            mv \"\${tmp_file}\" \"\${final_file}\"
-            mv \"\${checksum_file}.tmp\" \"\${checksum_file}\"
-            mv \"\${timestamp_file}.tmp\" \"\${timestamp_file}\"
-            ls -lh \"\${final_file}\" \"\${checksum_file}\" \"\${timestamp_file}\"
-          "
+        uses: appleboy/ssh-action@v1
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_DEPLOY_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: APP_DIR
+          script: |
+            set -euo pipefail
+            BACKUP_DIR="/var/backups/financial-system"
+            BACKUP_FILE="financial-system-mysql-latest.sql.gz"
+            COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
+
+            sudo mkdir -p "${BACKUP_DIR}"
+            sudo chown "$(id -un):$(id -gn)" "${BACKUP_DIR}"
+
+            cd "${APP_DIR}"
+
+            tmp_file="${BACKUP_DIR}/${BACKUP_FILE}.tmp"
+            final_file="${BACKUP_DIR}/${BACKUP_FILE}"
+            checksum_file="${BACKUP_DIR}/${BACKUP_FILE}.sha256"
+            timestamp_file="${BACKUP_DIR}/${BACKUP_FILE}.timestamp"
+
+            sudo docker compose ${COMPOSE_FILES} exec -T mysql sh -lc 'exec mysqldump --single-transaction --quick --no-tablespaces --routines --triggers --events -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --databases "$MYSQL_DATABASE"' | gzip -9 > "${tmp_file}"
+            sha256sum "${tmp_file}" > "${checksum_file}.tmp"
+            date -u +'%Y-%m-%dT%H:%M:%SZ' > "${timestamp_file}.tmp"
+            mv "${tmp_file}" "${final_file}"
+            mv "${checksum_file}.tmp" "${checksum_file}"
+            mv "${timestamp_file}.tmp" "${timestamp_file}"
+            ls -lh "${final_file}" "${checksum_file}" "${timestamp_file}"
