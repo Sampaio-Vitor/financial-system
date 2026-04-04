@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -27,6 +27,24 @@ async def get_reserve_for_month(
         .where(
             FinancialReserveEntry.user_id == user_id,
             FinancialReserveEntry.recorded_at < month_end,
+        )
+        .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_reserve_for_date(
+    db: AsyncSession, user_id: int, target_date: date
+) -> FinancialReserveEntry | None:
+    """Get the last reserve entry recorded on or before the end of a specific day."""
+    day_end = datetime.combine(target_date + timedelta(days=1), time.min)
+
+    result = await db.execute(
+        select(FinancialReserveEntry)
+        .where(
+            FinancialReserveEntry.user_id == user_id,
+            FinancialReserveEntry.recorded_at < day_end,
         )
         .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
         .limit(1)
