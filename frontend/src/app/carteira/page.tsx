@@ -6,7 +6,7 @@ import { formatBRL } from "@/lib/format";
 import { MonthlyOverview } from "@/types";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import ChartTabs from "@/components/chart-tabs";
-import PriceUpdateButton from "@/components/price-update-button";
+import PriceUpdateStatus from "@/components/price-update-status";
 
 export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
@@ -62,7 +62,7 @@ export default function VisaoGeralPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
-        <PriceUpdateButton onComplete={fetchData} />
+        <PriceUpdateStatus />
       </div>
 
       {/* Hero: Patrimônio Total */}

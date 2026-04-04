@@ -1,24 +1,14 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_admin_user, get_current_user
-from app.models.settings import UserSettings
+from app.dependencies import get_current_user
 from app.models.user import User
-from app.services.price_service import PriceService
+from app.services.price_service import _get_system_setting
 
 router = APIRouter()
-
-
-@router.post("/update")
-async def update_prices(
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_admin_user),
-):
-    service = PriceService(db, user)
-    results = await service.update_all_prices()
-    return results
 
 
 @router.get("/context")
@@ -26,11 +16,29 @@ async def get_price_context(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(UserSettings).where(UserSettings.user_id == user.id)
-    )
-    settings = result.scalar_one_or_none()
+    rate = await _get_system_setting(db, "usd_brl_rate")
+    rate_updated = await _get_system_setting(db, "usd_brl_rate_updated_at")
     return {
-        "usd_brl_rate": float(settings.usd_brl_rate) if settings else None,
-        "rate_updated_at": settings.rate_updated_at if settings else None,
+        "usd_brl_rate": float(rate) if rate else None,
+        "rate_updated_at": rate_updated,
+    }
+
+
+@router.get("/status")
+async def get_price_status(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    last_run = await _get_system_setting(db, "last_price_update_at")
+    status = await _get_system_setting(db, "last_price_update_status")
+
+    now = datetime.now(timezone.utc)
+    next_run = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    if now >= next_run:
+        next_run += timedelta(days=1)
+
+    return {
+        "next_run_utc": next_run.isoformat(),
+        "last_run_utc": last_run,
+        "last_run_status": status,
     }

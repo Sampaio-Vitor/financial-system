@@ -1,12 +1,16 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.models.daily_snapshot import DailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.schemas.snapshot import (
+    DailyEvolutionPoint,
     SnapshotGenerateRequest,
     SnapshotResponse,
     PatrimonioEvolutionPoint,
@@ -94,3 +98,27 @@ async def get_snapshot_assets(
     if not snapshot or not snapshot.asset_breakdown:
         return []
     return [SnapshotAssetItem(**item) for item in snapshot.asset_breakdown]
+
+
+@router.get("/daily-evolution", response_model=list[DailyEvolutionPoint])
+async def get_daily_evolution(
+    days: int = Query(default=90, ge=1, le=3650),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    cutoff = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(DailySnapshot)
+        .where(DailySnapshot.user_id == user.id, DailySnapshot.date >= cutoff)
+        .order_by(DailySnapshot.date.asc())
+    )
+    return [
+        DailyEvolutionPoint(
+            date=s.date,
+            total_patrimonio=s.total_patrimonio,
+            total_invested=s.total_invested,
+            total_pnl=s.total_pnl,
+            pnl_pct=s.pnl_pct,
+        )
+        for s in result.scalars().all()
+    ]

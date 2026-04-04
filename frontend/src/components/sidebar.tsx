@@ -20,6 +20,7 @@ import {
   BookOpen,
   Plug,
   Coins,
+  LineChart,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -47,6 +48,11 @@ export const navItems: NavItem[] = [
     href: "/carteira/mensal",
     icon: Calendar,
     exact: true,
+  },
+  {
+    label: "Histórico",
+    href: "/carteira/historico",
+    icon: LineChart,
   },
   {
     label: "Conexões",

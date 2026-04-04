@@ -1,8 +1,11 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+import yfinance as yf
 from decimal import Decimal
 
 from app.database import get_db
@@ -373,3 +376,61 @@ async def delete_asset(
 
     await db.delete(user_asset)
     await db.commit()
+
+
+@router.get("/{asset_id}/price-history")
+async def get_asset_price_history(
+    asset_id: int,
+    days: int = Query(default=90, le=365),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Asset)
+        .join(UserAsset, UserAsset.asset_id == Asset.id)
+        .where(Asset.id == asset_id, UserAsset.user_id == user.id)
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Build yfinance ticker
+    if asset.type in (AssetType.ACAO, AssetType.FII):
+        yf_ticker = f"{asset.ticker}.SA"
+    else:
+        yf_ticker = asset.ticker
+
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            lambda: yf.download(yf_ticker, period=f"{days}d", progress=False),
+        )
+    except Exception:
+        return []
+
+    if data.empty:
+        return []
+
+    # Convert USD prices to BRL for US stocks
+    usd_brl_rate = None
+    if asset.type == AssetType.STOCK:
+        from app.services.price_service import _get_system_setting
+        rate_str = await _get_system_setting(db, "usd_brl_rate")
+        usd_brl_rate = float(rate_str) if rate_str else None
+
+    points = []
+    try:
+        close_series = data["Close"][yf_ticker]
+        for idx, val in close_series.items():
+            price = float(val)
+            if price <= 0:
+                continue
+            if usd_brl_rate:
+                price *= usd_brl_rate
+            date_str = idx.strftime("%Y-%m-%d")
+            points.append({"date": date_str, "price": round(price, 2)})
+    except Exception:
+        return []
+
+    return points

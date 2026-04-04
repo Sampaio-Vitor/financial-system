@@ -125,7 +125,12 @@ const tooltipStyle = {
   labelStyle: { color: "var(--color-text-muted)" },
 };
 
-type ChartView = "preco_medio" | "dividendos";
+interface HistoricalPricePoint {
+  date: string;
+  price: number;
+}
+
+type ChartView = "preco_medio" | "dividendos" | "cotacao";
 
 export default function AssetDetailCharts({
   ticker,
@@ -134,8 +139,9 @@ export default function AssetDetailCharts({
 }: AssetDetailChartsProps) {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [dividends, setDividends] = useState<DividendEventListResponse["events"]>([]);
+  const [priceHistory, setPriceHistory] = useState<HistoricalPricePoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<ChartView>("preco_medio");
+  const [view, setView] = useState<ChartView>("cotacao");
 
   useEffect(() => {
     let cancelled = false;
@@ -144,16 +150,19 @@ export default function AssetDetailCharts({
     Promise.all([
       apiFetch<Purchase[]>(`/purchases?asset_id=${assetId}`),
       apiFetch<DividendEventListResponse>(`/dividends?ticker=${ticker}`),
+      apiFetch<HistoricalPricePoint[]>(`/assets/${assetId}/price-history?days=90`),
     ])
-      .then(([purchasesData, dividendsData]) => {
+      .then(([purchasesData, dividendsData, priceHistoryData]) => {
         if (cancelled) return;
         setPurchases(purchasesData);
         setDividends(dividendsData.events);
+        setPriceHistory(priceHistoryData);
       })
       .catch(() => {
         if (cancelled) return;
         setPurchases([]);
         setDividends([]);
+        setPriceHistory([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -176,11 +185,21 @@ export default function AssetDetailCharts({
   const dividendData = buildDividendData(dividends);
   const hasDividends = dividendData.length > 0;
   const hasPrice = priceData.length > 0;
+  const hasPriceHistory = priceHistory.length > 0;
 
-  if (!hasDividends && !hasPrice) {
+  const priceHistoryChartData = priceHistory.map((p) => {
+    const d = new Date(p.date + "T00:00:00");
+    return {
+      date: p.date,
+      label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      price: p.price,
+    };
+  });
+
+  if (!hasDividends && !hasPrice && !hasPriceHistory) {
     return (
       <div className="p-4 text-center text-sm text-[var(--color-text-muted)]">
-        Sem dados de aportes ou proventos para este ativo.
+        Sem dados para este ativo.
       </div>
     );
   }
@@ -188,36 +207,87 @@ export default function AssetDetailCharts({
   const lastAvg = hasPrice ? priceData[priceData.length - 1].preco_medio : 0;
   const isAbove = currentPriceNum != null && currentPriceNum >= lastAvg;
 
-  // If only one view has data, force that view
-  const effectiveView = !hasPrice ? "dividendos" : !hasDividends ? "preco_medio" : view;
-  const showToggle = hasPrice && hasDividends;
+  // Available views
+  const availableViews: ChartView[] = [];
+  if (hasPriceHistory) availableViews.push("cotacao");
+  if (hasPrice) availableViews.push("preco_medio");
+  if (hasDividends) availableViews.push("dividendos");
+
+  const effectiveView = availableViews.includes(view) ? view : availableViews[0];
+  const showToggle = availableViews.length > 1;
+
+  const viewLabels: Record<ChartView, string> = {
+    cotacao: "Cotação",
+    preco_medio: "Preço Médio",
+    dividendos: "Dividendos",
+  };
+
+  const viewColors: Record<ChartView, string> = {
+    cotacao: "bg-[var(--color-accent)]",
+    preco_medio: "bg-[var(--color-accent)]",
+    dividendos: "bg-[#10b981]",
+  };
 
   return (
     <div className="p-4">
       {/* Toggle switch */}
       {showToggle && (
         <div className="flex items-center gap-1 mb-3 bg-[var(--color-bg-main)] rounded-lg p-1 w-fit">
-          <button
-            onClick={(e) => { e.stopPropagation(); setView("preco_medio"); }}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              effectiveView === "preco_medio"
-                ? "bg-[var(--color-accent)] text-white"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            }`}
-          >
-            Preco Medio
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setView("dividendos"); }}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              effectiveView === "dividendos"
-                ? "bg-[#10b981] text-white"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            }`}
-          >
-            Dividendos
-          </button>
+          {availableViews.map((v) => (
+            <button
+              key={v}
+              onClick={(e) => { e.stopPropagation(); setView(v); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                effectiveView === v
+                  ? `${viewColors[v]} text-white`
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              }`}
+            >
+              {viewLabels[v]}
+            </button>
+          ))}
         </div>
+      )}
+
+      {/* Price history chart */}
+      {effectiveView === "cotacao" && hasPriceHistory && (
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={priceHistoryChartData}>
+            <defs>
+              <linearGradient id={`grad-hist-${assetId}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
+              axisLine={false}
+              tickLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v) => formatBRL(v).replace("R$\u00a0", "R$")}
+              width={80}
+              domain={["auto", "auto"]}
+            />
+            <Tooltip
+              formatter={(value: number) => [formatBRL(value), "Cotação"]}
+              {...tooltipStyle}
+            />
+            <Area
+              type="monotone"
+              dataKey="price"
+              stroke="var(--color-accent)"
+              fill={`url(#grad-hist-${assetId})`}
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
       )}
 
       {/* Avg price vs current price chart */}
