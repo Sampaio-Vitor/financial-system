@@ -7,11 +7,11 @@ Current strategy:
 - Runs every Sunday at `06:00 UTC` (`03:00` Sao Paulo time on April 4, 2026).
 - Connects to the production VPS over SSH.
 - Runs `mysqldump` inside the production `mysql` container with `--single-transaction --quick --no-tablespaces --routines --triggers --events`.
-- Compresses the dump on the VPS as `/var/backups/financial-system/financial-system-mysql-latest.sql.gz`.
+- Compresses the dump on the VPS as `<APP_DIR>/backups/financial-system-mysql-latest.sql.gz`.
 - Overwrites the previous backup on each successful run.
 - Writes a matching checksum file and timestamp file next to the dump:
-  `/var/backups/financial-system/financial-system-mysql-latest.sql.gz.sha256`
-  `/var/backups/financial-system/financial-system-mysql-latest.sql.gz.timestamp`
+  `<APP_DIR>/backups/financial-system-mysql-latest.sql.gz.sha256`
+  `<APP_DIR>/backups/financial-system-mysql-latest.sql.gz.timestamp`
 
 ## Required GitHub Secrets
 
@@ -32,7 +32,7 @@ To restore from the latest weekly backup on the VPS:
 4. Import it into MySQL.
 
 ```bash
-cd /var/backups/financial-system
+cd <APP_DIR>/backups
 sha256sum -c financial-system-mysql-latest.sql.gz.sha256
 gunzip -c financial-system-mysql-latest.sql.gz | mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"
 ```

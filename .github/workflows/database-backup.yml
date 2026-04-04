@@ -25,12 +25,11 @@ jobs:
           envs: APP_DIR
           script: |
             set -euo pipefail
-            BACKUP_DIR="/var/backups/financial-system"
+            BACKUP_DIR="${APP_DIR}/backups"
             BACKUP_FILE="financial-system-mysql-latest.sql.gz"
             COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
 
-            sudo mkdir -p "${BACKUP_DIR}"
-            sudo chown "$(id -un):$(id -gn)" "${BACKUP_DIR}"
+            mkdir -p "${BACKUP_DIR}"
 
             cd "${APP_DIR}"
 
