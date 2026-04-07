@@ -21,6 +21,8 @@ import {
   Plug,
   Coins,
   LineChart,
+  RefreshCcw,
+  Dog,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -58,6 +60,11 @@ export const navItems: NavItem[] = [
     label: "Conexões",
     href: "/carteira/conexoes",
     icon: Plug,
+  },
+  {
+    label: "Sync Bastter",
+    href: "/carteira/bastter",
+    icon: Dog,
   },
   {
     label: "Proventos",
