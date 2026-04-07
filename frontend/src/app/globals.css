@@ -14,6 +14,11 @@
   --color-warning: #f59e0b;
 }
 
+html,
+body {
+  touch-action: manipulation;
+}
+
 body {
   background-color: var(--color-bg-main);
   color: var(--color-text-primary);
