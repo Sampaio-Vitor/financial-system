@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "sonner";
+import ZoomBlocker from "@/components/zoom-blocker";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -26,6 +27,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${inter.variable} dark`}>
       <body className="antialiased">
+        <ZoomBlocker />
         <AuthProvider>{children}</AuthProvider>
         <Toaster theme="dark" position="bottom-center" richColors />
       </body>
