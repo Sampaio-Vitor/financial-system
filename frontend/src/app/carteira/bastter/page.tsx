@@ -36,6 +36,7 @@ const TYPE_LABELS: Record<AssetType, string> = {
 };
 
 type TypeFilter = "" | AssetType;
+type StatusFilter = "" | "pending" | "synced";
 type SortKey = "ticker" | "asset_type" | "purchase_date" | "quantity" | "total_value" | "bastter_synced_at";
 type SortDir = "asc" | "desc";
 
@@ -53,6 +54,7 @@ export default function BastterSyncPage() {
   const [filterTicker, setFilterTicker] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<SortKey | "">("");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -62,8 +64,8 @@ export default function BastterSyncPage() {
   const dateFromRef = useRef<HTMLInputElement>(null);
   const dateToRef = useRef<HTMLInputElement>(null);
 
-  const filtersKey = `${filterType}|${filterTicker}|${filterDateFrom}|${filterDateTo}`;
-  const hasActiveFilters = filterType !== "" || filterTicker !== "" || filterDateFrom !== "" || filterDateTo !== "";
+  const filtersKey = `${filterType}|${filterTicker}|${filterDateFrom}|${filterDateTo}|${filterStatus}`;
+  const hasActiveFilters = filterType !== "" || filterTicker !== "" || filterDateFrom !== "" || filterDateTo !== "" || filterStatus !== "";
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const selectableItems = items.filter((item) => !item.bastter_synced_at);
   const allCurrentPageSelected =
@@ -91,6 +93,7 @@ export default function BastterSyncPage() {
         if (filterTicker.trim()) params.set("ticker", filterTicker.trim());
         if (filterDateFrom) params.set("date_from", filterDateFrom);
         if (filterDateTo) params.set("date_to", filterDateTo);
+        if (filterStatus) params.set("sync_status", filterStatus);
         if (sortBy) {
           params.set("sort_by", sortBy);
           params.set("sort_dir", sortDir);
@@ -123,7 +126,7 @@ export default function BastterSyncPage() {
 
     fetchItems();
     return () => controller.abort();
-  }, [filterDateFrom, filterDateTo, filterTicker, filterType, filtersKey, page, pageSize, sortBy, sortDir]);
+  }, [filterDateFrom, filterDateTo, filterStatus, filterTicker, filterType, filtersKey, page, pageSize, sortBy, sortDir]);
 
   const toggleSelection = (id: number) => {
     setSelectedIds((current) =>
@@ -144,6 +147,7 @@ export default function BastterSyncPage() {
     setFilterTicker("");
     setFilterDateFrom("");
     setFilterDateTo("");
+    setFilterStatus("");
     setPage(1);
   };
 
@@ -292,7 +296,7 @@ export default function BastterSyncPage() {
       {/* Filters */}
       {!loading && (totalCount > 0 || hasActiveFilters) && (
         <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-[var(--color-text-muted)]">Tipo</label>
               <select
@@ -306,6 +310,18 @@ export default function BastterSyncPage() {
                     {TYPE_LABELS[type]}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--color-text-muted)]">Status</label>
+              <select
+                value={filterStatus}
+                onChange={(event) => setFilterStatus(event.target.value as StatusFilter)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
+              >
+                <option value="">Todos</option>
+                <option value="pending">Pendente</option>
+                <option value="synced">Sincronizada</option>
               </select>
             </div>
             <div className="flex flex-col gap-1">
