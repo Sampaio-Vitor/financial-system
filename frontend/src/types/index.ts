@@ -260,6 +260,45 @@ export interface BulkAssetLinked {
   type: AssetType;
 }
 
+export interface BastterSyncPreviewItem {
+  id: number;
+  ticker: string;
+  asset_type: AssetType;
+  purchase_date: string;
+  quantity: number;
+  total_value: number;
+  total_value_native: number;
+  trade_currency: "BRL" | "USD";
+  bastter_synced_at: string | null;
+}
+
+export interface BastterSyncPreviewResponse {
+  items: BastterSyncPreviewItem[];
+  total_count: number;
+}
+
+export interface BastterSyncItemResult {
+  purchase_id: number;
+  ticker: string;
+  local_type: string;
+  bastter_tipo: string;
+  ativo_id: number | null;
+  endpoint: string | null;
+  payload: Record<string, unknown> | null;
+  success: boolean;
+  bastter_response: Record<string, unknown> | null;
+  error: string | null;
+  bastter_synced_at: string | null;
+}
+
+export interface BastterSyncBatchResponse {
+  catalog_items_count: number;
+  selected_count: number;
+  success_count: number;
+  failure_count: number;
+  results: BastterSyncItemResult[];
+}
+
 export interface BulkAssetSkipped {
   ticker: string;
   reason: string;

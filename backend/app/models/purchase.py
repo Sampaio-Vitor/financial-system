@@ -21,6 +21,7 @@ class Purchase(Base):
     unit_price_native: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     total_value_native: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     fx_rate: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, default=Decimal("1"))
+    bastter_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     asset = relationship("Asset", lazy="joined")
