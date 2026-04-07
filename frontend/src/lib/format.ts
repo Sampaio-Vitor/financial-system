@@ -30,8 +30,18 @@ export function formatQuantity(value: number | null | undefined): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 8,
   }).format(Number(value));
+}
+
+export function formatEditableNumber(
+  value: number | null | undefined,
+  maxFractionDigits = 8
+): string {
+  if (value == null) return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return num.toFixed(maxFractionDigits).replace(/\.?0+$/, "");
 }
 
 export function getMonthLabel(month: string): string {
