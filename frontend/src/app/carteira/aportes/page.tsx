@@ -5,11 +5,20 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
 import { AssetType, Purchase, PurchasePageResponse } from "@/types";
-import { formatBRL, formatQuantity, formatUSD } from "@/lib/format";
+import { formatBRL, formatEditableNumber, formatQuantity, formatUSD } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 import TickerLogo from "@/components/ticker-logo";
 
 type OperationFilter = "todos" | "compras" | "vendas";
+
+function calculateUnitPrice(totalValue: string, quantity: string): number | null {
+  const total = parseFloat(totalValue);
+  const qty = parseFloat(quantity);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(qty) || qty === 0) {
+    return null;
+  }
+  return total / Math.abs(qty);
+}
 
 export default function AportesPage() {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -22,10 +31,10 @@ export default function AportesPage() {
   const [editData, setEditData] = useState<{
     purchase_date: string;
     quantity: string;
-    unit_price: string;
+    total_value: string;
     trade_currency: "BRL" | "USD";
     fx_rate: string;
-  }>({ purchase_date: "", quantity: "", unit_price: "", trade_currency: "BRL", fx_rate: "1.0000" });
+  }>({ purchase_date: "", quantity: "", total_value: "", trade_currency: "BRL", fx_rate: "1.0000" });
   const [saving, setSaving] = useState(false);
 
   // Filters
@@ -142,10 +151,14 @@ export default function AportesPage() {
     setEditingId(p.id);
     setEditData({
       purchase_date: p.purchase_date,
-      quantity: Number(p.quantity).toFixed(2),
-      unit_price: Number(p.trade_currency === "USD" ? p.unit_price_native : p.unit_price).toFixed(2),
+      quantity: formatEditableNumber(p.quantity),
+      total_value: formatEditableNumber(
+        Math.abs(
+        p.trade_currency === "USD" ? p.total_value_native : p.total_value
+        )
+      ),
       trade_currency: p.trade_currency,
-      fx_rate: Number(p.fx_rate ?? 1).toFixed(4),
+      fx_rate: formatEditableNumber(p.fx_rate ?? 1, 4),
     });
   };
 
@@ -158,6 +171,11 @@ export default function AportesPage() {
       setSaving(true);
       try {
         const isUsdTrade = editData.trade_currency === "USD";
+        const calculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity);
+        if (calculatedUnitPrice == null) {
+          throw new Error("Informe quantidade e valor total validos");
+        }
+
         await apiFetch(`/purchases/${id}`, {
           method: "PUT",
           body: JSON.stringify({
@@ -166,11 +184,11 @@ export default function AportesPage() {
             trade_currency: editData.trade_currency,
             ...(isUsdTrade
               ? {
-                  unit_price_native: parseFloat(editData.unit_price),
+                  unit_price_native: calculatedUnitPrice,
                   fx_rate: parseFloat(editData.fx_rate),
                 }
               : {
-                  unit_price: parseFloat(editData.unit_price),
+                  unit_price: calculatedUnitPrice,
                 }),
           }),
         });
@@ -210,10 +228,11 @@ export default function AportesPage() {
   };
 
   const editIsUsd = editData.trade_currency === "USD";
-  const editNativeTotal = parseFloat(editData.quantity) * parseFloat(editData.unit_price) || 0;
+  const editNativeTotal = parseFloat(editData.total_value) || 0;
   const editBrlTotal = editIsUsd
     ? editNativeTotal * (parseFloat(editData.fx_rate) || 0)
     : editNativeTotal;
+  const editCalculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity) || 0;
 
   return (
     <div>
@@ -422,13 +441,13 @@ export default function AportesPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Quantidade</label>
-                      <input type="number" step="0.01" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                      <input type="number" step="any" min="-999999999" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                     </div>
                     <div>
                       <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
-                        {editIsUsd ? "Preco Unit. (US$)" : "Preco Unit. (R$)"}
+                        {editIsUsd ? "Valor Total (US$)" : "Valor Total (R$)"}
                       </label>
-                      <input type="number" step="0.01" value={editData.unit_price} onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                      <input type="number" step="0.01" value={editData.total_value} onChange={(e) => setEditData({ ...editData, total_value: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                     </div>
                   </div>
                   {editIsUsd && (
@@ -442,8 +461,14 @@ export default function AportesPage() {
                   )}
                   <div className="rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--color-text-muted)]">Total</span>
+                      <span className="text-sm text-[var(--color-text-muted)]">Preco unitario calculado</span>
                       <span className="text-base font-bold text-[var(--color-text-primary)]">
+                        {editIsUsd ? formatUSD(editCalculatedUnitPrice) : formatBRL(editCalculatedUnitPrice)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
+                      <span className="text-xs text-[var(--color-text-muted)]">Total da operacao</span>
+                      <span className="text-sm font-semibold text-[var(--color-text-secondary)]">
                         {editIsUsd ? formatUSD(editNativeTotal) : formatBRL(editBrlTotal)}
                       </span>
                     </div>
@@ -495,7 +520,7 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
                         <td className="px-3 py-1.5">
-                          <input type="number" step="0.01" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-24 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                          <input type="number" step="any" min="-999999999" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
                         <td className="px-3 py-1.5">
                           <div className="space-y-1.5">
@@ -503,7 +528,7 @@ export default function AportesPage() {
                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-[var(--color-text-muted)]">
                                 {editIsUsd ? "US$" : "R$"}
                               </span>
-                              <input type="number" step="0.01" value={editData.unit_price} onChange={(e) => setEditData({ ...editData, unit_price: e.target.value })} className="w-28 pl-8 pr-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
+                              <input type="number" step="0.01" value={editData.total_value} onChange={(e) => setEditData({ ...editData, total_value: e.target.value })} className="w-32 pl-8 pr-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                             </div>
                             {editIsUsd && (
                               <div className="relative">
@@ -515,9 +540,17 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)]">
                           <div className="leading-tight">
-                            <div>{formatBRL(editBrlTotal)}</div>
+                            <div>{editIsUsd ? formatUSD(editCalculatedUnitPrice) : formatBRL(editCalculatedUnitPrice)}</div>
                             {editIsUsd && (
-                              <div className="text-xs text-[var(--color-text-muted)]">{formatUSD(editNativeTotal)}</div>
+                              <div className="text-xs text-[var(--color-text-muted)]">{formatBRL(editCalculatedUnitPrice * (parseFloat(editData.fx_rate) || 0))}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)] whitespace-nowrap">
+                          <div className="leading-tight">
+                            <div>{editIsUsd ? formatUSD(editNativeTotal) : formatBRL(editBrlTotal)}</div>
+                            {editIsUsd && (
+                              <div className="text-xs text-[var(--color-text-muted)]">{formatBRL(editBrlTotal)}</div>
                             )}
                           </div>
                         </td>

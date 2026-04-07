@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { Asset, PositionsResponse, PositionItem, PriceContextResponse } from "@/types";
-import { formatBRL, formatUSD } from "@/lib/format";
+import { formatBRL, formatQuantity, formatUSD } from "@/lib/format";
 import { X, Search, ChevronDown, ArrowRightLeft } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 
@@ -20,7 +20,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const [assetId, setAssetId] = useState<number | "">("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [quantity, setQuantity] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
+  const [totalAmount, setTotalAmount] = useState("");
   const [search, setSearch] = useState("");
   const [priceContext, setPriceContext] = useState<PriceContextResponse>({
     usd_brl_rate: null,
@@ -92,46 +92,37 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const selectedPosition = ownedPositions.find((p) => p.asset_id === assetId);
   const isUsdTrade = selectedAsset?.type === "STOCK";
   const usdBrlRate = priceContext.usd_brl_rate;
-  const totalNative =
-    quantity && unitPrice ? parseFloat(quantity) * parseFloat(unitPrice) : 0;
+  const parsedQuantity = parseFloat(quantity);
+  const parsedTotalAmount = parseFloat(totalAmount);
+  const hasValidInputs =
+    Number.isFinite(parsedQuantity) &&
+    parsedQuantity > 0 &&
+    Number.isFinite(parsedTotalAmount) &&
+    parsedTotalAmount > 0;
+  const derivedUnitPrice = hasValidInputs ? parsedTotalAmount / parsedQuantity : 0;
+  const totalNative = hasValidInputs ? parsedTotalAmount : 0;
   const totalBrl = isUsdTrade && usdBrlRate ? totalNative * usdBrlRate : totalNative;
   const unitPriceBrl =
-    isUsdTrade && unitPrice && usdBrlRate ? parseFloat(unitPrice) * usdBrlRate : null;
+    isUsdTrade && hasValidInputs && usdBrlRate ? derivedUnitPrice * usdBrlRate : null;
   const rateUpdatedLabel = priceContext.rate_updated_at
     ? new Date(priceContext.rate_updated_at).toLocaleString("pt-BR", {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       })
     : null;
 
-  useEffect(() => {
-    if (!selectedAsset || selectedAsset.type !== "STOCK" || !usdBrlRate || unitPrice) {
-      return;
-    }
-    if (selectedAsset.current_price) {
-      setUnitPrice((Number(selectedAsset.current_price) / usdBrlRate).toFixed(2));
-    }
-  }, [selectedAsset, unitPrice, usdBrlRate]);
-
   const handleSelectAsset = (asset: Asset) => {
     setAssetId(asset.id);
     setSearch(asset.ticker);
     setDropdownOpen(false);
-    if (asset.current_price) {
-      if (asset.type === "STOCK" && usdBrlRate) {
-        setUnitPrice((Number(asset.current_price) / usdBrlRate).toFixed(2));
-      } else {
-        setUnitPrice(Number(asset.current_price).toFixed(2));
-      }
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assetId || !quantity || !unitPrice) return;
+    if (!assetId || !hasValidInputs) return;
 
-    const qty = parseFloat(quantity);
+    const qty = parsedQuantity;
     if (isVenda && selectedPosition && qty > selectedPosition.quantity) {
-      setError(`Quantidade excede a posicao atual (${selectedPosition.quantity})`);
+      setError(`Quantidade excede a posicao atual (${formatQuantity(selectedPosition.quantity)})`);
       return;
     }
     if (isUsdTrade && (!usdBrlRate || usdBrlRate <= 0)) {
@@ -150,11 +141,11 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         ...(isUsdTrade
           ? {
               trade_currency: "USD" as const,
-              unit_price_native: parseFloat(unitPrice),
+              unit_price_native: derivedUnitPrice,
               fx_rate: usdBrlRate,
             }
           : {
-              unit_price: parseFloat(unitPrice),
+              unit_price: derivedUnitPrice,
             }),
       };
       await apiFetch("/purchases", {
@@ -196,7 +187,6 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                     setDropdownOpen(true);
                     if (!e.target.value) {
                       setAssetId("");
-                      setUnitPrice("");
                     }
                   }}
                   onFocus={() => setDropdownOpen(true)}
@@ -224,7 +214,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                         <span className="font-medium">{a.ticker}</span>
                         <span className="text-[var(--color-text-muted)] text-xs truncate">
                           {isVenda
-                            ? `${Number(ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0).toFixed(2)} cotas`
+                            ? `${formatQuantity(ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0)} cotas`
                             : a.description}
                         </span>
                       </button>
@@ -235,7 +225,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
             </div>
             {isVenda && selectedPosition && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                Posicao atual: {Number(selectedPosition.quantity).toFixed(2)} cotas
+                Posicao atual: {formatQuantity(selectedPosition.quantity)} cotas
               </p>
             )}
           </div>
@@ -256,8 +246,8 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Quantidade</label>
               <input
                 type="number"
-                step="0.01"
-                min="0.01"
+                step="any"
+                min="0.00000001"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
@@ -266,7 +256,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
             </div>
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">
-                {isVenda ? "Preco de Venda" : "Preco Unitario"}
+                {isVenda ? "Valor Total da Venda" : "Valor Total Investido"}
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[var(--color-text-muted)]">
@@ -276,8 +266,8 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                   type="number"
                   step="0.01"
                   min="0.01"
-                  value={unitPrice}
-                  onChange={(e) => setUnitPrice(e.target.value)}
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
                   className="w-full pl-10 pr-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                   required
                 />
@@ -298,7 +288,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                 </div>
                 {unitPriceBrl !== null && (
                   <>
-                    <div className="text-[var(--color-text-muted)]">Preco em BRL</div>
+                    <div className="text-[var(--color-text-muted)]">Preco unitario em BRL</div>
                     <div className="text-right font-medium text-[var(--color-text-primary)]">{formatBRL(unitPriceBrl)}</div>
                   </>
                 )}
@@ -314,8 +304,14 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
           <div className="rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-[var(--color-text-muted)]">Total</span>
+              <span className="text-sm text-[var(--color-text-muted)]">Preco unitario calculado</span>
               <span className="text-base font-bold text-[var(--color-text-primary)]">
+                {isUsdTrade ? formatUSD(derivedUnitPrice) : formatBRL(derivedUnitPrice)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
+              <span className="text-xs text-[var(--color-text-muted)]">Total da operacao</span>
+              <span className="text-sm font-semibold text-[var(--color-text-secondary)]">
                 {isUsdTrade ? formatUSD(totalNative) : formatBRL(totalBrl)}
               </span>
             </div>
@@ -331,7 +327,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
           <button
             type="submit"
-            disabled={submitting || !assetId || (isUsdTrade && !usdBrlRate)}
+            disabled={submitting || !assetId || !hasValidInputs || (isUsdTrade && !usdBrlRate)}
             className={`w-full py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-opacity ${
               isVenda
                 ? "bg-[var(--color-negative)] text-white"
