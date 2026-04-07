@@ -93,13 +93,15 @@ export default function SavedPlanDetailPage() {
   });
 
   useEffect(() => {
-    if (!plan?.items.length) {
+    const uncheckedCount = plan?.items.filter((item) => !item.checked).length ?? 0;
+
+    if (!plan?.items.length || uncheckedCount <= 0) {
       setTopRulerIndex(null);
       setBottomRulerIndex(null);
       return;
     }
 
-    const lastIndex = plan.items.length - 1;
+    const lastIndex = uncheckedCount - 1;
 
     setTopRulerIndex((prev) => {
       if (prev == null) return 0;
@@ -110,7 +112,7 @@ export default function SavedPlanDetailPage() {
       if (prev == null) return lastIndex;
       return Math.min(prev, lastIndex);
     });
-  }, [plan?.items.length]);
+  }, [plan?.items]);
 
   useEffect(() => {
     if (topRulerIndex == null || bottomRulerIndex == null) return;
@@ -164,10 +166,14 @@ export default function SavedPlanDetailPage() {
 
   const getClosestRowIndex = useCallback(
     (clientY: number, ruler: "top" | "bottom") => {
+      const uncheckedCount = plan?.items.filter((item) => !item.checked).length ?? 0;
+      if (uncheckedCount <= 0) return 0;
+
       let closestIndex = 0;
       let smallestDistance = Number.POSITIVE_INFINITY;
 
       rowRefs.current.forEach((row, index) => {
+        if (index >= uncheckedCount) return;
         if (!row) return;
         const rect = row.getBoundingClientRect();
         const anchorY = ruler === "top" ? rect.top : rect.bottom;
@@ -180,7 +186,7 @@ export default function SavedPlanDetailPage() {
 
       return closestIndex;
     },
-    []
+    [plan?.items]
   );
 
   useEffect(() => {
@@ -316,6 +322,7 @@ export default function SavedPlanDetailPage() {
 
   const checkedCount = plan.items.filter((i) => i.checked).length;
   const totalItems = plan.items.length;
+  const uncheckedCount = totalItems - checkedCount;
   const progress = totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0;
 
   const totalPlannedBrl = plan.items.reduce(
@@ -337,7 +344,9 @@ export default function SavedPlanDetailPage() {
   const selectedItems =
     selectedStartIndex == null || selectedEndIndex == null
       ? []
-      : plan.items.slice(selectedStartIndex, selectedEndIndex + 1);
+      : plan.items
+          .slice(selectedStartIndex, selectedEndIndex + 1)
+          .filter((item) => !item.checked);
   const rulerSumBrl =
     selectedItems.reduce(
       (sum, item) =>
@@ -512,7 +521,7 @@ export default function SavedPlanDetailPage() {
             <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
               Plano por Ativo
             </h2>
-            {plan.items.length > 0 && (
+            {uncheckedCount > 0 && (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                 Arraste as réguas superior e inferior para somar as colunas de
                 aporte entre as linhas selecionadas.
