@@ -43,6 +43,7 @@ async def list_syncable_purchases(
     ticker: str | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    sync_status: Literal["pending", "synced"] | None = Query(None),
     sort_by: Literal["ticker", "asset_type", "purchase_date", "quantity", "total_value", "bastter_synced_at"] | None = Query(None),
     sort_dir: Literal["asc", "desc"] | None = Query(None),
     page: int = Query(1, ge=1),
@@ -66,6 +67,10 @@ async def list_syncable_purchases(
         filters.append(Purchase.purchase_date >= date_from)
     if date_to:
         filters.append(Purchase.purchase_date <= date_to)
+    if sync_status == "pending":
+        filters.append(Purchase.bastter_synced_at.is_(None))
+    elif sync_status == "synced":
+        filters.append(Purchase.bastter_synced_at.is_not(None))
 
     total_count = (
         await db.execute(
