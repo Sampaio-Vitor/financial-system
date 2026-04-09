@@ -27,6 +27,17 @@ const CLASS_COLORS: Record<string, string> = {
   RESERVA: "#06b6d4",
 };
 
+const CLASS_LABELS: Record<string, string> = {
+  STOCK: "Stock",
+  ACAO: "Ação",
+  STOCK_BR: "Ações (Brasil)",
+  STOCK_US: "Stocks",
+  ETF_INTL: "ETFs (Exterior)",
+  FII: "FIIs",
+  RF: "Renda Fixa",
+  RESERVA: "Prioridade",
+};
+
 export default function SavedPlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [plan, setPlan] = useState<SavedPlan | null>(null);
@@ -328,21 +339,28 @@ export default function SavedPlanDetailPage() {
   const uncheckedCount = totalItems - checkedCount;
   const progress = totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0;
 
-  const totalPlannedBrl = plan.items.reduce(
-    (sum, i) => sum + Number(i.amount_to_invest),
-    0
-  );
-  const nativeTotals = plan.items.reduce(
-    (acc, item) => {
-      if (!item.quote_currency || item.quote_currency === "BRL" || item.amount_to_invest_native == null) {
-        return acc;
+  const sumBrlOnly = (items: SavedPlan["items"]) =>
+    items.reduce((sum, item) => {
+      if (item.quote_currency && item.quote_currency !== "BRL") {
+        return sum;
       }
-      acc[item.quote_currency] =
-        (acc[item.quote_currency] ?? 0) + Number(item.amount_to_invest_native);
-      return acc;
-    },
-    {} as Partial<Record<CurrencyCode, number>>
-  );
+      return sum + Number(item.amount_to_invest);
+    }, 0);
+  const sumNativeTotals = (items: SavedPlan["items"]) =>
+    items.reduce(
+      (acc, item) => {
+        if (!item.quote_currency || item.quote_currency === "BRL" || item.amount_to_invest_native == null) {
+          return acc;
+        }
+        acc[item.quote_currency] =
+          (acc[item.quote_currency] ?? 0) + Number(item.amount_to_invest_native);
+        return acc;
+      },
+      {} as Partial<Record<CurrencyCode, number>>
+    );
+
+  const totalPlannedBrl = sumBrlOnly(plan.items);
+  const nativeTotals = sumNativeTotals(plan.items);
   const formatNativeTotals = (totals: Partial<Record<CurrencyCode, number>>) => {
     const entries = Object.entries(totals).filter(([, value]) => Number(value) > 0);
     if (entries.length === 0) return "—";
@@ -364,22 +382,8 @@ export default function SavedPlanDetailPage() {
       : plan.items
           .slice(selectedStartIndex, selectedEndIndex + 1)
           .filter((item) => !item.checked);
-  const rulerSumBrl =
-    selectedItems.reduce(
-      (sum, item) => sum + Number(item.amount_to_invest),
-      0
-    );
-  const rulerNativeTotals = selectedItems.reduce(
-    (acc, item) => {
-      if (!item.quote_currency || item.quote_currency === "BRL" || item.amount_to_invest_native == null) {
-        return acc;
-      }
-      acc[item.quote_currency] =
-        (acc[item.quote_currency] ?? 0) + Number(item.amount_to_invest_native);
-      return acc;
-    },
-    {} as Partial<Record<CurrencyCode, number>>
-  );
+  const rulerSumBrl = sumBrlOnly(selectedItems);
+  const rulerNativeTotals = sumNativeTotals(selectedItems);
   const topRulerLabel =
     topRulerIndex == null ? null : plan.items[topRulerIndex]?.is_reserve
       ? "Reserva"
@@ -388,6 +392,10 @@ export default function SavedPlanDetailPage() {
     bottomRulerIndex == null ? null : plan.items[bottomRulerIndex]?.is_reserve
       ? "Reserva"
       : plan.items[bottomRulerIndex]?.ticker;
+  const getClassLabel = (assetClass: string, isReserve: boolean) => {
+    if (isReserve) return CLASS_LABELS.RESERVA;
+    return CLASS_LABELS[assetClass] ?? assetClass.replaceAll("_", " ");
+  };
 
   return (
     <div className="space-y-6">
@@ -441,7 +449,7 @@ export default function SavedPlanDetailPage() {
         </div>
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3">
           <span className="block text-[10px] text-[var(--color-text-muted)]">
-            Total Planejado
+            Total Planejado (R$)
           </span>
           <span className="text-sm font-semibold">
             {formatBRL(totalPlannedBrl)}
@@ -555,7 +563,7 @@ export default function SavedPlanDetailPage() {
                 <p>
                   Intervalo: {topRulerLabel ?? "—"} até {bottomRulerLabel ?? "—"}
                 </p>
-                <p>Total no intervalo: {formatBRL(rulerSumBrl)}</p>
+                <p>Total em BRL no intervalo: {formatBRL(rulerSumBrl)}</p>
                 <p>Moeda do ativo no intervalo: {formatNativeTotals(rulerNativeTotals)}</p>
               </div>
             )}
@@ -684,7 +692,16 @@ export default function SavedPlanDetailPage() {
                       <td
                         className={`px-3 py-2 ${item.is_reserve ? "text-cyan-400 text-xs font-semibold" : "text-[var(--color-text-secondary)]"} ${item.checked && !item.is_reserve ? "line-through opacity-60" : ""}`}
                       >
-                        {item.is_reserve ? "PRIORIDADE" : item.asset_class}
+                        <span
+                          className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+                          style={{
+                            borderColor: `${CLASS_COLORS[item.is_reserve ? "RESERVA" : item.asset_class] ?? "#64748b"}55`,
+                            backgroundColor: `${CLASS_COLORS[item.is_reserve ? "RESERVA" : item.asset_class] ?? "#64748b"}18`,
+                            color: CLASS_COLORS[item.is_reserve ? "RESERVA" : item.asset_class] ?? "var(--color-text-secondary)",
+                          }}
+                        >
+                          {getClassLabel(item.asset_class, item.is_reserve)}
+                        </span>
                       </td>
                       <td
                         className={`px-3 py-2 ${item.checked ? "line-through opacity-60" : ""}`}
