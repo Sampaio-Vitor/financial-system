@@ -75,9 +75,13 @@ export default function SavedPlansPage() {
       ) : (
         <div className="grid gap-3">
           {plans.map((plan) => {
-            const progress =
+            const progressPct =
               plan.items_count > 0
                 ? Math.round((plan.checked_count / plan.items_count) * 100)
+                : 0;
+            const progressBrl =
+              plan.total_planned > 0
+                ? Math.round((Number(plan.checked_amount) / Number(plan.total_planned)) * 100)
                 : 0;
             return (
               <div
@@ -90,18 +94,17 @@ export default function SavedPlansPage() {
                 >
                   <p className="text-sm font-semibold truncate">{plan.label}</p>
                   <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                    Aporte: {formatBRL(plan.contribution)} | Total planejado:{" "}
-                    {formatBRL(plan.total_planned)}
+                    Aporte: {formatBRL(plan.contribution)}
                   </p>
                   <div className="flex items-center gap-2 mt-2">
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--color-border)]/40">
                       <div
                         className="h-full rounded-full bg-[var(--color-positive)] transition-all"
-                        style={{ width: `${progress}%` }}
+                        style={{ width: `${progressBrl}%` }}
                       />
                     </div>
                     <span className="text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
-                      {plan.checked_count}/{plan.items_count} concluídos
+                      {formatBRL(plan.checked_amount)} / {formatBRL(plan.total_planned)} ({progressPct}%)
                     </span>
                   </div>
                 </Link>

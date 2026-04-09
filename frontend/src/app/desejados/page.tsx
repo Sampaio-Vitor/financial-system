@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { AllocationBucket, AllocationTarget, CurrencyCode, RebalancingResponse } from "@/types";
-import { formatBRL, formatCurrency, formatPercent } from "@/lib/format";
-import { Calculator, Info, ShieldCheck, Save, FolderOpen } from "lucide-react";
+import { formatBRL, formatCurrency } from "@/lib/format";
+import { Calculator, Info, ShieldCheck, Save, FolderOpen, FileText } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
+import CalculationMemoryModal from "@/components/calculation-memory-modal";
 import Link from "next/link";
 
 const CLASS_COLORS: Record<AllocationBucket, string> = {
@@ -34,11 +35,13 @@ export default function PlanejadorAportePage() {
   );
 
   const [saving, setSaving] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   const hasTargets = targets.length > 0;
   const reserveGap = Number(rebalancing?.reserva_gap ?? 0);
   const contributionValue = Number(rebalancing?.contribution ?? 0);
-  const reserveAllocation = Math.min(reserveGap, contributionValue);
+  const reserveAllocation =
+    reserveGap > 0 ? Math.min(reserveGap, contributionValue) : 0;
   const reserveConsumesAllContribution = reserveGap >= contributionValue;
   const reserveShortfallAfterContribution = Math.max(
     reserveGap - contributionValue,
@@ -79,9 +82,16 @@ export default function PlanejadorAportePage() {
   };
   const plannedNativeTotals = rebalancing?.asset_plan.reduce(
     (acc, asset) => {
-      if (asset.quote_currency === "BRL" || asset.amount_to_invest_native == null) return acc;
-      acc[asset.quote_currency] =
-        (acc[asset.quote_currency] ?? 0) + Number(asset.amount_to_invest_native);
+      const currency = asset.quote_currency ?? "BRL";
+      const nativeAmount =
+        currency === "BRL"
+          ? Number(asset.amount_to_invest)
+          : asset.amount_to_invest_native != null
+            ? Number(asset.amount_to_invest_native)
+            : 0;
+      if (nativeAmount > 0) {
+        acc[currency] = (acc[currency] ?? 0) + nativeAmount;
+      }
       return acc;
     },
     {} as Partial<Record<CurrencyCode, number>>
@@ -149,6 +159,7 @@ export default function PlanejadorAportePage() {
         `/rebalancing?contribution=${raw}&top_n=${topN}`
       );
       setRebalancing(data);
+      setMemoryOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao calcular");
     }
@@ -329,52 +340,6 @@ export default function PlanejadorAportePage() {
               Pós-Aporte: {formatBRL(rebalancing.patrimonio_pos_aporte)}
             </div>
 
-            {/* Reserve priority alert */}
-            {rebalancing.reserva_gap != null &&
-              rebalancing.reserva_gap > 0 && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
-                  <div className="shrink-0 w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-                    <span className="text-cyan-400 text-lg font-bold">!</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-cyan-400">
-                      Reserva Financeira (Prioridade)
-                    </p>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                      Atual: {formatBRL(rebalancing.reserva_valor)} | Meta:{" "}
-                      {formatBRL(rebalancing.reserva_target!)} | Aportar na
-                      reserva:{" "}
-                      <span className="font-bold text-cyan-400">
-                        {formatBRL(reserveAllocation)}
-                      </span>
-                    </p>
-                    {reserveConsumesAllContribution ? (
-                      <p className="text-xs text-[var(--color-warning)] mt-1">
-                        Todo o aporte vai para a reserva. Faltam{" "}
-                        {formatBRL(reserveShortfallAfterContribution)}{" "}
-                        após este aporte.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                        Restante para investimentos:{" "}
-                        {formatBRL(remainingForInvestments)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-            {rebalancing.reserva_target != null &&
-              rebalancing.reserva_gap != null &&
-              rebalancing.reserva_gap <= 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--color-positive)]/10 border border-[var(--color-positive)]/20">
-                  <p className="text-xs text-[var(--color-positive)] font-medium">
-                    Reserva completa ({formatBRL(rebalancing.reserva_valor)} /{" "}
-                    {formatBRL(rebalancing.reserva_target)}) — todo o aporte vai
-                    para investimentos.
-                  </p>
-                </div>
-              )}
 
             {projectedClassBreakdown.length > 0 && (
               <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-main)]/30 p-4 md:p-5">
@@ -383,10 +348,6 @@ export default function PlanejadorAportePage() {
                     <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">
                       Balanço Pós-Aporte
                     </h3>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Como a carteira investível ficaria após executar o plano
-                      sugerido.
-                    </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-xs text-[var(--color-text-muted)] md:grid-cols-3">
                     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
@@ -425,13 +386,9 @@ export default function PlanejadorAportePage() {
                             {item.label}
                           </span>
                         </div>
-                        <div className="text-xs text-[var(--color-text-muted)]">
-                          {formatBRL(item.currentValue)} →{" "}
-                          <span className="font-semibold text-[var(--color-text-primary)]">
-                            {formatBRL(item.projectedValue)}
-                          </span>{" "}
-                          / meta {formatBRL(item.targetValue)}
-                        </div>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          {item.projectedPct.toFixed(1)}% / {item.targetPct.toFixed(1)}%
+                        </span>
                       </div>
 
                       <div className="relative h-2 rounded-full bg-[var(--color-border)]/40">
@@ -452,22 +409,6 @@ export default function PlanejadorAportePage() {
                         />
                       </div>
 
-                      <div className="mt-1 flex flex-col gap-1 text-[10px] text-[var(--color-text-muted)] md:flex-row md:items-center md:justify-between">
-                        <span>
-                          {item.currentPct.toFixed(1)}% atual →{" "}
-                          {item.projectedPct.toFixed(1)}% pós-aporte
-                        </span>
-                        <span
-                          className={
-                            item.deltaToTarget >= 0
-                              ? "text-[var(--color-warning)]"
-                              : "text-[var(--color-positive)]"
-                          }
-                        >
-                          {item.deltaToTarget >= 0 ? "+" : ""}
-                          {formatBRL(item.deltaToTarget)} vs meta
-                        </span>
-                      </div>
                     </div>
                   ))}
 
@@ -482,18 +423,9 @@ export default function PlanejadorAportePage() {
                           Reserva Financeira
                         </span>
                       </div>
-                      <div className="text-xs text-[var(--color-text-muted)]">
-                        {formatBRL(Number(rebalancing.reserva_valor ?? 0))} →{" "}
-                        <span className="font-semibold text-cyan-400">
-                          {formatBRL(projectedReserveValue)}
-                        </span>
-                        {rebalancing.reserva_target != null && (
-                          <>
-                            {" "}
-                            / meta {formatBRL(rebalancing.reserva_target)}
-                          </>
-                        )}
-                      </div>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {projectedReserveProgress.toFixed(1)}% da meta
+                      </span>
                     </div>
 
                     <div className="relative h-2 rounded-full bg-[var(--color-border)]/40">
@@ -506,86 +438,11 @@ export default function PlanejadorAportePage() {
                       />
                     </div>
 
-                    <div className="mt-1 flex flex-col gap-1 text-[10px] text-[var(--color-text-muted)] md:flex-row md:items-center md:justify-between">
-                      <span>
-                        {formatBRL(Number(rebalancing.reserva_valor ?? 0))} atual
-                        → {formatBRL(projectedReserveValue)} pós-aporte
-                      </span>
-                      {rebalancing.reserva_target != null ? (
-                        <span>
-                          {projectedReserveProgress.toFixed(1)}% da meta
-                        </span>
-                      ) : (
-                        <span>valor absoluto</span>
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Class breakdown */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)]">
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Classe
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Meta %
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Atual %
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Gap (R$)
-                    </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rebalancing.class_breakdown.map((c) => (
-                    <tr
-                      key={c.allocation_bucket}
-                      className="border-b border-[var(--color-border)]/50"
-                    >
-                      <td className="px-3 py-2">{c.label}</td>
-                      <td className="px-3 py-2">
-                        {formatPercent(c.target_pct)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {formatPercent(c.current_pct)}
-                      </td>
-                      <td
-                        className={`px-3 py-2 ${c.gap >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}
-                      >
-                        {formatBRL(c.gap)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {c.status === "—" ? (
-                          <span className="text-xs text-[var(--color-text-muted)]">
-                            —
-                          </span>
-                        ) : (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded ${
-                              c.status === "APORTAR"
-                                ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                                : "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
-                            }`}
-                          >
-                            {c.status}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
 
             {/* Asset plan */}
             {(rebalancing.asset_plan.length > 0 ||
@@ -593,186 +450,170 @@ export default function PlanejadorAportePage() {
                 rebalancing.reserva_gap > 0)) && (
               <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-main)]/30 p-4 md:p-5">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                      Plano por Ativo (Top {topN})
-                    </h3>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Projeção do valor de cada posição após seguir o aporte
-                      sugerido.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-xs text-[var(--color-text-muted)] md:grid-cols-3">
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total em BRL</span>
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {formatBRL(
-                          Number(rebalancing.total_planned || 0) +
-                            (rebalancing.reserva_gap != null && reserveGap > 0
-                              ? reserveAllocation
-                              : 0)
-                        )}
-                      </span>
-                    </div>
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total na Moeda do Ativo</span>
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {Object.entries(plannedNativeTotals).length > 0
-                          ? Object.entries(plannedNativeTotals)
-                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
-                              .join(" · ")
-                          : "\u2014"}
-                      </span>
-                    </div>
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Reserva no Plano</span>
-                      <span className="text-sm font-semibold text-cyan-400">
-                        {formatBRL(reserveAllocation)}
-                      </span>
-                    </div>
+                  <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">
+                    Plano por Ativo (Top {topN})
+                  </h3>
+                  <div className="flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
+                    {Object.entries(plannedNativeTotals).map(([currency, total]) => (
+                      <div key={currency} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
+                        <span className="block">Aportar em {currency}</span>
+                        <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                          {formatCurrency(total, currency as CurrencyCode)}
+                        </span>
+                      </div>
+                    ))}
+                    {reserveAllocation > 0 && (
+                      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
+                        <span className="block">Reserva no Plano</span>
+                        <span className="text-sm font-semibold text-cyan-400">
+                          {formatBRL(reserveAllocation)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Ticker
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Classe
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Valor Atual
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Valor Alvo
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Gap
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Após Aporte
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (R$)
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (Moeda do Ativo)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Reserve row (priority) */}
-                    {rebalancing.reserva_gap != null &&
-                      rebalancing.reserva_gap > 0 && (
-                        <tr className="border-b-2 border-cyan-500/30 bg-cyan-500/5">
-                          <td className="px-3 py-2 font-medium">
-                            <div className="flex items-center gap-2 text-cyan-400">
-                              <ShieldCheck size={20} />
-                              Reserva Financeira
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-cyan-400 text-xs font-semibold">
-                            PRIORIDADE
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatBRL(rebalancing.reserva_valor)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {rebalancing.reserva_target != null
-                              ? formatBRL(rebalancing.reserva_target)
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-cyan-400">
-                            {formatBRL(rebalancing.reserva_gap)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatBRL(projectedReserveValue)}
-                          </td>
-                          <td className="px-3 py-2 font-bold text-cyan-400">
-                            {formatBRL(reserveAllocation)}
-                          </td>
-                          <td className="px-3 py-2 text-[var(--color-text-muted)]">
-                            —
-                          </td>
+                {(() => {
+                  const grouped = rebalancing.asset_plan.reduce((acc, a) => {
+                    (acc[a.allocation_bucket] ??= []).push(a);
+                    return acc;
+                  }, {} as Record<AllocationBucket, typeof rebalancing.asset_plan>);
+                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "RF"];
+                  const activeBuckets = bucketOrder.filter((b) => grouped[b]?.length > 0);
+
+                  return (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="w-0 p-0" />
+                          <th className="px-2 py-1.5 text-left font-medium text-[var(--color-text-muted)]">
+                            Ticker
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Gap
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Aportar (R$)
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Após Aporte
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Moeda do Ativo
+                          </th>
                         </tr>
-                      )}
-                    {rebalancing.asset_plan.map((a) => (
-                      <tr
-                        key={a.ticker}
-                        className="border-b border-[var(--color-border)]/50"
-                      >
-                        <td className="px-3 py-2 font-medium">
-                          <div className="flex items-center gap-2">
-                            <TickerLogo
-                              ticker={a.ticker}
-                              type={a.asset_class === "STOCK" && a.market === "BR" ? "ACAO" : a.asset_class === "STOCK" ? "STOCK" : undefined}
-                              assetClass={a.asset_class}
-                              market={a.market}
-                              size={20}
-                            />
-                            {a.ticker}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-text-secondary)]">
-                          {BUCKET_LABELS[a.allocation_bucket]}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(a.current_value)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(a.target_value)}
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-positive)]">
-                          {formatBRL(a.gap)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(
-                            Number(a.current_value) + Number(a.amount_to_invest)
+                      </thead>
+                      <tbody>
+                        {/* Reserve row (priority) */}
+                        {rebalancing.reserva_gap != null &&
+                          rebalancing.reserva_gap > 0 && (
+                            <tr className="border-b-2 border-cyan-500/30 bg-cyan-500/5">
+                              <td className="w-0 p-0" style={{ borderLeft: "3px solid #06b6d4" }} />
+                              <td className="px-2 py-1.5 font-medium">
+                                <div className="flex items-center gap-1.5 text-cyan-400">
+                                  <ShieldCheck size={16} />
+                                  Reserva Financeira
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-cyan-400">
+                                {formatBRL(rebalancing.reserva_gap)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-bold text-cyan-400">
+                                {formatBRL(reserveAllocation)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                {formatBRL(projectedReserveValue)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-text-muted)]">
+                                —
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td className="px-3 py-2 font-bold">
-                          {formatBRL(a.amount_to_invest)}
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-text-muted)]">
-                          {a.amount_to_invest_native != null && a.quote_currency !== "BRL"
-                            ? formatCurrency(a.amount_to_invest_native, a.quote_currency)
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                      <td className="px-3 py-2" colSpan={6}>
-                        TOTAL PLANEJADO
-                      </td>
-                      <td className="px-3 py-2">
-                        {formatBRL(
-                          Number(rebalancing.total_planned || 0) +
-                            (rebalancing.reserva_gap != null && reserveGap > 0
-                              ? reserveAllocation
-                              : 0)
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {Object.entries(plannedNativeTotals).length > 0
-                          ? Object.entries(plannedNativeTotals)
-                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
-                              .join(" · ")
-                          : "\u2014"}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                        {activeBuckets.map((bucket) => {
+                          const assets = grouped[bucket];
+                          return assets.map((a, i) => (
+                            <tr
+                              key={a.ticker}
+                              className="border-b border-[var(--color-border)]/50"
+                            >
+                              {i === 0 ? (
+                                <td
+                                  rowSpan={assets.length}
+                                  className="w-0 p-0 relative"
+                                  style={{ borderLeft: `3px solid ${CLASS_COLORS[bucket]}` }}
+                                >
+                                  <span
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-2 text-[10px] font-semibold whitespace-nowrap text-[var(--color-text-muted)]"
+                                  >
+                                    {BUCKET_LABELS[bucket]}
+                                  </span>
+                                </td>
+                              ) : null}
+                              <td className="px-2 py-1.5 font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  <TickerLogo
+                                    ticker={a.ticker}
+                                    type={a.asset_class === "STOCK" && a.market === "BR" ? "ACAO" : a.asset_class === "STOCK" ? "STOCK" : undefined}
+                                    assetClass={a.asset_class}
+                                    market={a.market}
+                                    size={18}
+                                  />
+                                  {a.ticker}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-positive)]">
+                                {formatBRL(a.gap)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-bold">
+                                {formatBRL(a.amount_to_invest)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                {formatBRL(
+                                  Number(a.current_value) + Number(a.amount_to_invest)
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-text-muted)]">
+                                {a.amount_to_invest_native != null && a.quote_currency !== "BRL"
+                                  ? formatCurrency(a.amount_to_invest_native, a.quote_currency)
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ));
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-[var(--color-border)] font-bold text-xs">
+                          <td className="w-0 p-0" />
+                          <td className="px-2 py-1.5" colSpan={2}>
+                            TOTAL PLANEJADO
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatBRL(
+                              Number(rebalancing.total_planned || 0) +
+                                (rebalancing.reserva_gap != null && reserveGap > 0
+                                  ? reserveAllocation
+                                  : 0)
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5" colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  );
+                })()}
               </div>
               </div>
             )}
 
             {/* Save button */}
-            <div className="flex justify-end pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <button
+                onClick={() => setMemoryOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors"
+              >
+                <FileText size={16} /> Memória de Cálculo
+              </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
@@ -784,6 +625,15 @@ export default function PlanejadorAportePage() {
           </div>
         )}
       </div>
+
+      <CalculationMemoryModal
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        rebalancing={rebalancing}
+        reserveAllocation={reserveAllocation}
+        remainingForInvestments={remainingForInvestments}
+        topN={Number(topN) || 0}
+      />
     </div>
   );
 }

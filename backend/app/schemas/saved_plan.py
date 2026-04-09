@@ -45,6 +45,7 @@ class SavedPlanSummary(BaseModel):
     created_at: datetime
     items_count: int
     checked_count: int
+    checked_amount: Decimal
 
 
 class SavePlanRequest(BaseModel):

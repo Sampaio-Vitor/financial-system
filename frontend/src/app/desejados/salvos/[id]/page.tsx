@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Circle,
   MoveVertical,
+  ArrowUpDown,
 } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 import Link from "next/link";
@@ -36,6 +37,11 @@ const CLASS_LABELS: Record<string, string> = {
   FII: "FIIs",
   RF: "Renda Fixa",
   RESERVA: "Prioridade",
+};
+
+const getClassLabel = (assetClass: string, isReserve: boolean) => {
+  if (isReserve) return CLASS_LABELS.RESERVA;
+  return CLASS_LABELS[assetClass] ?? assetClass.replaceAll("_", " ");
 };
 
 export default function SavedPlanDetailPage() {
@@ -302,6 +308,35 @@ export default function SavedPlanDetailPage() {
     }
   };
 
+  const sortSelectedRangeByClass = () => {
+    if (!plan || topRulerIndex == null || bottomRulerIndex == null) return;
+
+    const startIndex = Math.min(topRulerIndex, bottomRulerIndex);
+    const endIndex = Math.max(topRulerIndex, bottomRulerIndex);
+
+    if (endIndex < startIndex) return;
+
+    rowByIdRefs.current.forEach((row, itemId) => {
+      flipPositions.current.set(itemId, row.getBoundingClientRect().top);
+    });
+    flipPending.current = true;
+
+    const items = [...plan.items];
+    const sortedSlice = items
+      .slice(startIndex, endIndex + 1)
+      .sort((a, b) => {
+        const classCompare = getClassLabel(a.asset_class, a.is_reserve).localeCompare(
+          getClassLabel(b.asset_class, b.is_reserve),
+          "pt-BR"
+        );
+        if (classCompare !== 0) return classCompare;
+        return a.ticker.localeCompare(b.ticker, "pt-BR");
+      });
+
+    items.splice(startIndex, sortedSlice.length, ...sortedSlice);
+    setPlan({ ...plan, items });
+  };
+
   if (loading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)] py-8">
@@ -337,7 +372,12 @@ export default function SavedPlanDetailPage() {
   const checkedCount = plan.items.filter((i) => i.checked).length;
   const totalItems = plan.items.length;
   const uncheckedCount = totalItems - checkedCount;
-  const progress = totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0;
+  const checkedAmount = plan.items
+    .filter((i) => i.checked)
+    .reduce((sum, i) => sum + Number(i.amount_to_invest), 0);
+  const totalPlannedAll = plan.items.reduce((sum, i) => sum + Number(i.amount_to_invest), 0);
+  const progressPct = totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0;
+  const progressBrl = totalPlannedAll > 0 ? Math.round((checkedAmount / totalPlannedAll) * 100) : 0;
 
   const sumBrlOnly = (items: SavedPlan["items"]) =>
     items.reduce((sum, item) => {
@@ -392,11 +432,6 @@ export default function SavedPlanDetailPage() {
     bottomRulerIndex == null ? null : plan.items[bottomRulerIndex]?.is_reserve
       ? "Reserva"
       : plan.items[bottomRulerIndex]?.ticker;
-  const getClassLabel = (assetClass: string, isReserve: boolean) => {
-    if (isReserve) return CLASS_LABELS.RESERVA;
-    return CLASS_LABELS[assetClass] ?? assetClass.replaceAll("_", " ");
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -425,14 +460,14 @@ export default function SavedPlanDetailPage() {
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">Progresso</span>
-          <span className="text-sm text-[var(--color-text-muted)]">
-            {checkedCount}/{totalItems} concluídos ({progress}%)
+          <span className="text-xs text-[var(--color-text-muted)]">
+            {formatBRL(checkedAmount)} / {formatBRL(totalPlannedAll)} &middot; {checkedCount}/{totalItems} ativos ({progressPct}%)
           </span>
         </div>
         <div className="h-2 rounded-full bg-[var(--color-border)]/40">
           <div
             className="h-full rounded-full bg-[var(--color-positive)] transition-all"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${progressBrl}%` }}
           />
         </div>
       </div>
@@ -473,76 +508,6 @@ export default function SavedPlanDetailPage() {
         </div>
       </div>
 
-      {/* Class breakdown */}
-      {classBreakdown.length > 0 && (
-        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-3">
-            Distribuição por Classe
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)]">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Classe
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Meta %
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Atual %
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Gap (R$)
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {classBreakdown.map((c) => (
-                  <tr
-                    key={c.allocation_bucket}
-                    className="border-b border-[var(--color-border)]/50"
-                  >
-                    <td className="px-3 py-2">{c.label}</td>
-                    <td className="px-3 py-2">
-                      {formatPercent(c.target_pct)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {formatPercent(c.current_pct)}
-                    </td>
-                    <td
-                      className={`px-3 py-2 ${Number(c.gap) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}
-                    >
-                      {formatBRL(c.gap)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {c.status === "—" ? (
-                        <span className="text-xs text-[var(--color-text-muted)]">
-                          —
-                        </span>
-                      ) : (
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded ${
-                            c.status === "APORTAR"
-                              ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                              : "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Items checklist */}
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         <div className="flex items-center justify-between mb-4">
@@ -559,12 +524,20 @@ export default function SavedPlanDetailPage() {
           </div>
           <div className="text-right">
             {selectedStartIndex != null && selectedEndIndex != null && (
-              <div className="space-y-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
-                <p>
-                  Intervalo: {topRulerLabel ?? "—"} até {bottomRulerLabel ?? "—"}
-                </p>
-                <p>Total em BRL no intervalo: {formatBRL(rulerSumBrl)}</p>
-                <p>Moeda do ativo no intervalo: {formatNativeTotals(rulerNativeTotals)}</p>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
+                  {formatBRL(rulerSumBrl)}
+                </span>
+                {Object.entries(rulerNativeTotals)
+                  .filter(([, v]) => Number(v) > 0)
+                  .map(([currency, value]) => (
+                    <span
+                      key={currency}
+                      className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]"
+                    >
+                      {formatCurrency(value, currency as CurrencyCode)}
+                    </span>
+                  ))}
               </div>
             )}
             {savingChecks && (
@@ -767,8 +740,17 @@ export default function SavedPlanDetailPage() {
               >
                 <MoveVertical size={16} />
               </button>
-              <div className="absolute right-2 -top-5 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg">
-                Início: {topRulerLabel ?? "—"}
+              <div className="absolute right-2 -top-5 flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-slate-950/95 pl-3 pr-1.5 py-1 text-xs text-cyan-100 shadow-lg">
+                <span>Início: {topRulerLabel ?? "—"}</span>
+                <button
+                  type="button"
+                  onClick={sortSelectedRangeByClass}
+                  className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-cyan-400/20 text-cyan-300 hover:text-cyan-100"
+                  aria-label="Ordenar seleção por classe"
+                  title="Ordenar por classe"
+                >
+                  <ArrowUpDown size={13} />
+                </button>
               </div>
             </div>
           )}

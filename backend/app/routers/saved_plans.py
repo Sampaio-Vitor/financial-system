@@ -85,6 +85,7 @@ async def list_saved_plans(
             SavedPlan.created_at,
             func.count(SavedPlanItem.id).label("items_count"),
             func.sum(func.IF(SavedPlanItem.checked, 1, 0)).label("checked_count"),
+            func.coalesce(func.sum(func.IF(SavedPlanItem.checked, SavedPlanItem.amount_to_invest, 0)), 0).label("checked_amount"),
         )
         .outerjoin(SavedPlanItem, SavedPlanItem.plan_id == SavedPlan.id)
         .where(SavedPlan.user_id == user.id)
@@ -101,6 +102,7 @@ async def list_saved_plans(
             created_at=r.created_at,
             items_count=r.items_count,
             checked_count=int(r.checked_count or 0),
+            checked_amount=r.checked_amount or 0,
         )
         for r in rows
     ]
