@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.asset import Asset, AssetClass, AssetType, CurrencyCode, resolve_asset_metadata
+from app.models.asset import (
+    Asset,
+    AssetClass,
+    AssetType,
+    CurrencyCode,
+    resolve_asset_metadata,
+)
 from app.models.purchase import Purchase
 from app.models.user import User
 from app.models.user_asset import UserAsset
@@ -239,13 +245,15 @@ async def create_purchase(
                 detail=f"Quantidade de venda ({abs(data.quantity)}) excede a posicao atual ({current_qty})",
             )
 
+    _asset_class, _market, quote_currency = resolve_asset_metadata(
+        legacy_type=asset.type,
+        asset_class=asset.asset_class,
+        market=asset.market,
+        quote_currency=asset.quote_currency,
+    )
+
     normalized = _normalize_purchase_values(
-        quote_currency=resolve_asset_metadata(
-            legacy_type=asset.type,
-            asset_class=asset.asset_class,
-            market=asset.market,
-            quote_currency=asset.quote_currency,
-        )[2],
+        quote_currency=quote_currency,
         quantity=data.quantity,
         trade_currency=data.trade_currency,
         unit_price=data.unit_price,
@@ -289,7 +297,9 @@ async def update_purchase(
         purchase.purchase_date = data.purchase_date
     next_quantity = data.quantity if data.quantity is not None else purchase.quantity
     next_trade_currency = data.trade_currency or purchase.trade_currency
-    next_unit_price = data.unit_price if data.unit_price is not None else purchase.unit_price
+    next_unit_price = (
+        data.unit_price if data.unit_price is not None else purchase.unit_price
+    )
     next_unit_price_native = (
         data.unit_price_native
         if data.unit_price_native is not None
@@ -312,13 +322,15 @@ async def update_purchase(
                 detail="Quantidade de venda excede a posicao atual disponivel",
             )
 
+    _asset_class, _market, quote_currency = resolve_asset_metadata(
+        legacy_type=purchase.asset.type,
+        asset_class=purchase.asset.asset_class,
+        market=purchase.asset.market,
+        quote_currency=purchase.asset.quote_currency,
+    )
+
     normalized = _normalize_purchase_values(
-        quote_currency=resolve_asset_metadata(
-            legacy_type=purchase.asset.type,
-            asset_class=purchase.asset.asset_class,
-            market=purchase.asset.market,
-            quote_currency=purchase.asset.quote_currency,
-        )[2],
+        quote_currency=quote_currency,
         quantity=next_quantity,
         trade_currency=next_trade_currency,
         unit_price=next_unit_price,

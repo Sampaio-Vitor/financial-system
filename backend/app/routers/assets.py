@@ -48,25 +48,43 @@ def _validate_asset_shape(
     quote_currency: CurrencyCode,
 ) -> None:
     valid = {
-        (AssetClass.STOCK, Market.BR, CurrencyCode.BRL),
-        (AssetClass.STOCK, Market.US, CurrencyCode.USD),
-        (AssetClass.ETF, Market.BR, CurrencyCode.BRL),
-        (AssetClass.ETF, Market.US, CurrencyCode.USD),
-        (AssetClass.ETF, Market.EU, CurrencyCode.EUR),
-        (AssetClass.ETF, Market.UK, CurrencyCode.GBP),
-        (AssetClass.FII, Market.BR, CurrencyCode.BRL),
-        (AssetClass.RF, Market.BR, CurrencyCode.BRL),
+        AssetClass.STOCK: {
+            Market.BR: {CurrencyCode.BRL},
+            Market.US: {CurrencyCode.USD},
+        },
+        AssetClass.ETF: {
+            Market.BR: {CurrencyCode.BRL},
+            Market.US: {CurrencyCode.USD},
+            Market.EU: {CurrencyCode.USD, CurrencyCode.EUR, CurrencyCode.GBP},
+            Market.UK: {CurrencyCode.USD, CurrencyCode.EUR, CurrencyCode.GBP},
+        },
+        AssetClass.FII: {
+            Market.BR: {CurrencyCode.BRL},
+        },
+        AssetClass.RF: {
+            Market.BR: {CurrencyCode.BRL},
+        },
     }
-    if (asset_class, market, quote_currency) not in valid:
+    if quote_currency not in valid.get(asset_class, {}).get(market, set()):
         raise HTTPException(
             status_code=422,
             detail="Combinacao invalida de asset_class, market e quote_currency",
         )
 
 
-def _resolve_payload_classification(data: AssetCreate | AssetUpdate) -> tuple[AssetType, AssetClass | None, Market | None, CurrencyCode | None]:
-    if data.asset_class is not None or data.market is not None or data.quote_currency is not None:
-        if data.asset_class is None or data.market is None or data.quote_currency is None:
+def _resolve_payload_classification(
+    data: AssetCreate | AssetUpdate,
+) -> tuple[AssetType, AssetClass | None, Market | None, CurrencyCode | None]:
+    if (
+        data.asset_class is not None
+        or data.market is not None
+        or data.quote_currency is not None
+    ):
+        if (
+            data.asset_class is None
+            or data.market is None
+            or data.quote_currency is None
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="asset_class, market e quote_currency devem ser informados juntos",
@@ -156,7 +174,9 @@ async def bulk_create_assets(
     normalized_items = []
     for item in data.assets:
         ticker = item.ticker.strip().upper()
-        asset_type, asset_class, market, quote_currency = _resolve_payload_classification(item)
+        asset_type, asset_class, market, quote_currency = (
+            _resolve_payload_classification(item)
+        )
         normalized_items.append(
             (
                 ticker,
@@ -171,10 +191,24 @@ async def bulk_create_assets(
     # Deduplicate within request (keep first occurrence)
     seen: set[str] = set()
     unique_items: list[
-        tuple[str, AssetType, AssetClass | None, Market | None, CurrencyCode | None, str | None]
+        tuple[
+            str,
+            AssetType,
+            AssetClass | None,
+            Market | None,
+            CurrencyCode | None,
+            str | None,
+        ]
     ] = []
     intra_dupes: list[str] = []
-    for ticker, asset_type, asset_class, market, quote_currency, price_symbol in normalized_items:
+    for (
+        ticker,
+        asset_type,
+        asset_class,
+        market,
+        quote_currency,
+        price_symbol,
+    ) in normalized_items:
         if ticker in seen:
             intra_dupes.append(ticker)
         else:
@@ -205,7 +239,14 @@ async def bulk_create_assets(
     linked: list[BulkAssetLinked] = []
     skipped: list[BulkAssetSkipped] = []
 
-    for ticker, asset_type, asset_class, market, quote_currency, price_symbol in unique_items:
+    for (
+        ticker,
+        asset_type,
+        asset_class,
+        market,
+        quote_currency,
+        price_symbol,
+    ) in unique_items:
         if ticker in existing_assets:
             asset = existing_assets[ticker]
             existing_class, existing_market, existing_currency = resolve_asset_metadata(
@@ -231,7 +272,9 @@ async def bulk_create_assets(
                 )
                 continue
             if asset.id in linked_asset_ids:
-                skipped.append(BulkAssetSkipped(ticker=ticker, reason="Já está no seu catálogo"))
+                skipped.append(
+                    BulkAssetSkipped(ticker=ticker, reason="Já está no seu catálogo")
+                )
             else:
                 # Global exists, create user link
                 db.add(UserAsset(user_id=user.id, asset_id=asset.id))
@@ -294,7 +337,9 @@ async def get_rebalancing_info(
     targets_result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
     )
-    targets = {t.allocation_bucket: t.target_pct for t in targets_result.scalars().all()}
+    targets = {
+        t.allocation_bucket: t.target_pct for t in targets_result.scalars().all()
+    }
 
     # Current investable total
     class_values = await get_bucket_values(db, user)
@@ -358,13 +403,15 @@ async def get_rebalancing_info(
         current_value = asset_values.get(asset.id, Decimal("0"))
         gap = target_value - current_value
 
-        result.append(AssetRebalancingInfo(
-            asset_id=asset.id,
-            ticker=asset.ticker,
-            target_value=round(target_value, 2),
-            current_value=round(current_value, 2),
-            gap=round(gap, 2),
-        ))
+        result.append(
+            AssetRebalancingInfo(
+                asset_id=asset.id,
+                ticker=asset.ticker,
+                target_value=round(target_value, 2),
+                current_value=round(current_value, 2),
+                gap=round(gap, 2),
+            )
+        )
 
     return result
 
@@ -394,7 +441,9 @@ async def create_asset(
     user: User = Depends(get_current_user),
 ):
     ticker = data.ticker.strip().upper()
-    asset_type, asset_class, market, quote_currency = _resolve_payload_classification(data)
+    asset_type, asset_class, market, quote_currency = _resolve_payload_classification(
+        data
+    )
 
     # Check if global asset exists
     result = await db.execute(select(Asset).where(Asset.ticker == ticker))
@@ -495,7 +544,9 @@ async def update_asset(
         or data.market is not None
         or data.quote_currency is not None
     ):
-        asset_type, asset_class, market, quote_currency = _resolve_payload_classification(data)
+        asset_type, asset_class, market, quote_currency = (
+            _resolve_payload_classification(data)
+        )
         asset.type = asset_type
         asset.asset_class = asset_class
         asset.market = market
@@ -537,7 +588,10 @@ async def delete_asset(
         pos_result = await db.execute(
             select(func.count())
             .select_from(FixedIncomePosition)
-            .where(FixedIncomePosition.user_id == user.id, FixedIncomePosition.asset_id == asset_id)
+            .where(
+                FixedIncomePosition.user_id == user.id,
+                FixedIncomePosition.asset_id == asset_id,
+            )
         )
         count = pos_result.scalar()
         if count > 0:
@@ -588,7 +642,11 @@ async def get_asset_price_history(
     )
     if asset.price_symbol:
         yf_ticker = asset.price_symbol
-    elif market == Market.BR and asset_class in (AssetClass.STOCK, AssetClass.ETF, AssetClass.FII):
+    elif market == Market.BR and asset_class in (
+        AssetClass.STOCK,
+        AssetClass.ETF,
+        AssetClass.FII,
+    ):
         yf_ticker = f"{asset.ticker}.SA"
     else:
         yf_ticker = asset.ticker
@@ -609,7 +667,9 @@ async def get_asset_price_history(
     if quote_currency != CurrencyCode.BRL:
         from app.services.price_service import FX_TICKERS, _get_system_setting
 
-        rate_str = await _get_system_setting(db, f"{quote_currency.value.lower()}_brl_rate")
+        rate_str = await _get_system_setting(
+            db, f"{quote_currency.value.lower()}_brl_rate"
+        )
         fallback_fx_rate = float(rate_str) if rate_str else None
         try:
             fx_data = await loop.run_in_executor(

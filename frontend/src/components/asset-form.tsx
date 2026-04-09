@@ -11,16 +11,19 @@ interface AssetFormProps {
   onSaved: () => void;
 }
 
-function defaultCurrencyFor(assetClass: AssetClass, market: Market): CurrencyCode {
-  if (assetClass === "RF" || assetClass === "FII") return "BRL";
-  if (assetClass === "STOCK") return market === "BR" ? "BRL" : "USD";
+function allowedCurrenciesFor(assetClass: AssetClass, market: Market): CurrencyCode[] {
+  if (assetClass === "RF" || assetClass === "FII") return ["BRL"];
+  if (assetClass === "STOCK") return market === "BR" ? ["BRL"] : ["USD"];
   if (assetClass === "ETF") {
-    if (market === "BR") return "BRL";
-    if (market === "US") return "USD";
-    if (market === "EU") return "EUR";
-    return "GBP";
+    if (market === "BR") return ["BRL"];
+    if (market === "US") return ["USD"];
+    return ["USD", "EUR", "GBP"];
   }
-  return "BRL";
+  return ["BRL"];
+}
+
+function defaultCurrencyFor(assetClass: AssetClass, market: Market): CurrencyCode {
+  return allowedCurrenciesFor(assetClass, market)[0];
 }
 
 export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
@@ -28,14 +31,15 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
   const [ticker, setTicker] = useState("");
   const [assetClass, setAssetClass] = useState<AssetClass>("STOCK");
   const [market, setMarket] = useState<Market>("BR");
+  const [quoteCurrency, setQuoteCurrency] = useState<CurrencyCode>("BRL");
   const [priceSymbol, setPriceSymbol] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdAsset, setCreatedAsset] = useState<Asset | null>(null);
 
-  const quoteCurrency = useMemo(
-    () => defaultCurrencyFor(assetClass, market),
+  const currencyOptions = useMemo(
+    () => allowedCurrenciesFor(assetClass, market),
     [assetClass, market]
   );
 
@@ -64,8 +68,21 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
       : value === "STOCK"
         ? ["BR", "US"]
         : ["BR"];
-    if (!allowedMarkets.includes(market)) {
-      setMarket(allowedMarkets[0] as Market);
+    const nextMarket = allowedMarkets.includes(market) ? market : (allowedMarkets[0] as Market);
+    if (nextMarket !== market) {
+      setMarket(nextMarket);
+    }
+    const allowedCurrencies = allowedCurrenciesFor(value, nextMarket);
+    if (!allowedCurrencies.includes(quoteCurrency)) {
+      setQuoteCurrency(allowedCurrencies[0]);
+    }
+  };
+
+  const handleMarketChange = (value: Market) => {
+    setMarket(value);
+    const allowedCurrencies = allowedCurrenciesFor(assetClass, value);
+    if (!allowedCurrencies.includes(quoteCurrency)) {
+      setQuoteCurrency(allowedCurrencies[0]);
     }
   };
 
@@ -156,7 +173,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mercado</label>
                 <select
                   value={market}
-                  onChange={(e) => setMarket(e.target.value as Market)}
+                  onChange={(e) => handleMarketChange(e.target.value as Market)}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                 >
                   {marketOptions.map((option) => (
@@ -170,12 +187,17 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
 
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Moeda</label>
-              <input
-                type="text"
+              <select
                 value={quoteCurrency}
-                disabled
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-muted)] text-sm"
-              />
+                onChange={(e) => setQuoteCurrency(e.target.value as CurrencyCode)}
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
+              >
+                {currencyOptions.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

@@ -615,7 +615,7 @@ export default function PlanejadorAportePage() {
                       </span>
                     </div>
                     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total Nativo</span>
+                      <span className="block">Total na Moeda do Ativo</span>
                       <span className="text-sm font-semibold text-[var(--color-text-primary)]">
                         {Object.entries(plannedNativeTotals).length > 0
                           ? Object.entries(plannedNativeTotals)
@@ -659,7 +659,7 @@ export default function PlanejadorAportePage() {
                         Aportar (R$)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (Nativo)
+                        Aportar (Moeda do Ativo)
                       </th>
                     </tr>
                   </thead>
