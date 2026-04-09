@@ -45,7 +45,8 @@ jobs:
             cd "${APP_DIR}"
             set -e
             DOCKER_BIN="$(command -v docker)"
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             touch .env
             sync_env_var() {
               key="$1"
