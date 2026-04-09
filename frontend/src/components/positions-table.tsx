@@ -2,8 +2,8 @@
 
 import { Fragment, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { formatBRL, formatPercent, formatQuantity } from "@/lib/format";
-import { PositionItem } from "@/types";
+import { formatBRL, formatCurrency, formatPercent, formatQuantity } from "@/lib/format";
+import { CurrencyCode, Market, PositionItem } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
 import AssetDetailCharts from "@/components/asset-detail-charts";
@@ -14,6 +14,7 @@ interface PositionsTableProps {
   totalMarketValue: number;
   totalPnl: number;
   totalPnlPct: number | null;
+  metadataMode?: "none" | "market_currency";
   showUsdRate?: boolean;
   usdBrlRate?: number;
 }
@@ -28,12 +29,27 @@ const SORT_OPTIONS: { label: string; key: SortKey }[] = [
   { label: "Qtd", key: "quantity" },
 ];
 
+const MARKET_LABELS: Record<Market, string> = {
+  BR: "Brasil",
+  US: "EUA",
+  EU: "Europa",
+  UK: "Reino Unido",
+};
+
+const CURRENCY_LABELS: Record<CurrencyCode, string> = {
+  BRL: "BRL",
+  USD: "USD",
+  EUR: "EUR",
+  GBP: "GBP",
+};
+
 export default function PositionsTable({
   positions,
   totalCost,
   totalMarketValue,
   totalPnl,
   totalPnlPct,
+  metadataMode = "none",
 }: PositionsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
@@ -70,6 +86,28 @@ export default function PositionsTable({
   const pnlColor = (val: number | null) =>
     (val ?? 0) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]";
 
+  const metadataLabel = (position: PositionItem) => {
+    if (metadataMode === "none") {
+      return null;
+    }
+    if (!position.asset_class || !position.market || !position.quote_currency) {
+      return null;
+    }
+    return `${MARKET_LABELS[position.market]} • ${CURRENCY_LABELS[position.quote_currency]}`;
+  };
+
+  const currentPriceLabel = (position: PositionItem) => {
+    const nativeCurrency = position.quote_currency ?? "BRL";
+    if (
+      position.current_price_native != null &&
+      position.quote_currency &&
+      position.quote_currency !== "BRL"
+    ) {
+      return `${formatCurrency(position.current_price_native, nativeCurrency)} (${formatBRL(position.current_price)})`;
+    }
+    return formatBRL(position.current_price);
+  };
+
   return (
     <>
       {/* Mobile card view */}
@@ -104,10 +142,23 @@ export default function PositionsTable({
             <MobileCard
               header={
                 <>
-                  <TickerLogo ticker={p.ticker} type={p.type} size={22} />
-                  <span className="font-medium text-sm text-[var(--color-text-primary)]">
-                    {p.ticker}
-                  </span>
+                  <TickerLogo
+                    ticker={p.ticker}
+                    type={p.type}
+                    assetClass={p.asset_class}
+                    market={p.market}
+                    size={22}
+                  />
+                  <div className="min-w-0">
+                    <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                      {p.ticker}
+                    </span>
+                    {metadataLabel(p) && (
+                      <div className="text-[10px] text-[var(--color-text-muted)]">
+                        {metadataLabel(p)}
+                      </div>
+                    )}
+                  </div>
                 </>
               }
               badge={
@@ -128,7 +179,14 @@ export default function PositionsTable({
                     : "\u2014",
                 },
                 { label: "Preco Medio", value: formatBRL(p.avg_price) },
-                { label: "Cotacao Atual", value: formatBRL(p.current_price) },
+                { label: "Cotacao Atual", value: currentPriceLabel(p) },
+                {
+                  label: "FX para BRL",
+                  value:
+                    p.quote_currency && p.quote_currency !== "BRL"
+                      ? formatBRL(p.fx_rate_to_brl)
+                      : formatBRL(1),
+                },
                 {
                   label: "P&L (R$)",
                   value: (
@@ -216,8 +274,21 @@ export default function PositionsTable({
                   >
                     <td className="px-3 py-2.5 font-medium">
                       <div className="flex items-center gap-2">
-                        <TickerLogo ticker={p.ticker} type={p.type} size={22} />
-                        {p.ticker}
+                        <TickerLogo
+                          ticker={p.ticker}
+                          type={p.type}
+                          assetClass={p.asset_class}
+                          market={p.market}
+                          size={22}
+                        />
+                        <div className="min-w-0">
+                          <div>{p.ticker}</div>
+                          {metadataLabel(p) && (
+                            <div className="text-[10px] font-normal text-[var(--color-text-muted)]">
+                              {metadataLabel(p)}
+                            </div>
+                          )}
+                        </div>
                         <ChevronDown
                           size={14}
                           className={`text-[var(--color-text-muted)] transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
@@ -234,7 +305,7 @@ export default function PositionsTable({
                     </td>
                     <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
                     <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
-                    <td className="px-3 py-2.5">{formatBRL(p.current_price)}</td>
+                    <td className="px-3 py-2.5">{currentPriceLabel(p)}</td>
                     <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
                     <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl)}`}>
                       {formatBRL(p.pnl)}
@@ -246,11 +317,21 @@ export default function PositionsTable({
                   {isExpanded && (
                     <tr className="border-b border-[var(--color-border)]/50">
                       <td colSpan={9} className="p-0 bg-[var(--color-bg-main)]/40">
-                        <AssetDetailCharts
-                          ticker={p.ticker}
-                          assetId={p.asset_id}
-                          currentPrice={p.current_price}
-                        />
+                        <div className="border-b border-[var(--color-border)]/50 px-4 py-3 text-xs text-[var(--color-text-muted)]">
+                          <span className="mr-4">
+                            Mercado: {p.market ? MARKET_LABELS[p.market] : "—"}
+                          </span>
+                          <span className="mr-4">
+                            Moeda: {p.quote_currency ? CURRENCY_LABELS[p.quote_currency] : "—"}
+                          </span>
+                          <span>
+                            FX BRL:{" "}
+                            {p.quote_currency && p.quote_currency !== "BRL"
+                              ? formatBRL(p.fx_rate_to_brl)
+                              : formatBRL(1)}
+                          </span>
+                        </div>
+                        <AssetDetailCharts ticker={p.ticker} assetId={p.asset_id} currentPrice={p.current_price} />
                       </td>
                     </tr>
                   )}

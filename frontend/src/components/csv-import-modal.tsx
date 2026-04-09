@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { X, Upload, FileText, ChevronDown, ChevronUp, Download } from "lucide-react";
 import readXlsxFile, { type Row } from "read-excel-file/browser";
 import { apiFetch } from "@/lib/api";
-import { AssetType, BulkAssetResponse } from "@/types";
+import { AssetClass, AssetType, BulkAssetResponse, CurrencyCode, Market } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
 import { useAuth } from "@/lib/auth";
 
@@ -17,17 +17,108 @@ type ModalStep = "upload" | "preview" | "loading" | "result";
 
 interface ParsedRow {
   ticker: string;
-  type: AssetType;
+  type?: AssetType;
+  asset_class?: AssetClass;
+  market?: Market;
+  quote_currency?: CurrencyCode;
+  price_symbol?: string;
   error?: string;
 }
 
 const VALID_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF"];
-const CLASS_LABELS: Record<AssetType, string> = {
-  STOCK: "Stocks (EUA)",
+const VALID_ASSET_CLASSES: AssetClass[] = ["STOCK", "ETF", "FII", "RF"];
+const VALID_MARKETS: Market[] = ["BR", "US", "EU", "UK"];
+const VALID_CURRENCIES: CurrencyCode[] = ["BRL", "USD", "EUR", "GBP"];
+
+const LEGACY_TYPE_LABELS: Record<AssetType, string> = {
+  STOCK: "Ações (EUA)",
   ACAO: "Ações (Brasil)",
   FII: "FIIs",
   RF: "Renda Fixa",
 };
+
+const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  STOCK: "Ação",
+  ETF: "ETF",
+  FII: "FII",
+  RF: "Renda Fixa",
+};
+
+const MARKET_LABELS: Record<Market, string> = {
+  BR: "Brasil",
+  US: "EUA",
+  EU: "Europa",
+  UK: "Reino Unido",
+};
+
+function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow; error?: string } {
+  if (cols.length < 2 || !cols[0] || !cols[1]) {
+    return { error: `Linha ${lineNum}: formato inválido` };
+  }
+
+  const ticker = cols[0].toUpperCase();
+  if (ticker.length > 20) {
+    return { error: `Linha ${lineNum}: ticker "${cols[0]}" excede 20 caracteres` };
+  }
+
+  const second = cols[1].toUpperCase();
+  if (VALID_TYPES.includes(second as AssetType)) {
+    return { row: { ticker, type: second as AssetType } };
+  }
+
+  if (cols.length < 4 || !cols[2] || !cols[3]) {
+    return {
+      error: `Linha ${lineNum}: esperado ticker,tipo legado ou ticker,asset_class,market,quote_currency[,price_symbol]`,
+    };
+  }
+
+  const assetClass = second as AssetClass;
+  const market = cols[2].toUpperCase() as Market;
+  const quoteCurrency = cols[3].toUpperCase() as CurrencyCode;
+  const priceSymbol = cols[4]?.trim() || undefined;
+
+  if (!VALID_ASSET_CLASSES.includes(assetClass)) {
+    return {
+      error: `Linha ${lineNum}: asset_class "${cols[1]}" inválido (use: STOCK, ETF, FII, RF)`,
+    };
+  }
+  if (!VALID_MARKETS.includes(market)) {
+    return {
+      error: `Linha ${lineNum}: market "${cols[2]}" inválido (use: BR, US, EU, UK)`,
+    };
+  }
+  if (!VALID_CURRENCIES.includes(quoteCurrency)) {
+    return {
+      error: `Linha ${lineNum}: quote_currency "${cols[3]}" inválido (use: BRL, USD, EUR, GBP)`,
+    };
+  }
+
+  const validShapes = new Set([
+    "STOCK|BR|BRL",
+    "STOCK|US|USD",
+    "ETF|BR|BRL",
+    "ETF|US|USD",
+    "ETF|EU|EUR",
+    "ETF|UK|GBP",
+    "FII|BR|BRL",
+    "RF|BR|BRL",
+  ]);
+  if (!validShapes.has(`${assetClass}|${market}|${quoteCurrency}`)) {
+    return {
+      error: `Linha ${lineNum}: combinação inválida de asset_class, market e quote_currency`,
+    };
+  }
+
+  return {
+    row: {
+      ticker,
+      asset_class: assetClass,
+      market,
+      quote_currency: quoteCurrency,
+      price_symbol: priceSymbol,
+    },
+  };
+}
 
 function parseCsv(text: string): { rows: ParsedRow[]; errors: string[] } {
   const lines = text
@@ -44,11 +135,13 @@ function parseCsv(text: string): { rows: ParsedRow[]; errors: string[] } {
   const delimiter =
     firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
 
-  // Detect header: if second column is NOT a valid type, it's a header
+  // Detect header from names, otherwise fall back to content heuristic.
   const firstCols = firstLine.split(delimiter).map((c) => c.trim());
+  const firstKey = firstCols[0]?.toLowerCase();
+  const secondKey = firstCols[1]?.toLowerCase();
   const isHeader =
-    firstCols.length >= 2 &&
-    !VALID_TYPES.includes(firstCols[1].toUpperCase() as AssetType);
+    firstKey === "ticker" &&
+    ["tipo", "type", "asset_class"].includes(secondKey);
   const dataLines = isHeader ? lines.slice(1) : lines;
 
   if (dataLines.length === 0) {
@@ -67,31 +160,18 @@ function parseCsv(text: string): { rows: ParsedRow[]; errors: string[] } {
     const lineNum = isHeader ? i + 2 : i + 1;
     const cols = dataLines[i].split(delimiter).map((c) => c.trim());
 
-    if (cols.length < 2 || !cols[0] || !cols[1]) {
-      errors.push(`Linha ${lineNum}: formato inválido (esperado: ticker,tipo)`);
+    const parsed = parseClassification(cols, lineNum);
+    if (parsed.error) {
+      errors.push(parsed.error);
       continue;
     }
+    const row = parsed.row!;
 
-    const ticker = cols[0].toUpperCase();
-    const typeRaw = cols[1].toUpperCase();
-
-    if (ticker.length > 20) {
-      errors.push(`Linha ${lineNum}: ticker "${cols[0]}" excede 20 caracteres`);
-      continue;
-    }
-
-    if (!VALID_TYPES.includes(typeRaw as AssetType)) {
-      errors.push(
-        `Linha ${lineNum}: tipo "${cols[1]}" inválido (use: STOCK, ACAO, FII, RF)`
-      );
-      continue;
-    }
-
-    if (seen.has(ticker)) {
-      rows.push({ ticker, type: typeRaw as AssetType, error: "Duplicado no CSV" });
+    if (seen.has(row.ticker)) {
+      rows.push({ ...row, error: "Duplicado no CSV" });
     } else {
-      seen.add(ticker);
-      rows.push({ ticker, type: typeRaw as AssetType });
+      seen.add(row.ticker);
+      rows.push(row);
     }
   }
 
@@ -103,9 +183,11 @@ function parseExcelRows(rows: Row[]): { rows: ParsedRow[]; errors: string[] } {
 
   // Detect header
   const firstRow = rows[0].map((c) => String(c ?? "").trim());
+  const firstKey = firstRow[0]?.toLowerCase();
+  const secondKey = firstRow[1]?.toLowerCase();
   const isHeader =
-    firstRow.length >= 2 &&
-    !VALID_TYPES.includes(firstRow[1].toUpperCase() as AssetType);
+    firstKey === "ticker" &&
+    ["tipo", "type", "asset_class"].includes(secondKey);
   const dataRows = isHeader ? rows.slice(1) : rows;
 
   if (dataRows.length === 0) return { rows: [], errors: ["Nenhuma linha de dados encontrada"] };
@@ -119,29 +201,18 @@ function parseExcelRows(rows: Row[]): { rows: ParsedRow[]; errors: string[] } {
     const lineNum = isHeader ? i + 2 : i + 1;
     const cols = dataRows[i].map((c) => String(c ?? "").trim());
 
-    if (cols.length < 2 || !cols[0] || !cols[1]) {
-      errors.push(`Linha ${lineNum}: formato inválido (esperado: ticker, tipo)`);
+    const parsedRow = parseClassification(cols, lineNum);
+    if (parsedRow.error) {
+      errors.push(parsedRow.error);
       continue;
     }
+    const row = parsedRow.row!;
 
-    const ticker = cols[0].toUpperCase();
-    const typeRaw = cols[1].toUpperCase();
-
-    if (ticker.length > 20) {
-      errors.push(`Linha ${lineNum}: ticker "${cols[0]}" excede 20 caracteres`);
-      continue;
-    }
-
-    if (!VALID_TYPES.includes(typeRaw as AssetType)) {
-      errors.push(`Linha ${lineNum}: tipo "${cols[1]}" inválido (use: STOCK, ACAO, FII, RF)`);
-      continue;
-    }
-
-    if (seen.has(ticker)) {
-      parsed.push({ ticker, type: typeRaw as AssetType, error: "Duplicado" });
+    if (seen.has(row.ticker)) {
+      parsed.push({ ...row, error: "Duplicado" });
     } else {
-      seen.add(ticker);
-      parsed.push({ ticker, type: typeRaw as AssetType });
+      seen.add(row.ticker);
+      parsed.push(row);
     }
   }
 
@@ -160,6 +231,14 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validRows = parsedRows.filter((r) => !r.error);
+
+  const classificationLabel = (row: ParsedRow) => {
+    if (row.asset_class && row.market && row.quote_currency) {
+      return `${ASSET_CLASS_LABELS[row.asset_class]} • ${MARKET_LABELS[row.market]} • ${row.quote_currency}`;
+    }
+    if (row.type) return LEGACY_TYPE_LABELS[row.type];
+    return "—";
+  };
 
   const handleFile = useCallback((file: File) => {
     setError("");
@@ -214,7 +293,17 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
       const data = await apiFetch<BulkAssetResponse>("/assets/bulk", {
         method: "POST",
         body: JSON.stringify({
-          assets: validRows.map((r) => ({ ticker: r.ticker, type: r.type })),
+          assets: validRows.map((r) => ({
+            ticker: r.ticker,
+            ...(r.asset_class && r.market && r.quote_currency
+              ? {
+                  asset_class: r.asset_class,
+                  market: r.market,
+                  quote_currency: r.quote_currency,
+                  price_symbol: r.price_symbol || null,
+                }
+              : { type: r.type }),
+          })),
         }),
       });
       setResult(data);
@@ -279,7 +368,7 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                 Arraste um arquivo ou clique para selecionar
               </p>
               <p className="text-xs text-[var(--color-text-muted)]">
-                CSV ou Excel — Colunas: ticker, tipo (STOCK, ACAO, FII, RF)
+                CSV ou Excel — Use `ticker,tipo` ou `ticker,asset_class,market,quote_currency[,price_symbol]`
               </p>
               <input
                 ref={fileInputRef}
@@ -357,7 +446,10 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                       Ticker
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                      Tipo
+                      Classificação
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
+                      Price Symbol
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
                       Status
@@ -375,8 +467,11 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                       <td className="px-3 py-1.5 font-medium">{row.ticker}</td>
                       <td className="px-3 py-1.5">
                         <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
-                          {CLASS_LABELS[row.type]}
+                          {classificationLabel(row)}
                         </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-[var(--color-text-muted)]">
+                        {row.price_symbol || "—"}
                       </td>
                       <td className="px-3 py-1.5 text-xs">
                         {row.error ? (
@@ -434,13 +529,19 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                       <TickerLogo
                         ticker={item.ticker}
                         type={item.type}
+                        assetClass={item.asset_class}
+                        market={item.market}
                         size={32}
                       />
                       <span className="text-xs font-medium text-[var(--color-text-primary)]">
                         {item.ticker}
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {CLASS_LABELS[item.type]}
+                        {item.asset_class && item.market && item.quote_currency
+                          ? `${ASSET_CLASS_LABELS[item.asset_class]} • ${MARKET_LABELS[item.market]} • ${item.quote_currency}`
+                          : item.type
+                            ? LEGACY_TYPE_LABELS[item.type]
+                            : "—"}
                       </span>
                     </div>
                   ))}

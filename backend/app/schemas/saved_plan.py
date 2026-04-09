@@ -3,9 +3,6 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.asset import AssetType
-
-
 class SavedPlanItemOut(BaseModel):
     id: int
     ticker: str
@@ -15,6 +12,8 @@ class SavedPlanItemOut(BaseModel):
     gap: Decimal
     amount_to_invest: Decimal
     amount_to_invest_usd: Decimal | None = None
+    amount_to_invest_native: Decimal | None = None
+    quote_currency: str | None = None
     is_reserve: bool
     checked: bool
 
@@ -69,6 +68,8 @@ class SavePlanItemRequest(BaseModel):
     gap: Decimal
     amount_to_invest: Decimal
     amount_to_invest_usd: Decimal | None = None
+    amount_to_invest_native: Decimal | None = None
+    quote_currency: str | None = None
     is_reserve: bool = False
 
 

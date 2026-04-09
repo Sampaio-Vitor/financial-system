@@ -1,12 +1,27 @@
 export type AssetType = "STOCK" | "ACAO" | "FII" | "RF";
+export type AssetClass = "STOCK" | "ETF" | "FII" | "RF";
+export type Market = "BR" | "US" | "EU" | "UK";
+export type CurrencyCode = "BRL" | "USD" | "EUR" | "GBP";
+export type AllocationBucket =
+  | "STOCK_BR"
+  | "STOCK_US"
+  | "ETF_INTL"
+  | "FII"
+  | "RF";
 
 export interface Asset {
   id: number;
   ticker: string;
   type: AssetType;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
   description: string;
   paused: boolean;
+  price_symbol?: string | null;
   current_price: number | null;
+  current_price_native?: number | null;
+  fx_rate_to_brl?: number | null;
   price_updated_at: string | null;
   created_at: string;
 }
@@ -24,7 +39,7 @@ export interface Purchase {
   asset_id: number;
   purchase_date: string;
   quantity: number;
-  trade_currency: "BRL" | "USD";
+  trade_currency: CurrencyCode;
   unit_price: number;
   total_value: number;
   unit_price_native: number;
@@ -33,6 +48,9 @@ export interface Purchase {
   created_at: string;
   ticker?: string;
   asset_type?: AssetType;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
 }
 
 export interface PurchasePageResponse {
@@ -69,7 +87,8 @@ export interface FixedIncomeRedemption {
 }
 
 export interface ClassSummary {
-  asset_class: AssetType;
+  asset_class?: AssetType | null;
+  allocation_bucket?: AllocationBucket | null;
   label: string;
   value: number;
   pct: number;
@@ -140,11 +159,16 @@ export interface PositionItem {
   ticker: string;
   description: string;
   type: AssetType;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
   first_date: string | null;
   quantity: number;
   total_cost: number;
   avg_price: number;
   current_price: number | null;
+  current_price_native?: number | null;
+  fx_rate_to_brl?: number | null;
   market_value: number | null;
   pnl: number | null;
   pnl_pct: number | null;
@@ -152,6 +176,9 @@ export interface PositionItem {
 
 export interface PositionsResponse {
   asset_class: AssetType;
+  asset_class_v2?: AssetClass | null;
+  market?: Market | null;
+  allocation_bucket?: AllocationBucket | null;
   positions: PositionItem[];
   total_cost: number;
   total_market_value: number;
@@ -160,12 +187,12 @@ export interface PositionsResponse {
 }
 
 export interface AllocationTarget {
-  asset_class: AssetType;
+  allocation_bucket: AllocationBucket;
   target_pct: number;
 }
 
 export interface ClassRebalancing {
-  asset_class: AssetType;
+  allocation_bucket: AllocationBucket;
   label: string;
   target_pct: number;
   current_pct: number;
@@ -178,13 +205,17 @@ export interface ClassRebalancing {
 
 export interface AssetRebalancing {
   ticker: string;
-  asset_class: AssetType;
+  asset_class: AssetClass;
+  market: Market;
+  quote_currency: CurrencyCode;
+  allocation_bucket: AllocationBucket;
   current_value: number;
   target_value: number;
   gap: number;
   gap_pct: number;
   amount_to_invest: number;
   amount_to_invest_usd: number | null;
+  amount_to_invest_native?: number | null;
 }
 
 export interface RebalancingResponse {
@@ -201,6 +232,8 @@ export interface RebalancingResponse {
 
 export interface PriceContextResponse {
   usd_brl_rate: number | null;
+  eur_brl_rate?: number | null;
+  gbp_brl_rate?: number | null;
   rate_updated_at: string | null;
 }
 
@@ -219,9 +252,16 @@ export interface SnapshotResponse {
 export interface SnapshotAssetItem {
   ticker: string;
   type: AssetType;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
+  allocation_bucket?: AllocationBucket | null;
   quantity: number;
   avg_price: number;
+  avg_price_native?: number | null;
   closing_price: number | null;
+  closing_price_native?: number | null;
+  fx_rate_to_brl?: number | null;
   market_value: number | null;
   total_cost: number;
   pnl: number | null;
@@ -252,12 +292,18 @@ export interface PriceStatusResponse {
 
 export interface BulkAssetCreated {
   ticker: string;
-  type: AssetType;
+  type?: AssetType | null;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
 }
 
 export interface BulkAssetLinked {
   ticker: string;
-  type: AssetType;
+  type?: AssetType | null;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  quote_currency?: CurrencyCode | null;
 }
 
 export interface BastterSyncPreviewItem {
@@ -398,6 +444,8 @@ export interface SavedPlanItem {
   gap: number;
   amount_to_invest: number;
   amount_to_invest_usd: number | null;
+  amount_to_invest_native?: number | null;
+  quote_currency?: CurrencyCode | null;
   is_reserve: boolean;
   checked: boolean;
 }

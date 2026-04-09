@@ -40,6 +40,8 @@ class SavedPlanItem(Base):
     gap: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     amount_to_invest: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     amount_to_invest_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    amount_to_invest_native: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    quote_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     is_reserve: Mapped[bool] = mapped_column(Boolean, default=False)
     checked: Mapped[bool] = mapped_column(Boolean, default=False)
 

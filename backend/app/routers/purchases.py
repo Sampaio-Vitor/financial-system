@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.asset import Asset, AssetType
+from app.models.asset import Asset, AssetClass, AssetType, CurrencyCode, resolve_asset_metadata
 from app.models.purchase import Purchase
 from app.models.user import User
 from app.models.user_asset import UserAsset
@@ -37,37 +37,41 @@ def _to_response(p: Purchase) -> PurchaseResponse:
         created_at=p.created_at,
         ticker=p.asset.ticker if p.asset else None,
         asset_type=p.asset.type if p.asset else None,
+        asset_class=p.asset.asset_class if p.asset else None,
+        market=p.asset.market if p.asset else None,
+        quote_currency=p.asset.quote_currency if p.asset else None,
     )
 
 
 def _normalize_purchase_values(
     *,
-    asset_type: AssetType,
+    quote_currency: CurrencyCode,
     quantity: Decimal,
     trade_currency: str | None,
     unit_price: Decimal | None,
     unit_price_native: Decimal | None,
     fx_rate: Decimal | None,
 ) -> dict[str, Decimal | str]:
-    currency = trade_currency or "BRL"
-    if currency not in {"BRL", "USD"}:
+    currency = trade_currency or quote_currency.value
+    if currency not in {"BRL", "USD", "EUR", "GBP"}:
         raise HTTPException(status_code=400, detail="Moeda de operacao invalida")
 
-    if currency == "USD":
-        if asset_type != AssetType.STOCK:
-            raise HTTPException(
-                status_code=400,
-                detail="Operacoes em USD sao permitidas apenas para stocks",
-            )
+    if currency != quote_currency.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Operacao deve usar a moeda do ativo ({quote_currency.value})",
+        )
+
+    if currency != "BRL":
         if unit_price_native is None or unit_price_native <= 0:
             raise HTTPException(
                 status_code=400,
-                detail="Preco unitario em USD deve ser informado",
+                detail=f"Preco unitario em {currency} deve ser informado",
             )
         if fx_rate is None or fx_rate <= 0:
             raise HTTPException(
                 status_code=400,
-                detail="Cotacao USD/BRL invalida para esta operacao",
+                detail=f"Cotacao {currency}/BRL invalida para esta operacao",
             )
 
         unit_price_brl = round(unit_price_native * fx_rate, 4)
@@ -128,6 +132,7 @@ async def list_purchases(
 @router.get("/rv", response_model=PurchasePageResponse)
 async def list_variable_income_purchases(
     asset_type: AssetType | None = Query(None),
+    asset_class: AssetClass | None = Query(None),
     ticker: str | None = Query(None),
     operation: str | None = Query(None, pattern="^(compras|vendas)$"),
     date_from: date | None = Query(None),
@@ -145,10 +150,12 @@ async def list_variable_income_purchases(
 
     filters = [
         Purchase.user_id == user.id,
-        Asset.type.in_([AssetType.STOCK, AssetType.ACAO, AssetType.FII]),
+        Asset.type != AssetType.RF,
     ]
 
-    if asset_type:
+    if asset_class:
+        filters.append(Asset.asset_class == asset_class)
+    elif asset_type:
         filters.append(Asset.type == asset_type)
     if ticker:
         filters.append(Asset.ticker.ilike(f"%{ticker.strip()}%"))
@@ -233,7 +240,12 @@ async def create_purchase(
             )
 
     normalized = _normalize_purchase_values(
-        asset_type=asset.type,
+        quote_currency=resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )[2],
         quantity=data.quantity,
         trade_currency=data.trade_currency,
         unit_price=data.unit_price,
@@ -301,7 +313,12 @@ async def update_purchase(
             )
 
     normalized = _normalize_purchase_values(
-        asset_type=purchase.asset.type,
+        quote_currency=resolve_asset_metadata(
+            legacy_type=purchase.asset.type,
+            asset_class=purchase.asset.asset_class,
+            market=purchase.asset.market,
+            quote_currency=purchase.asset.quote_currency,
+        )[2],
         quantity=next_quantity,
         trade_currency=next_trade_currency,
         unit_price=next_unit_price,

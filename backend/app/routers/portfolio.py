@@ -7,7 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.asset import Asset, AssetType
+from app.models.asset import (
+    AllocationBucket,
+    Asset,
+    AssetClass,
+    AssetType,
+    Market,
+    asset_bucket_for,
+    resolve_asset_metadata,
+)
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_interest import FixedIncomeInterest
@@ -16,8 +24,8 @@ from app.models.allocation_target import AllocationTarget
 from app.models.financial_reserve import FinancialReserveEntry, FinancialReserveTarget
 from app.models.dividend_event import DividendEvent
 from app.models.user import User
-from app.constants import CLASS_LABELS
-from app.services.portfolio_service import get_reserve_for_month, get_class_values
+from app.constants import ALLOCATION_BUCKET_LABELS
+from app.services.portfolio_service import get_bucket_values, get_reserve_for_month, get_class_values
 from app.schemas.portfolio import (
     MonthlyOverview,
     ClassSummary,
@@ -31,11 +39,133 @@ from app.schemas.dividend import DividendEventResponse
 router = APIRouter()
 
 
-async def _get_targets(db: AsyncSession, user: User) -> dict[AssetType, Decimal]:
+async def _get_targets(db: AsyncSession, user: User) -> dict[AllocationBucket, Decimal]:
     result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
     )
-    return {t.asset_class: t.target_pct for t in result.scalars().all()}
+    return {t.allocation_bucket: t.target_pct for t in result.scalars().all()}
+
+
+async def _build_variable_income_positions(
+    db: AsyncSession,
+    user: User,
+    *,
+    legacy_type: AssetType | None = None,
+    asset_class: AssetClass | None = None,
+    market: Market | None = None,
+) -> PositionsResponse:
+    result = await db.execute(
+        select(
+            Asset.id,
+            Asset.ticker,
+            Asset.description,
+            Asset.type,
+            Asset.asset_class,
+            Asset.market,
+            Asset.quote_currency,
+            Asset.current_price,
+            Asset.current_price_native,
+            Asset.fx_rate_to_brl,
+            func.sum(Purchase.quantity).label("total_qty"),
+            func.sum(Purchase.total_value).label("total_cost"),
+            func.min(Purchase.purchase_date).label("first_date"),
+        )
+        .join(Asset, Purchase.asset_id == Asset.id)
+        .where(Purchase.user_id == user.id)
+        .group_by(
+            Asset.id,
+            Asset.ticker,
+            Asset.description,
+            Asset.type,
+            Asset.asset_class,
+            Asset.market,
+            Asset.quote_currency,
+            Asset.current_price,
+            Asset.current_price_native,
+            Asset.fx_rate_to_brl,
+        )
+        .having(func.sum(Purchase.quantity) > 0)
+    )
+
+    positions = []
+    total_cost = Decimal("0")
+    total_market = Decimal("0")
+    selected_v2: AssetClass | None = asset_class
+    selected_market: Market | None = market
+    selected_bucket: AllocationBucket | None = None
+
+    for row in result.all():
+        (
+            asset_id,
+            ticker,
+            desc,
+            a_type,
+            a_asset_class,
+            a_market,
+            a_quote_currency,
+            price,
+            native_price,
+            fx_rate_to_brl,
+            qty,
+            cost,
+            first_date,
+        ) = row
+        resolved_class, resolved_market, resolved_currency = resolve_asset_metadata(
+            legacy_type=a_type,
+            asset_class=a_asset_class,
+            market=a_market,
+            quote_currency=a_quote_currency,
+        )
+        if legacy_type is not None and a_type != legacy_type:
+            continue
+        if asset_class is not None and resolved_class != asset_class:
+            continue
+        if market is not None and resolved_market != market:
+            continue
+
+        avg_price = cost / qty if qty else Decimal("0")
+        market_value = price * qty if price and qty else None
+        pnl = (market_value - cost) if market_value else None
+        pnl_pct = (pnl / cost * 100) if pnl and cost else None
+        bucket = asset_bucket_for(resolved_class, resolved_market)
+        selected_bucket = selected_bucket or bucket
+
+        positions.append(PositionItem(
+            asset_id=asset_id,
+            ticker=ticker,
+            description=desc,
+            type=a_type,
+            asset_class=resolved_class,
+            market=resolved_market,
+            quote_currency=resolved_currency,
+            first_date=first_date.isoformat() if first_date else None,
+            quantity=qty,
+            total_cost=cost,
+            avg_price=round(avg_price, 4),
+            current_price=price,
+            current_price_native=native_price,
+            fx_rate_to_brl=fx_rate_to_brl,
+            market_value=market_value,
+            pnl=round(pnl, 4) if pnl else None,
+            pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
+        ))
+        total_cost += cost
+        if market_value:
+            total_market += market_value
+
+    total_pnl = total_market - total_cost
+    response_type = legacy_type or AssetType.STOCK
+    return PositionsResponse(
+        asset_class=response_type,
+        asset_class_v2=selected_v2,
+        market=selected_market,
+        allocation_bucket=selected_bucket,
+        positions=sorted(positions, key=lambda p: p.ticker),
+        total_cost=total_cost,
+        total_market_value=total_market,
+        total_pnl=total_pnl,
+        total_pnl_pct=(total_pnl / total_cost * 100) if total_cost else None,
+    )
 
 
 @router.get("/overview", response_model=MonthlyOverview)
@@ -180,7 +310,7 @@ async def get_overview(
     total_invested += fi_invested.scalar() or Decimal("0")
 
     # Current values per class (purchases up to end of viewed month)
-    class_values = await get_class_values(db, user, cutoff=month_end)
+    class_values = await get_bucket_values(db, user, cutoff=month_end)
 
     # Reserve target
     target_result = await db.execute(
@@ -192,7 +322,7 @@ async def get_overview(
     patrimonio_total = sum(class_values.values()) + (reserva_financeira or Decimal("0"))
 
     # Month-over-month variation: compute previous month's patrimonio on-the-fly
-    prev_class_values = await get_class_values(db, user, cutoff=month_start)
+    prev_class_values = await get_bucket_values(db, user, cutoff=month_start)
     prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve.amount if prev_reserve else Decimal("0"))
 
     if prev_patrimonio > 0:
@@ -209,13 +339,13 @@ async def get_overview(
     # Build allocation breakdown (percentages relative to investable patrimony, excluding reserve)
     patrimonio_investivel = sum(class_values.values())
     allocation = []
-    for asset_class in AssetType:
-        value = class_values[asset_class]
+    for allocation_bucket in AllocationBucket:
+        value = class_values[allocation_bucket]
         pct = (value / patrimonio_investivel * 100) if patrimonio_investivel else Decimal("0")
-        target_pct = targets.get(asset_class, Decimal("0")) * 100
+        target_pct = targets.get(allocation_bucket, Decimal("0")) * 100
         allocation.append(ClassSummary(
-            asset_class=asset_class,
-            label=CLASS_LABELS[asset_class],
+            allocation_bucket=allocation_bucket,
+            label=ALLOCATION_BUCKET_LABELS[allocation_bucket],
             value=value,
             pct=round(pct, 2),
             target_pct=round(target_pct, 2),
@@ -356,6 +486,21 @@ async def get_overview(
     )
 
 
+@router.get("/positions", response_model=PositionsResponse)
+async def get_positions(
+    asset_class: AssetClass | None = Query(None),
+    market: Market | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _build_variable_income_positions(
+        db,
+        user,
+        asset_class=asset_class,
+        market=market,
+    )
+
+
 @router.get("/{asset_class}", response_model=PositionsResponse)
 async def get_positions_by_class(
     asset_class: AssetType,
@@ -400,59 +545,8 @@ async def get_positions_by_class(
             total_pnl_pct=(total_pnl / total_cost * 100) if total_cost else None,
         )
 
-    # Variable income: aggregate purchases by asset
-    result = await db.execute(
-        select(
-            Asset.id,
-            Asset.ticker,
-            Asset.description,
-            Asset.type,
-            Asset.current_price,
-            func.sum(Purchase.quantity).label("total_qty"),
-            func.sum(Purchase.total_value).label("total_cost"),
-            func.min(Purchase.purchase_date).label("first_date"),
-        )
-        .join(Asset, Purchase.asset_id == Asset.id)
-        .where(Purchase.user_id == user.id, Asset.type == asset_class)
-        .group_by(Asset.id)
-        .having(func.sum(Purchase.quantity) > 0)
-    )
-
-    positions = []
-    total_cost = Decimal("0")
-    total_market = Decimal("0")
-
-    for row in result.all():
-        asset_id, ticker, desc, a_type, price, qty, cost, first_date = row
-        avg_price = cost / qty if qty else Decimal("0")
-        market_value = price * qty if price and qty else None
-        pnl = (market_value - cost) if market_value else None
-        pnl_pct = (pnl / cost * 100) if pnl and cost else None
-
-        positions.append(PositionItem(
-            asset_id=asset_id,
-            ticker=ticker,
-            description=desc,
-            type=a_type,
-            first_date=first_date.isoformat() if first_date else None,
-            quantity=qty,
-            total_cost=cost,
-            avg_price=round(avg_price, 4),
-            current_price=price,
-            market_value=market_value,
-            pnl=round(pnl, 4) if pnl else None,
-            pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
-        ))
-        total_cost += cost
-        if market_value:
-            total_market += market_value
-
-    total_pnl = total_market - total_cost
-    return PositionsResponse(
-        asset_class=asset_class,
-        positions=sorted(positions, key=lambda p: p.ticker),
-        total_cost=total_cost,
-        total_market_value=total_market,
-        total_pnl=total_pnl,
-        total_pnl_pct=(total_pnl / total_cost * 100) if total_cost else None,
+    return await _build_variable_income_positions(
+        db,
+        user,
+        legacy_type=asset_class,
     )

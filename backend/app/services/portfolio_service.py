@@ -4,7 +4,13 @@ from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset, AssetType
+from app.models.asset import (
+    AllocationBucket,
+    Asset,
+    AssetType,
+    asset_bucket_for,
+    resolve_asset_metadata,
+)
 from app.models.financial_reserve import FinancialReserveEntry
 from app.models.fixed_income import FixedIncomePosition
 from app.models.purchase import Purchase
@@ -91,5 +97,60 @@ async def get_class_values(
     fi_result = await db.execute(fi_query)
     rf_total = fi_result.scalar() or Decimal("0")
     values[AssetType.RF] = rf_total
+
+    return values
+
+
+async def get_bucket_values(
+    db: AsyncSession, user: User, cutoff: date | None = None
+) -> dict[AllocationBucket, Decimal]:
+    values: dict[AllocationBucket, Decimal] = {
+        bucket: Decimal("0") for bucket in AllocationBucket
+    }
+
+    query = (
+        select(
+            Asset.type,
+            Asset.asset_class,
+            Asset.market,
+            Asset.quote_currency,
+            Asset.current_price,
+            func.sum(Purchase.quantity).label("total_qty"),
+        )
+        .join(Asset, Purchase.asset_id == Asset.id)
+        .where(Purchase.user_id == user.id, Asset.type != AssetType.RF)
+    )
+    if cutoff:
+        query = query.where(Purchase.purchase_date < cutoff)
+    query = query.group_by(
+        Asset.id,
+        Asset.type,
+        Asset.asset_class,
+        Asset.market,
+        Asset.quote_currency,
+        Asset.current_price,
+    )
+
+    result = await db.execute(query)
+    for legacy_type, asset_class, market, quote_currency, price, qty in result.all():
+        if not price or not qty:
+            continue
+        resolved_class, resolved_market, _resolved_currency = resolve_asset_metadata(
+            legacy_type=legacy_type,
+            asset_class=asset_class,
+            market=market,
+            quote_currency=quote_currency,
+        )
+        bucket = asset_bucket_for(resolved_class, resolved_market)
+        values[bucket] += price * qty
+
+    fi_query = (
+        select(func.sum(FixedIncomePosition.current_balance))
+        .where(FixedIncomePosition.user_id == user.id)
+    )
+    if cutoff:
+        fi_query = fi_query.where(FixedIncomePosition.start_date < cutoff)
+    fi_result = await db.execute(fi_query)
+    values[AllocationBucket.RF] = fi_result.scalar() or Decimal("0")
 
     return values

@@ -1,27 +1,43 @@
 "use client";
 
 import { useState } from "react";
-import { AssetType } from "@/types";
+import { AssetClass, AssetType, Market } from "@/types";
 
-function getLogoUrl(ticker: string, type: AssetType): string | null {
-  if (type === "STOCK") {
-    return `https://api.elbstream.com/logos/symbol/${ticker}?format=png&size=128`;
-  }
-  if (type === "ACAO") {
+function getLogoUrl(
+  ticker: string,
+  type?: AssetType | null,
+  assetClass?: AssetClass | null,
+  market?: Market | null
+): string | null {
+  if (market === "BR" || type === "ACAO" || type === "FII") {
     return `https://api.elbstream.com/logos/symbol/${ticker}.SA?format=png&size=128`;
+  }
+  if (market === "UK") {
+    return `https://api.elbstream.com/logos/symbol/${ticker}.L?format=png&size=128`;
+  }
+  if (market === "US" || market === "EU" || type === "STOCK" || assetClass === "ETF") {
+    return `https://api.elbstream.com/logos/symbol/${ticker}?format=png&size=128`;
   }
   return null;
 }
 
 interface TickerLogoProps {
   ticker: string;
-  type: AssetType;
+  type?: AssetType | null;
+  assetClass?: AssetClass | null;
+  market?: Market | null;
   size?: number;
 }
 
-export default function TickerLogo({ ticker, type, size = 24 }: TickerLogoProps) {
+export default function TickerLogo({
+  ticker,
+  type,
+  assetClass,
+  market,
+  size = 24,
+}: TickerLogoProps) {
   const [failed, setFailed] = useState(false);
-  const url = getLogoUrl(ticker, type);
+  const url = getLogoUrl(ticker, type, assetClass, market);
 
   if (!url || failed) {
     // Fallback: initials circle

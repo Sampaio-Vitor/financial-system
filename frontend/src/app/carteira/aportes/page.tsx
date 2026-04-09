@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
-import { AssetType, Purchase, PurchasePageResponse } from "@/types";
-import { formatBRL, formatEditableNumber, formatQuantity, formatUSD } from "@/lib/format";
+import { AssetClass, AssetType, CurrencyCode, Purchase, PurchasePageResponse } from "@/types";
+import { formatBRL, formatCurrency, formatEditableNumber, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 import TickerLogo from "@/components/ticker-logo";
 
@@ -20,6 +20,10 @@ function calculateUnitPrice(totalValue: string, quantity: string): number | null
   return total / Math.abs(qty);
 }
 
+function isForeignCurrency(currency: CurrencyCode): boolean {
+  return currency !== "BRL";
+}
+
 export default function AportesPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -32,13 +36,13 @@ export default function AportesPage() {
     purchase_date: string;
     quantity: string;
     total_value: string;
-    trade_currency: "BRL" | "USD";
+    trade_currency: CurrencyCode;
     fx_rate: string;
   }>({ purchase_date: "", quantity: "", total_value: "", trade_currency: "BRL", fx_rate: "1.0000" });
   const [saving, setSaving] = useState(false);
 
   // Filters
-  const [filterType, setFilterType] = useState<AssetType | "">("");
+  const [filterType, setFilterType] = useState<AssetClass | "">("");
   const [filterTicker, setFilterTicker] = useState("");
   const [filterOperation, setFilterOperation] = useState<OperationFilter>("todos");
   const [filterDateFrom, setFilterDateFrom] = useState("");
@@ -74,7 +78,7 @@ export default function AportesPage() {
         page_size: String(pageSize),
       });
 
-      if (filterType) params.set("asset_type", filterType);
+      if (filterType) params.set("asset_class", filterType);
       if (filterTicker.trim()) params.set("ticker", filterTicker.trim());
       if (filterOperation !== "todos") params.set("operation", filterOperation);
       if (filterDateFrom) params.set("date_from", filterDateFrom);
@@ -154,7 +158,7 @@ export default function AportesPage() {
       quantity: formatEditableNumber(p.quantity),
       total_value: formatEditableNumber(
         Math.abs(
-        p.trade_currency === "USD" ? p.total_value_native : p.total_value
+        isForeignCurrency(p.trade_currency) ? p.total_value_native : p.total_value
         )
       ),
       trade_currency: p.trade_currency,
@@ -170,7 +174,7 @@ export default function AportesPage() {
     async (id: number) => {
       setSaving(true);
       try {
-        const isUsdTrade = editData.trade_currency === "USD";
+        const isForeignTrade = isForeignCurrency(editData.trade_currency);
         const calculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity);
         if (calculatedUnitPrice == null) {
           throw new Error("Informe quantidade e valor total validos");
@@ -182,7 +186,7 @@ export default function AportesPage() {
             purchase_date: editData.purchase_date,
             quantity: parseFloat(editData.quantity),
             trade_currency: editData.trade_currency,
-            ...(isUsdTrade
+            ...(isForeignTrade
               ? {
                   unit_price_native: calculatedUnitPrice,
                   fx_rate: parseFloat(editData.fx_rate),
@@ -204,10 +208,10 @@ export default function AportesPage() {
   );
 
   const renderUnitPrice = (p: Purchase) => {
-    if (p.trade_currency === "USD") {
+    if (isForeignCurrency(p.trade_currency)) {
       return (
         <>
-          <span>{formatUSD(p.unit_price_native)}</span>
+          <span>{formatCurrency(p.unit_price_native, p.trade_currency)}</span>
           <span className="text-[10px] text-[var(--color-text-muted)] ml-1">({formatBRL(p.unit_price)})</span>
         </>
       );
@@ -216,20 +220,20 @@ export default function AportesPage() {
   };
 
   const renderTotalValue = (p: Purchase) => {
-    if (p.trade_currency === "USD") {
+    if (isForeignCurrency(p.trade_currency)) {
       return (
         <>
           <span>{formatBRL(p.total_value)}</span>
-          <span className="text-[10px] text-[var(--color-text-muted)] ml-1">({formatUSD(p.total_value_native)})</span>
+          <span className="text-[10px] text-[var(--color-text-muted)] ml-1">({formatCurrency(p.total_value_native, p.trade_currency)})</span>
         </>
       );
     }
     return formatBRL(p.total_value);
   };
 
-  const editIsUsd = editData.trade_currency === "USD";
+  const editIsForeign = isForeignCurrency(editData.trade_currency);
   const editNativeTotal = parseFloat(editData.total_value) || 0;
-  const editBrlTotal = editIsUsd
+  const editBrlTotal = editIsForeign
     ? editNativeTotal * (parseFloat(editData.fx_rate) || 0)
     : editNativeTotal;
   const editCalculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity) || 0;
@@ -274,12 +278,12 @@ export default function AportesPage() {
               <label className="text-xs text-[var(--color-text-muted)]">Tipo</label>
               <select
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value as AssetType | "")}
+                onChange={(e) => setFilterType(e.target.value as AssetClass | "")}
                 className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
               >
                 <option value="">Todos</option>
-                <option value="STOCK">Stocks</option>
-                <option value="ACAO">Acoes</option>
+                <option value="STOCK">Acoes</option>
+                <option value="ETF">ETFs</option>
                 <option value="FII">FIIs</option>
               </select>
             </div>
@@ -372,10 +376,10 @@ export default function AportesPage() {
                 <div key={p.id} className={`bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4 ${isSale ? "border-[var(--color-negative)]/30" : ""}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                      <TickerLogo ticker={p.ticker!} type={p.asset_type!} assetClass={p.asset_class} market={p.market} size={20} />
                       <span className="font-medium text-sm">{p.ticker}</span>
-                      {p.trade_currency === "USD" && (
-                        <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">USD</span>
+                      {isForeignCurrency(p.trade_currency) && (
+                        <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">{p.trade_currency}</span>
                       )}
                       {isSale && (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">
@@ -445,14 +449,18 @@ export default function AportesPage() {
                     </div>
                     <div>
                       <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
-                        {editIsUsd ? "Valor Total (US$)" : "Valor Total (R$)"}
+                        {isForeignCurrency(editData.trade_currency)
+                          ? `Valor Total (${editData.trade_currency})`
+                          : "Valor Total (R$)"}
                       </label>
                       <input type="number" step="0.01" value={editData.total_value} onChange={(e) => setEditData({ ...editData, total_value: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                     </div>
                   </div>
-                  {editIsUsd && (
+                  {editIsForeign && (
                     <div>
-                      <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Cambio USD/BRL</label>
+                      <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
+                        Cambio {editData.trade_currency}/BRL
+                      </label>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[var(--color-text-muted)]">R$</span>
                         <input type="number" step="0.0001" value={editData.fx_rate} onChange={(e) => setEditData({ ...editData, fx_rate: e.target.value })} className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
@@ -462,17 +470,17 @@ export default function AportesPage() {
                   <div className="rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-[var(--color-text-muted)]">Preco unitario calculado</span>
-                      <span className="text-base font-bold text-[var(--color-text-primary)]">
-                        {editIsUsd ? formatUSD(editCalculatedUnitPrice) : formatBRL(editCalculatedUnitPrice)}
+                        <span className="text-base font-bold text-[var(--color-text-primary)]">
+                        {formatCurrency(editCalculatedUnitPrice, editData.trade_currency)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
                       <span className="text-xs text-[var(--color-text-muted)]">Total da operacao</span>
                       <span className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                        {editIsUsd ? formatUSD(editNativeTotal) : formatBRL(editBrlTotal)}
+                        {formatCurrency(editNativeTotal, editData.trade_currency)}
                       </span>
                     </div>
-                    {editIsUsd && (
+                    {editIsForeign && (
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
                         <span className="text-xs text-[var(--color-text-muted)]">Equivalente em BRL</span>
                         <span className="text-sm font-semibold text-[var(--color-text-secondary)]">{formatBRL(editBrlTotal)}</span>
@@ -514,11 +522,11 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 font-medium">
                           <div className="flex items-center gap-2">
-                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} assetClass={p.asset_class} market={p.market} size={20} />
                             {p.ticker}
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_type}</td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_class || p.asset_type}</td>
                         <td className="px-3 py-1.5">
                           <input type="number" step="any" min="-999999999" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
@@ -526,11 +534,11 @@ export default function AportesPage() {
                           <div className="space-y-1.5">
                             <div className="relative">
                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-[var(--color-text-muted)]">
-                                {editIsUsd ? "US$" : "R$"}
+                                {editData.trade_currency}
                               </span>
                               <input type="number" step="0.01" value={editData.total_value} onChange={(e) => setEditData({ ...editData, total_value: e.target.value })} className="w-32 pl-8 pr-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                             </div>
-                            {editIsUsd && (
+                            {editIsForeign && (
                               <div className="relative">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-[var(--color-text-muted)]">FX</span>
                                 <input type="number" step="0.0001" value={editData.fx_rate} onChange={(e) => setEditData({ ...editData, fx_rate: e.target.value })} className="w-28 pl-7 pr-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-xs" />
@@ -540,16 +548,16 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)]">
                           <div className="leading-tight">
-                            <div>{editIsUsd ? formatUSD(editCalculatedUnitPrice) : formatBRL(editCalculatedUnitPrice)}</div>
-                            {editIsUsd && (
+                            <div>{formatCurrency(editCalculatedUnitPrice, editData.trade_currency)}</div>
+                            {editIsForeign && (
                               <div className="text-xs text-[var(--color-text-muted)]">{formatBRL(editCalculatedUnitPrice * (parseFloat(editData.fx_rate) || 0))}</div>
                             )}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 font-medium text-[var(--color-text-muted)] whitespace-nowrap">
                           <div className="leading-tight">
-                            <div>{editIsUsd ? formatUSD(editNativeTotal) : formatBRL(editBrlTotal)}</div>
-                            {editIsUsd && (
+                            <div>{formatCurrency(editNativeTotal, editData.trade_currency)}</div>
+                            {editIsForeign && (
                               <div className="text-xs text-[var(--color-text-muted)]">{formatBRL(editBrlTotal)}</div>
                             )}
                           </div>
@@ -566,16 +574,16 @@ export default function AportesPage() {
                         <td className="px-3 py-2.5">{new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}</td>
                         <td className="px-3 py-2.5 font-medium">
                           <div className="flex items-center gap-2">
-                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} size={20} />
+                            <TickerLogo ticker={p.ticker!} type={p.asset_type!} assetClass={p.asset_class} market={p.market} size={20} />
                             {p.ticker}
                             {isSale && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-negative)]/15 text-[var(--color-negative)]">VENDA</span>}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
                           <div className="flex items-center gap-1.5">
-                            {p.asset_type}
-                            {p.trade_currency === "USD" && (
-                              <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">USD</span>
+                            {p.asset_class || p.asset_type}
+                            {isForeignCurrency(p.trade_currency) && (
+                              <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">{p.trade_currency}</span>
                             )}
                           </div>
                         </td>

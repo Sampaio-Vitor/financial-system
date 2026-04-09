@@ -5,7 +5,7 @@ from sqlalchemy import ForeignKey, DateTime, Numeric, Integer, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-from app.models.asset import AssetType
+from app.models.asset import AllocationBucket
 
 
 class AllocationTarget(Base):
@@ -13,6 +13,6 @@ class AllocationTarget(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    asset_class: Mapped[AssetType] = mapped_column(Enum(AssetType), nullable=False)
+    allocation_bucket: Mapped[AllocationBucket] = mapped_column(Enum(AllocationBucket), nullable=False)
     target_pct: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -61,6 +61,8 @@ async def create_saved_plan(
                 gap=item.gap,
                 amount_to_invest=item.amount_to_invest,
                 amount_to_invest_usd=item.amount_to_invest_usd,
+                amount_to_invest_native=item.amount_to_invest_native,
+                quote_currency=item.quote_currency,
                 is_reserve=item.is_reserve,
             )
         )

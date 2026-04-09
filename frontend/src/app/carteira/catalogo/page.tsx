@@ -3,25 +3,75 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { Asset, AllocationTarget, AssetType, AssetRebalancingInfo } from "@/types";
+import {
+  AllocationBucket,
+  AllocationTarget,
+  Asset,
+  AssetRebalancingInfo,
+  AssetClass,
+  CurrencyCode,
+  Market,
+} from "@/types";
 import { formatBRL } from "@/lib/format";
 import AssetForm from "@/components/asset-form";
 import CsvImportModal from "@/components/csv-import-modal";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
 
-const CLASS_LABELS: Record<AssetType, string> = {
-  STOCK: "Stocks (EUA)",
-  ACAO: "Ações (Brasil)",
+const ALLOCATION_BUCKET_LABELS: Record<AllocationBucket, string> = {
+  STOCK_BR: "Ações (Brasil)",
+  STOCK_US: "Stocks",
+  ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
 };
 
-const ASSET_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF"];
+const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  STOCK: "Ação",
+  ETF: "ETF",
+  FII: "FII",
+  RF: "Renda Fixa",
+};
+
+const MARKET_LABELS: Record<Market, string> = {
+  BR: "Brasil",
+  US: "EUA",
+  EU: "Europa",
+  UK: "Reino Unido",
+};
+
+const CURRENCY_LABELS: Record<CurrencyCode, string> = {
+  BRL: "BRL",
+  USD: "USD",
+  EUR: "EUR",
+  GBP: "GBP",
+};
+
+function getBucket(asset: Asset): AllocationBucket {
+  if (!asset.asset_class || !asset.market) {
+    if (asset.type === "STOCK") return "STOCK_US";
+    if (asset.type === "ACAO") return "STOCK_BR";
+    if (asset.type === "FII") return "FII";
+    return "RF";
+  }
+  if (asset.asset_class === "STOCK" && asset.market === "BR") return "STOCK_BR";
+  if (asset.asset_class === "STOCK" && asset.market === "US") return "STOCK_US";
+  if (asset.asset_class === "ETF" && asset.market === "BR") return "STOCK_BR";
+  if (asset.asset_class === "ETF") return "ETF_INTL";
+  if (asset.asset_class === "FII") return "FII";
+  return "RF";
+}
+
+function getAssetLabel(asset: Asset): string {
+  if (!asset.asset_class || !asset.market || !asset.quote_currency) {
+    return asset.type;
+  }
+  return `${ASSET_CLASS_LABELS[asset.asset_class]} • ${MARKET_LABELS[asset.market]} • ${CURRENCY_LABELS[asset.quote_currency]}`;
+}
 
 type Tab = "ativos" | "metas";
-type FilterType = "ALL" | "PAUSED" | AssetType;
-type SortKey = "ticker" | "type" | "description" | "current_value" | "target_value" | "gap";
+type FilterType = "ALL" | "PAUSED" | AllocationBucket;
+type SortKey = "ticker" | "bucket" | "description" | "current_value" | "target_value" | "gap";
 type SortDir = "asc" | "desc";
 
 export default function CatalogoPage() {
@@ -48,9 +98,10 @@ function CatalogoContent() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [rebalancingInfo, setRebalancingInfo] = useState<Map<number, AssetRebalancingInfo>>(new Map());
 
-  const [editTargets, setEditTargets] = useState<Record<AssetType, string>>({
-    STOCK: "25",
-    ACAO: "25",
+  const [editTargets, setEditTargets] = useState<Record<AllocationBucket, string>>({
+    STOCK_BR: "25",
+    STOCK_US: "25",
+    ETF_INTL: "0",
     FII: "25",
     RF: "25",
   });
@@ -77,10 +128,10 @@ function CatalogoContent() {
       const data = await apiFetch<AllocationTarget[]>("/allocation-targets");
       const newTargets: Record<string, string> = {};
       for (const t of data) {
-        newTargets[t.asset_class] = (t.target_pct * 100).toString();
+        newTargets[t.allocation_bucket] = (t.target_pct * 100).toString();
       }
       if (Object.keys(newTargets).length > 0) {
-        setEditTargets(newTargets as Record<AssetType, string>);
+        setEditTargets((prev) => ({ ...prev, ...(newTargets as Record<AllocationBucket, string>) }));
       }
     } catch {}
   }, []);
@@ -97,7 +148,7 @@ function CatalogoContent() {
 
   const handleSaveTargets = async () => {
     const items = Object.entries(editTargets).map(([cls, pct]) => ({
-      asset_class: cls,
+      allocation_bucket: cls,
       target_pct: parseFloat(pct) / 100,
     }));
     const total = items.reduce((s, i) => s + i.target_pct, 0);
@@ -158,7 +209,7 @@ function CatalogoContent() {
       ? assets
       : filter === "PAUSED"
         ? assets.filter((a) => a.paused)
-        : assets.filter((a) => a.type === filter);
+        : assets.filter((a) => getBucket(a) === filter);
 
   const sortedAssets = [...filteredAssets].sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -168,8 +219,8 @@ function CatalogoContent() {
     switch (sortKey) {
       case "ticker":
         return dir * a.ticker.localeCompare(b.ticker);
-      case "type":
-        return dir * a.type.localeCompare(b.type);
+      case "bucket":
+        return dir * ALLOCATION_BUCKET_LABELS[getBucket(a)].localeCompare(ALLOCATION_BUCKET_LABELS[getBucket(b)]);
       case "description":
         return dir * (a.description || "").localeCompare(b.description || "");
       case "current_value":
@@ -183,10 +234,7 @@ function CatalogoContent() {
     }
   });
 
-  const targetTotal = Object.values(editTargets).reduce(
-    (s, v) => s + (parseFloat(v) || 0),
-    0
-  );
+  const targetTotal = Object.values(editTargets).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -252,17 +300,17 @@ function CatalogoContent() {
                 >
                   Todos
                 </button>
-                {ASSET_TYPES.map((type) => (
+                {(Object.keys(ALLOCATION_BUCKET_LABELS) as AllocationBucket[]).map((bucket) => (
                   <button
-                    key={type}
-                    onClick={() => setFilter(type)}
+                    key={bucket}
+                    onClick={() => setFilter(bucket)}
                     className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-                      filter === type
+                      filter === bucket
                         ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                         : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                     }`}
                   >
-                    {CLASS_LABELS[type]}
+                    {ALLOCATION_BUCKET_LABELS[bucket]}
                   </button>
                 ))}
                 <button
@@ -301,7 +349,13 @@ function CatalogoContent() {
                     key={a.id}
                     header={
                       <div className={`flex items-center gap-2 ${a.paused ? "opacity-40" : ""}`}>
-                        <TickerLogo ticker={a.ticker} type={a.type} size={22} />
+                        <TickerLogo
+                          ticker={a.ticker}
+                          type={a.type}
+                          assetClass={a.asset_class}
+                          market={a.market}
+                          size={22}
+                        />
                         <span className="font-medium text-sm text-[var(--color-text-primary)]">
                           {a.ticker}
                         </span>
@@ -314,7 +368,7 @@ function CatalogoContent() {
                     }
                     badge={
                       <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
-                        {CLASS_LABELS[a.type]}
+                        {ALLOCATION_BUCKET_LABELS[getBucket(a)]}
                       </span>
                     }
                     bodyItems={[
@@ -323,6 +377,8 @@ function CatalogoContent() {
                     ]}
                     expandedItems={[
                       { label: "Descricao", value: a.description || "\u2014" },
+                      { label: "Mercado", value: a.market ? MARKET_LABELS[a.market] : "\u2014" },
+                      { label: "Moeda", value: a.quote_currency ? CURRENCY_LABELS[a.quote_currency] : "\u2014" },
                       { label: "Gap", value: <span className={gapColor}>{info ? formatBRL(info.gap) : "\u2014"}</span> },
                     ]}
                     actions={
@@ -364,7 +420,7 @@ function CatalogoContent() {
                 <tr className="border-b border-[var(--color-border)]">
                   {([
                     { key: "ticker" as SortKey, label: "Ticker", align: "left", title: undefined as string | undefined },
-                    { key: "type" as SortKey, label: "Tipo", align: "left", title: undefined },
+                    { key: "bucket" as SortKey, label: "Bucket", align: "left", title: undefined },
                     { key: "description" as SortKey, label: "Descrição", align: "left", title: undefined },
                     { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." as string | undefined },
                     { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." as string | undefined },
@@ -423,6 +479,8 @@ function CatalogoContent() {
                           <TickerLogo
                             ticker={a.ticker}
                             type={a.type}
+                            assetClass={a.asset_class}
+                            market={a.market}
                             size={24}
                           />
                           <span className="font-medium">{a.ticker}</span>
@@ -434,9 +492,14 @@ function CatalogoContent() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
-                          {CLASS_LABELS[a.type]}
-                        </span>
+                        <div className="space-y-1">
+                          <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
+                            {ALLOCATION_BUCKET_LABELS[getBucket(a)]}
+                          </span>
+                          <div className="text-[11px] text-[var(--color-text-muted)]">
+                            {getAssetLabel(a)}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                         {a.description || "—"}
@@ -564,18 +627,21 @@ function CatalogoContent() {
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-4">
             Metas de Alocação
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            {ASSET_TYPES.map((cls) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+            {Object.keys(ALLOCATION_BUCKET_LABELS).map((cls) => (
               <div key={cls}>
                 <label className="block text-xs text-[var(--color-text-muted)] mb-1">
-                  {CLASS_LABELS[cls]}
+                  {ALLOCATION_BUCKET_LABELS[cls as AllocationBucket]}
                 </label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
-                    value={editTargets[cls] || "0"}
+                    value={editTargets[cls as AllocationBucket] || "0"}
                     onChange={(e) =>
-                      setEditTargets({ ...editTargets, [cls]: e.target.value })
+                      setEditTargets({
+                        ...editTargets,
+                        [cls as AllocationBucket]: e.target.value,
+                      })
                     }
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                   />

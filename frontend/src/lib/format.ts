@@ -18,6 +18,22 @@ export function formatUSD(value: number | null | undefined): string {
   }).format(num);
 }
 
+export function formatCurrency(
+  value: number | null | undefined,
+  currency: "BRL" | "USD" | "EUR" | "GBP"
+): string {
+  if (currency === "BRL") return formatBRL(value);
+  if (currency === "USD") return formatUSD(value);
+  if (value == null) return "—";
+  const num = Number(value);
+  if (isNaN(num)) return "—";
+  const locale = currency === "EUR" ? "de-DE" : "en-GB";
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+  }).format(num);
+}
+
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return "—";
   const num = Number(value);

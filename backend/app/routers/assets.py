@@ -10,13 +10,23 @@ from decimal import Decimal
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.asset import Asset, AssetType
+from app.models.asset import (
+    AllocationBucket,
+    Asset,
+    AssetClass,
+    AssetType,
+    CurrencyCode,
+    Market,
+    asset_bucket_for,
+    legacy_type_for,
+    resolve_asset_metadata,
+)
 from app.models.allocation_target import AllocationTarget
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user_asset import UserAsset
 from app.models.user import User
-from app.services.portfolio_service import get_class_values
+from app.services.portfolio_service import get_bucket_values
 from app.schemas.asset import (
     AssetCreate,
     AssetUpdate,
@@ -32,17 +42,91 @@ from app.schemas.asset import (
 router = APIRouter()
 
 
+def _validate_asset_shape(
+    asset_class: AssetClass,
+    market: Market,
+    quote_currency: CurrencyCode,
+) -> None:
+    valid = {
+        (AssetClass.STOCK, Market.BR, CurrencyCode.BRL),
+        (AssetClass.STOCK, Market.US, CurrencyCode.USD),
+        (AssetClass.ETF, Market.BR, CurrencyCode.BRL),
+        (AssetClass.ETF, Market.US, CurrencyCode.USD),
+        (AssetClass.ETF, Market.EU, CurrencyCode.EUR),
+        (AssetClass.ETF, Market.UK, CurrencyCode.GBP),
+        (AssetClass.FII, Market.BR, CurrencyCode.BRL),
+        (AssetClass.RF, Market.BR, CurrencyCode.BRL),
+    }
+    if (asset_class, market, quote_currency) not in valid:
+        raise HTTPException(
+            status_code=422,
+            detail="Combinacao invalida de asset_class, market e quote_currency",
+        )
+
+
+def _resolve_payload_classification(data: AssetCreate | AssetUpdate) -> tuple[AssetType, AssetClass | None, Market | None, CurrencyCode | None]:
+    if data.asset_class is not None or data.market is not None or data.quote_currency is not None:
+        if data.asset_class is None or data.market is None or data.quote_currency is None:
+            raise HTTPException(
+                status_code=422,
+                detail="asset_class, market e quote_currency devem ser informados juntos",
+            )
+        _validate_asset_shape(data.asset_class, data.market, data.quote_currency)
+        return (
+            legacy_type_for(data.asset_class, data.market),
+            data.asset_class,
+            data.market,
+            data.quote_currency,
+        )
+
+    if isinstance(data, AssetCreate) and data.type is not None:
+        asset_class, market, quote_currency = resolve_asset_metadata(
+            legacy_type=data.type,
+            asset_class=None,
+            market=None,
+            quote_currency=None,
+        )
+        return data.type, asset_class, market, quote_currency
+
+    return None, None, None, None
+
+
 def _to_response(asset: Asset, paused: bool) -> dict:
     return {
         "id": asset.id,
         "ticker": asset.ticker,
         "type": asset.type,
+        "asset_class": asset.asset_class,
+        "market": asset.market,
+        "quote_currency": asset.quote_currency,
         "description": asset.description,
         "paused": paused,
+        "price_symbol": asset.price_symbol,
         "current_price": asset.current_price,
+        "current_price_native": asset.current_price_native,
+        "fx_rate_to_brl": asset.fx_rate_to_brl,
         "price_updated_at": asset.price_updated_at,
         "created_at": asset.created_at,
     }
+
+
+def _asset_metadata_matches(
+    asset: Asset,
+    asset_class: AssetClass | None,
+    market: Market | None,
+    quote_currency: CurrencyCode | None,
+) -> bool:
+    existing_class, existing_market, existing_currency = resolve_asset_metadata(
+        legacy_type=asset.type,
+        asset_class=asset.asset_class,
+        market=asset.market,
+        quote_currency=asset.quote_currency,
+    )
+    return (
+        existing_class == asset_class
+        and existing_market == market
+        and existing_currency == quote_currency
+    )
 
 
 @router.get("", response_model=list[AssetResponse])
@@ -69,22 +153,38 @@ async def bulk_create_assets(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Normalize tickers
-    items = [(item.ticker.strip().upper(), item.type) for item in data.assets]
+    normalized_items = []
+    for item in data.assets:
+        ticker = item.ticker.strip().upper()
+        asset_type, asset_class, market, quote_currency = _resolve_payload_classification(item)
+        normalized_items.append(
+            (
+                ticker,
+                asset_type,
+                asset_class,
+                market,
+                quote_currency,
+                item.price_symbol,
+            )
+        )
 
     # Deduplicate within request (keep first occurrence)
     seen: set[str] = set()
-    unique_items: list[tuple[str, AssetType]] = []
+    unique_items: list[
+        tuple[str, AssetType, AssetClass | None, Market | None, CurrencyCode | None, str | None]
+    ] = []
     intra_dupes: list[str] = []
-    for ticker, asset_type in items:
+    for ticker, asset_type, asset_class, market, quote_currency, price_symbol in normalized_items:
         if ticker in seen:
             intra_dupes.append(ticker)
         else:
             seen.add(ticker)
-            unique_items.append((ticker, asset_type))
+            unique_items.append(
+                (ticker, asset_type, asset_class, market, quote_currency, price_symbol)
+            )
 
     # Check existing global assets in one query
-    tickers = [t for t, _ in unique_items]
+    tickers = [t for t, *_ in unique_items]
     result = await db.execute(select(Asset).where(Asset.ticker.in_(tickers)))
     existing_assets = {a.ticker: a for a in result.scalars().all()}
 
@@ -105,14 +205,28 @@ async def bulk_create_assets(
     linked: list[BulkAssetLinked] = []
     skipped: list[BulkAssetSkipped] = []
 
-    for ticker, asset_type in unique_items:
+    for ticker, asset_type, asset_class, market, quote_currency, price_symbol in unique_items:
         if ticker in existing_assets:
             asset = existing_assets[ticker]
-            if asset.type != asset_type:
+            existing_class, existing_market, existing_currency = resolve_asset_metadata(
+                legacy_type=asset.type,
+                asset_class=asset.asset_class,
+                market=asset.market,
+                quote_currency=asset.quote_currency,
+            )
+            if (
+                asset.type != asset_type
+                or existing_class != asset_class
+                or existing_market != market
+                or existing_currency != quote_currency
+            ):
                 skipped.append(
                     BulkAssetSkipped(
                         ticker=ticker,
-                        reason=f"Já existe no catálogo como {asset.type}",
+                        reason=(
+                            f"Já existe no catálogo como "
+                            f"{existing_class.value}/{existing_market.value}/{existing_currency.value}"
+                        ),
                     )
                 )
                 continue
@@ -122,7 +236,15 @@ async def bulk_create_assets(
                 # Global exists, create user link
                 db.add(UserAsset(user_id=user.id, asset_id=asset.id))
                 linked_asset_ids.add(asset.id)
-                linked.append(BulkAssetLinked(ticker=ticker, type=asset.type))
+                linked.append(
+                    BulkAssetLinked(
+                        ticker=ticker,
+                        type=asset.type,
+                        asset_class=asset.asset_class,
+                        market=asset.market,
+                        quote_currency=asset.quote_currency,
+                    )
+                )
         else:
             if not user.is_admin:
                 skipped.append(
@@ -133,11 +255,27 @@ async def bulk_create_assets(
                 )
                 continue
             # Create new global asset + user link
-            asset = Asset(ticker=ticker, type=asset_type, description="")
+            asset = Asset(
+                ticker=ticker,
+                type=asset_type,
+                asset_class=asset_class,
+                market=market,
+                quote_currency=quote_currency,
+                price_symbol=price_symbol,
+                description="",
+            )
             db.add(asset)
             await db.flush()  # get asset.id
             db.add(UserAsset(user_id=user.id, asset_id=asset.id))
-            created.append(BulkAssetCreated(ticker=ticker, type=asset_type))
+            created.append(
+                BulkAssetCreated(
+                    ticker=ticker,
+                    type=asset_type,
+                    asset_class=asset_class,
+                    market=market,
+                    quote_currency=quote_currency,
+                )
+            )
 
     for ticker in intra_dupes:
         skipped.append(BulkAssetSkipped(ticker=ticker, reason="Duplicado no CSV"))
@@ -156,20 +294,28 @@ async def get_rebalancing_info(
     targets_result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
     )
-    targets = {t.asset_class: t.target_pct for t in targets_result.scalars().all()}
+    targets = {t.allocation_bucket: t.target_pct for t in targets_result.scalars().all()}
 
     # Current investable total
-    class_values = await get_class_values(db, user)
+    class_values = await get_bucket_values(db, user)
     investable_total = sum(class_values.values())
 
-    # Count active (non-paused) assets per class
-    count_result = await db.execute(
-        select(Asset.type, func.count(Asset.id))
+    # Count active (non-paused) assets per bucket
+    all_user_assets = await db.execute(
+        select(Asset)
         .join(UserAsset, UserAsset.asset_id == Asset.id)
         .where(UserAsset.user_id == user.id, UserAsset.paused.is_(False))
-        .group_by(Asset.type)
     )
-    active_counts: dict[AssetType, int] = dict(count_result.all())
+    active_counts_by_bucket: dict[AllocationBucket, int] = {}
+    for asset_row in all_user_assets.scalars().all():
+        ac, mk, _qc = resolve_asset_metadata(
+            legacy_type=asset_row.type,
+            asset_class=asset_row.asset_class,
+            market=asset_row.market,
+            quote_currency=asset_row.quote_currency,
+        )
+        bucket = asset_bucket_for(ac, mk)
+        active_counts_by_bucket[bucket] = active_counts_by_bucket.get(bucket, 0) + 1
 
     # Get per-asset market values (variable income)
     positions = await db.execute(
@@ -199,8 +345,15 @@ async def get_rebalancing_info(
     for asset, paused in all_assets.all():
         if paused:
             continue
-        n_active = active_counts.get(asset.type, 1)
-        target_pct = targets.get(asset.type, Decimal("0"))
+        asset_class, market, quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        bucket = asset_bucket_for(asset_class, market)
+        n_active = active_counts_by_bucket.get(bucket, 1)
+        target_pct = targets.get(bucket, Decimal("0"))
         target_value = investable_total * target_pct / n_active
         current_value = asset_values.get(asset.id, Decimal("0"))
         gap = target_value - current_value
@@ -241,16 +394,22 @@ async def create_asset(
     user: User = Depends(get_current_user),
 ):
     ticker = data.ticker.strip().upper()
+    asset_type, asset_class, market, quote_currency = _resolve_payload_classification(data)
 
     # Check if global asset exists
     result = await db.execute(select(Asset).where(Asset.ticker == ticker))
     asset = result.scalar_one_or_none()
 
     if asset:
-        if asset.type != data.type:
+        if asset.type != asset_type or not _asset_metadata_matches(
+            asset,
+            asset_class,
+            market,
+            quote_currency,
+        ):
             raise HTTPException(
                 status_code=409,
-                detail=f"Ativo já existe no catálogo como {asset.type}",
+                detail="Ativo já existe no catálogo com outra classificação",
             )
         # Check if user already has a link
         link_result = await db.execute(
@@ -267,7 +426,15 @@ async def create_asset(
                 detail="Apenas administradores podem cadastrar novos ativos globais",
             )
         # Create new global asset
-        asset = Asset(ticker=ticker, type=data.type, description=data.description)
+        asset = Asset(
+            ticker=ticker,
+            type=asset_type,
+            asset_class=asset_class,
+            market=market,
+            quote_currency=quote_currency,
+            price_symbol=data.price_symbol,
+            description=data.description,
+        )
         db.add(asset)
         try:
             await db.flush()
@@ -305,7 +472,14 @@ async def update_asset(
     asset, user_asset = row
 
     # Update global fields
-    wants_global_update = data.ticker is not None or data.description is not None
+    wants_global_update = (
+        data.ticker is not None
+        or data.description is not None
+        or data.asset_class is not None
+        or data.market is not None
+        or data.quote_currency is not None
+        or data.price_symbol is not None
+    )
     if wants_global_update and not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -316,6 +490,18 @@ async def update_asset(
         asset.ticker = data.ticker.upper()
     if data.description is not None:
         asset.description = data.description
+    if (
+        data.asset_class is not None
+        or data.market is not None
+        or data.quote_currency is not None
+    ):
+        asset_type, asset_class, market, quote_currency = _resolve_payload_classification(data)
+        asset.type = asset_type
+        asset.asset_class = asset_class
+        asset.market = market
+        asset.quote_currency = quote_currency
+    if data.price_symbol is not None:
+        asset.price_symbol = data.price_symbol
 
     # Update per-user field
     if data.paused is not None:
@@ -394,8 +580,15 @@ async def get_asset_price_history(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    # Build yfinance ticker
-    if asset.type in (AssetType.ACAO, AssetType.FII):
+    asset_class, market, quote_currency = resolve_asset_metadata(
+        legacy_type=asset.type,
+        asset_class=asset.asset_class,
+        market=asset.market,
+        quote_currency=asset.quote_currency,
+    )
+    if asset.price_symbol:
+        yf_ticker = asset.price_symbol
+    elif market == Market.BR and asset_class in (AssetClass.STOCK, AssetClass.ETF, AssetClass.FII):
         yf_ticker = f"{asset.ticker}.SA"
     else:
         yf_ticker = asset.ticker
@@ -412,12 +605,32 @@ async def get_asset_price_history(
     if data.empty:
         return []
 
-    # Convert USD prices to BRL for US stocks
-    usd_brl_rate = None
-    if asset.type == AssetType.STOCK:
-        from app.services.price_service import _get_system_setting
-        rate_str = await _get_system_setting(db, "usd_brl_rate")
-        usd_brl_rate = float(rate_str) if rate_str else None
+    fx_rates_by_date: dict[object, float] = {}
+    if quote_currency != CurrencyCode.BRL:
+        from app.services.price_service import FX_TICKERS, _get_system_setting
+
+        rate_str = await _get_system_setting(db, f"{quote_currency.value.lower()}_brl_rate")
+        fallback_fx_rate = float(rate_str) if rate_str else None
+        try:
+            fx_data = await loop.run_in_executor(
+                None,
+                lambda: yf.download(
+                    FX_TICKERS[quote_currency],
+                    period=f"{days}d",
+                    progress=False,
+                ),
+            )
+            if not fx_data.empty:
+                fx_close_series = fx_data["Close"][FX_TICKERS[quote_currency]]
+                fx_rates_by_date = {
+                    idx.date(): float(val)
+                    for idx, val in fx_close_series.items()
+                    if float(val) > 0
+                }
+        except Exception:
+            fx_rates_by_date = {}
+    else:
+        fallback_fx_rate = 1.0
 
     points = []
     try:
@@ -426,8 +639,11 @@ async def get_asset_price_history(
             price = float(val)
             if price <= 0:
                 continue
-            if usd_brl_rate:
-                price *= usd_brl_rate
+            if quote_currency != CurrencyCode.BRL:
+                fx_rate = fx_rates_by_date.get(idx.date(), fallback_fx_rate)
+                if not fx_rate:
+                    continue
+                price *= fx_rate
             date_str = idx.strftime("%Y-%m-%d")
             points.append({"date": date_str, "price": round(price, 2)})
     except Exception:
