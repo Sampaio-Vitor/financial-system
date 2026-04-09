@@ -23,6 +23,7 @@ import {
   LineChart,
   RefreshCcw,
   Dog,
+  Target,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -83,6 +84,11 @@ export const navItems: NavItem[] = [
       { label: "Renda Fixa", href: "/carteira/renda-fixa", icon: PiggyBank },
       { label: "Reserva", href: "/carteira/reserva", icon: ShieldCheck },
     ],
+  },
+  {
+    label: "Aposentadoria",
+    href: "/carteira/aposentadoria",
+    icon: Target,
   },
   {
     label: "Aportes em RV",
