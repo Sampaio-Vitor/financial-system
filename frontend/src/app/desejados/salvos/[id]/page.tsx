@@ -556,7 +556,7 @@ export default function SavedPlanDetailPage() {
                   Intervalo: {topRulerLabel ?? "—"} até {bottomRulerLabel ?? "—"}
                 </p>
                 <p>Total no intervalo: {formatBRL(rulerSumBrl)}</p>
-                <p>Nativo no intervalo: {formatNativeTotals(rulerNativeTotals)}</p>
+                <p>Moeda do ativo no intervalo: {formatNativeTotals(rulerNativeTotals)}</p>
               </div>
             )}
             {savingChecks && (
@@ -616,7 +616,7 @@ export default function SavedPlanDetailPage() {
                     Aportar (R$)
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Aportar (Nativo)
+                    Aportar (Moeda do Ativo)
                   </th>
                 </tr>
               </thead>
