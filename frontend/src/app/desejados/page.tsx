@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { AllocationBucket, AllocationTarget, CurrencyCode, RebalancingResponse } from "@/types";
 import { formatBRL, formatCurrency, formatPercent } from "@/lib/format";
-import { Calculator, Info, ShieldCheck, Save, FolderOpen } from "lucide-react";
+import { Calculator, Info, ShieldCheck, Save, FolderOpen, FileText } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
+import CalculationMemoryModal from "@/components/calculation-memory-modal";
 import Link from "next/link";
 
 const CLASS_COLORS: Record<AllocationBucket, string> = {
@@ -34,11 +35,13 @@ export default function PlanejadorAportePage() {
   );
 
   const [saving, setSaving] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   const hasTargets = targets.length > 0;
   const reserveGap = Number(rebalancing?.reserva_gap ?? 0);
   const contributionValue = Number(rebalancing?.contribution ?? 0);
-  const reserveAllocation = Math.min(reserveGap, contributionValue);
+  const reserveAllocation =
+    reserveGap > 0 ? Math.min(reserveGap, contributionValue) : 0;
   const reserveConsumesAllContribution = reserveGap >= contributionValue;
   const reserveShortfallAfterContribution = Math.max(
     reserveGap - contributionValue,
@@ -149,6 +152,7 @@ export default function PlanejadorAportePage() {
         `/rebalancing?contribution=${raw}&top_n=${topN}`
       );
       setRebalancing(data);
+      setMemoryOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao calcular");
     }
@@ -772,7 +776,13 @@ export default function PlanejadorAportePage() {
             )}
 
             {/* Save button */}
-            <div className="flex justify-end pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <button
+                onClick={() => setMemoryOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors"
+              >
+                <FileText size={16} /> Memória de Cálculo
+              </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
@@ -784,6 +794,15 @@ export default function PlanejadorAportePage() {
           </div>
         )}
       </div>
+
+      <CalculationMemoryModal
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        rebalancing={rebalancing}
+        reserveAllocation={reserveAllocation}
+        remainingForInvestments={remainingForInvestments}
+        topN={Number(topN) || 0}
+      />
     </div>
   );
 }
