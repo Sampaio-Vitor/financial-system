@@ -82,9 +82,16 @@ export default function PlanejadorAportePage() {
   };
   const plannedNativeTotals = rebalancing?.asset_plan.reduce(
     (acc, asset) => {
-      if (asset.quote_currency === "BRL" || asset.amount_to_invest_native == null) return acc;
-      acc[asset.quote_currency] =
-        (acc[asset.quote_currency] ?? 0) + Number(asset.amount_to_invest_native);
+      const currency = asset.quote_currency ?? "BRL";
+      const nativeAmount =
+        currency === "BRL"
+          ? Number(asset.amount_to_invest)
+          : asset.amount_to_invest_native != null
+            ? Number(asset.amount_to_invest_native)
+            : 0;
+      if (nativeAmount > 0) {
+        acc[currency] = (acc[currency] ?? 0) + nativeAmount;
+      }
       return acc;
     },
     {} as Partial<Record<CurrencyCode, number>>
@@ -489,43 +496,26 @@ export default function PlanejadorAportePage() {
                 rebalancing.reserva_gap > 0)) && (
               <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-main)]/30 p-4 md:p-5">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                      Plano por Ativo (Top {topN})
-                    </h3>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Projeção do valor de cada posição após seguir o aporte
-                      sugerido.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-xs text-[var(--color-text-muted)] md:grid-cols-3">
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total em BRL</span>
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {formatBRL(
-                          Number(rebalancing.total_planned || 0) +
-                            (rebalancing.reserva_gap != null && reserveGap > 0
-                              ? reserveAllocation
-                              : 0)
-                        )}
-                      </span>
-                    </div>
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total na Moeda do Ativo</span>
-                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {Object.entries(plannedNativeTotals).length > 0
-                          ? Object.entries(plannedNativeTotals)
-                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
-                              .join(" · ")
-                          : "\u2014"}
-                      </span>
-                    </div>
-                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Reserva no Plano</span>
-                      <span className="text-sm font-semibold text-cyan-400">
-                        {formatBRL(reserveAllocation)}
-                      </span>
-                    </div>
+                  <h3 className="text-sm font-semibold text-[var(--color-text-secondary)]">
+                    Plano por Ativo (Top {topN})
+                  </h3>
+                  <div className="flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
+                    {Object.entries(plannedNativeTotals).map(([currency, total]) => (
+                      <div key={currency} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
+                        <span className="block">Aportar em {currency}</span>
+                        <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                          {formatCurrency(total, currency as CurrencyCode)}
+                        </span>
+                      </div>
+                    ))}
+                    {reserveAllocation > 0 && (
+                      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
+                        <span className="block">Reserva no Plano</span>
+                        <span className="text-sm font-semibold text-cyan-400">
+                          {formatBRL(reserveAllocation)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -653,13 +643,7 @@ export default function PlanejadorAportePage() {
                               : 0)
                         )}
                       </td>
-                      <td className="px-3 py-2">
-                        {Object.entries(plannedNativeTotals).length > 0
-                          ? Object.entries(plannedNativeTotals)
-                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
-                              .join(" · ")
-                          : "\u2014"}
-                      </td>
+                      <td className="px-3 py-2" />
                     </tr>
                   </tfoot>
                 </table>
