@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
-import { CurrencyCode, SavedPlan, ClassRebalancing } from "@/types";
-import { formatBRL, formatCurrency, formatPercent } from "@/lib/format";
+import { CurrencyCode, SavedPlan } from "@/types";
+import { formatBRL, formatCurrency } from "@/lib/format";
 import {
   ChevronLeft,
   ShieldCheck,
@@ -314,15 +314,15 @@ export default function SavedPlanDetailPage() {
     const startIndex = Math.min(topRulerIndex, bottomRulerIndex);
     const endIndex = Math.max(topRulerIndex, bottomRulerIndex);
 
-    if (endIndex < startIndex) return;
+    if (startIndex === endIndex) return;
 
     rowByIdRefs.current.forEach((row, itemId) => {
       flipPositions.current.set(itemId, row.getBoundingClientRect().top);
     });
     flipPending.current = true;
 
-    const items = [...plan.items];
-    const sortedSlice = items
+    const nextItems = [...plan.items];
+    const sortedSlice = nextItems
       .slice(startIndex, endIndex + 1)
       .sort((a, b) => {
         const classCompare = getClassLabel(a.asset_class, a.is_reserve).localeCompare(
@@ -333,8 +333,8 @@ export default function SavedPlanDetailPage() {
         return a.ticker.localeCompare(b.ticker, "pt-BR");
       });
 
-    items.splice(startIndex, sortedSlice.length, ...sortedSlice);
-    setPlan({ ...plan, items });
+    nextItems.splice(startIndex, sortedSlice.length, ...sortedSlice);
+    setPlan({ ...plan, items: nextItems });
   };
 
   if (loading) {
@@ -360,14 +360,6 @@ export default function SavedPlanDetailPage() {
       </div>
     );
   }
-
-  const classBreakdown: ClassRebalancing[] = (() => {
-    try {
-      return JSON.parse(plan.class_breakdown_json);
-    } catch {
-      return [];
-    }
-  })();
 
   const checkedCount = plan.items.filter((i) => i.checked).length;
   const totalItems = plan.items.length;
@@ -424,14 +416,6 @@ export default function SavedPlanDetailPage() {
           .filter((item) => !item.checked);
   const rulerSumBrl = sumBrlOnly(selectedItems);
   const rulerNativeTotals = sumNativeTotals(selectedItems);
-  const topRulerLabel =
-    topRulerIndex == null ? null : plan.items[topRulerIndex]?.is_reserve
-      ? "Reserva"
-      : plan.items[topRulerIndex]?.ticker;
-  const bottomRulerLabel =
-    bottomRulerIndex == null ? null : plan.items[bottomRulerIndex]?.is_reserve
-      ? "Reserva"
-      : plan.items[bottomRulerIndex]?.ticker;
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -740,18 +724,15 @@ export default function SavedPlanDetailPage() {
               >
                 <MoveVertical size={16} />
               </button>
-              <div className="absolute right-2 -top-5 flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-slate-950/95 pl-3 pr-1.5 py-1 text-xs text-cyan-100 shadow-lg">
-                <span>Início: {topRulerLabel ?? "—"}</span>
-                <button
-                  type="button"
-                  onClick={sortSelectedRangeByClass}
-                  className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-cyan-400/20 text-cyan-300 hover:text-cyan-100"
-                  aria-label="Ordenar seleção por classe"
-                  title="Ordenar por classe"
-                >
-                  <ArrowUpDown size={13} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={sortSelectedRangeByClass}
+                className="pointer-events-auto absolute right-2 -top-4 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/50 bg-slate-950/90 text-cyan-300 shadow-lg transition-colors hover:bg-slate-900 hover:text-cyan-100"
+                aria-label="Ordenar seleção por classe"
+                title="Ordenar por classe"
+              >
+                <ArrowUpDown size={14} />
+              </button>
             </div>
           )}
 
@@ -772,7 +753,7 @@ export default function SavedPlanDetailPage() {
                 <MoveVertical size={16} />
               </button>
               <div className="absolute right-2 -top-5 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg">
-                Fim: {bottomRulerLabel ?? "—"} • {formatBRL(rulerSumBrl)}
+                {formatBRL(rulerSumBrl)}
                 {formatNativeTotals(rulerNativeTotals) !== "—"
                   ? ` • ${formatNativeTotals(rulerNativeTotals)}`
                   : ""}
