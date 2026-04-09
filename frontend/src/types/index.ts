@@ -477,4 +477,5 @@ export interface SavedPlanSummary {
   created_at: string;
   items_count: number;
   checked_count: number;
+  checked_amount: number;
 }
