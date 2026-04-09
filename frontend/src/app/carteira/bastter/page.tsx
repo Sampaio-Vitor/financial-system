@@ -18,8 +18,10 @@ import {
 } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 import { apiFetch } from "@/lib/api";
-import { formatBRL, formatQuantity, formatUSD } from "@/lib/format";
+import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import type {
+  AssetClass,
+  Market,
   AssetType,
   BastterSyncBatchResponse,
   BastterSyncItemResult,
@@ -33,6 +35,18 @@ const TYPE_LABELS: Record<AssetType, string> = {
   FII: "FIIs",
   STOCK: "Stocks",
   RF: "Renda Fixa",
+};
+const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  STOCK: "Acoes",
+  ETF: "ETFs",
+  FII: "FIIs",
+  RF: "Renda Fixa",
+};
+const MARKET_LABELS: Record<Market, string> = {
+  BR: "Brasil",
+  US: "EUA",
+  EU: "Europa",
+  UK: "Reino Unido",
 };
 
 type TypeFilter = "" | AssetType;
@@ -174,6 +188,18 @@ export default function BastterSyncPage() {
 
       setSummary(response);
       setResults(response.results);
+      setItems((current) =>
+        current.map((item) => {
+          const syncedResult = response.results.find(
+            (result) => result.purchase_id === item.id && !!result.bastter_synced_at
+          );
+          if (!syncedResult) return item;
+          return {
+            ...item,
+            bastter_synced_at: syncedResult.bastter_synced_at,
+          };
+        })
+      );
       setCookie("");
       setSelectedIds([]);
       toast.success(
@@ -216,15 +242,25 @@ export default function BastterSyncPage() {
   );
 
   const renderTotal = (item: BastterSyncPreviewItem) => {
-    if (item.asset_type === "STOCK") {
+    if (item.trade_currency !== "BRL") {
       return (
         <>
-          <span>{formatUSD(item.total_value_native)}</span>
+          <span>{formatCurrency(item.total_value_native, item.trade_currency)}</span>
           <span className="text-[10px] text-[var(--color-text-muted)] ml-1">({formatBRL(item.total_value)})</span>
         </>
       );
     }
     return formatBRL(item.total_value);
+  };
+
+  const getDisplayTypeLabel = (assetType: AssetType, assetClass?: AssetClass | null) => {
+    if (assetClass) return ASSET_CLASS_LABELS[assetClass];
+    return TYPE_LABELS[assetType];
+  };
+
+  const getMarketLabel = (market?: Market | null) => {
+    if (!market) return null;
+    return MARKET_LABELS[market];
   };
 
   return (
@@ -452,11 +488,22 @@ export default function BastterSyncPage() {
                           readOnly
                           className="pointer-events-none shrink-0"
                         />
-                        <TickerLogo ticker={item.ticker} type={item.asset_type} size={20} />
+                        <TickerLogo
+                          ticker={item.ticker}
+                          type={item.asset_type}
+                          assetClass={item.asset_class}
+                          market={item.market}
+                          size={20}
+                        />
                         <span className="font-medium text-sm">{item.ticker}</span>
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
-                          {TYPE_LABELS[item.asset_type]}
+                          {getDisplayTypeLabel(item.asset_type, item.asset_class)}
                         </span>
+                        {getMarketLabel(item.market) && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                            {getMarketLabel(item.market)}
+                          </span>
+                        )}
                       </div>
                       {synced && (
                         <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
@@ -557,14 +604,25 @@ export default function BastterSyncPage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
-                            <TickerLogo ticker={item.ticker} type={item.asset_type} size={24} />
+                            <TickerLogo
+                              ticker={item.ticker}
+                              type={item.asset_type}
+                              assetClass={item.asset_class}
+                              market={item.market}
+                              size={24}
+                            />
                             <span className="font-medium text-[var(--color-text-primary)]">{item.ticker}</span>
                           </div>
                         </td>
                         <td className="px-3 py-2.5">
                           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-muted)]">
-                            {TYPE_LABELS[item.asset_type]}
+                            {getDisplayTypeLabel(item.asset_type, item.asset_class)}
                           </span>
+                          {getMarketLabel(item.market) && (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                              {getMarketLabel(item.market)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
                           {new Date(`${item.purchase_date}T00:00:00`).toLocaleDateString("pt-BR")}
@@ -661,7 +719,14 @@ export default function BastterSyncPage() {
                       )}
                       <div>
                         <span className="font-medium text-sm text-[var(--color-text-primary)]">{result.ticker}</span>
-                        <span className="text-xs text-[var(--color-text-muted)] ml-2">{result.local_type}</span>
+                        <span className="text-xs text-[var(--color-text-muted)] ml-2">
+                          {getDisplayTypeLabel(result.local_type as AssetType, result.asset_class)}
+                        </span>
+                        {getMarketLabel(result.market) && (
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            · {getMarketLabel(result.market)}
+                          </span>
+                        )}
                       </div>
                       {result.error && (
                         <span className="text-xs text-rose-500 hidden md:inline">{result.error}</span>
