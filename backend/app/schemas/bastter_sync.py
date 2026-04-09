@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator
 
+from app.models.asset import AssetClass, Market
+
 
 class BastterSyncRequest(BaseModel):
     purchase_ids: list[int]
@@ -30,6 +32,8 @@ class BastterSyncItemResult(BaseModel):
     purchase_id: int
     ticker: str
     local_type: str
+    asset_class: AssetClass | None = None
+    market: Market | None = None
     bastter_tipo: str
     ativo_id: int | None = None
     endpoint: str | None = None
@@ -52,6 +56,8 @@ class BastterSyncPreviewItem(BaseModel):
     id: int
     ticker: str
     asset_type: str
+    asset_class: AssetClass | None = None
+    market: Market | None = None
     purchase_date: str
     quantity: Decimal
     total_value: Decimal

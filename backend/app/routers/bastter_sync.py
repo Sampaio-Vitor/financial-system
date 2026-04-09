@@ -105,6 +105,8 @@ async def list_syncable_purchases(
                 id=item.id,
                 ticker=item.asset.ticker if item.asset else "",
                 asset_type=item.asset.type.value if item.asset else "",
+                asset_class=item.asset.asset_class if item.asset else None,
+                market=item.asset.market if item.asset else None,
                 purchase_date=item.purchase_date.isoformat(),
                 quantity=item.quantity,
                 total_value=item.total_value,
@@ -180,7 +182,7 @@ async def sync_bastter_purchases(
         try:
             if purchase.bastter_synced_at is not None:
                 raise BastterSyncError("Movimentacao ja sincronizada anteriormente com o Bastter")
-            bastter_tipo = SUPPORTED_TYPES[purchase.asset.type]
+            bastter_tipo = service.resolve_bastter_tipo(purchase)
             ativo_id = service.resolve_ativo_id(
                 catalog_items,
                 ticker=ticker,
@@ -195,6 +197,7 @@ async def sync_bastter_purchases(
                 body.cookie,
                 endpoint=endpoint,
                 payload=result_payload,
+                bastter_tipo=bastter_tipo,
             )
             success = bool(bastter_response.get("Return"))
             if success:
@@ -212,6 +215,8 @@ async def sync_bastter_purchases(
                 purchase_id=purchase.id,
                 ticker=ticker,
                 local_type=local_type,
+                asset_class=purchase.asset.asset_class if purchase.asset else None,
+                market=purchase.asset.market if purchase.asset else None,
                 bastter_tipo=bastter_tipo or local_type.lower(),
                 ativo_id=ativo_id,
                 endpoint=endpoint_name,

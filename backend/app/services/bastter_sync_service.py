@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.models.asset import AssetType
+from app.models.asset import AssetType, Market, resolve_asset_metadata
 from app.models.purchase import Purchase
 
 BASTTER_BASE_URL = "https://bastter.com"
@@ -25,6 +25,10 @@ SUPPORTED_TYPES: dict[AssetType, str] = {
     AssetType.ACAO: "acao",
     AssetType.FII: "fii",
     AssetType.STOCK: "stock",
+}
+
+BASTTER_REFERERS: dict[str, str] = {
+    "europa": f"{BASTTER_BASE_URL}/bs2/ativos/europa",
 }
 
 
@@ -48,13 +52,13 @@ class BastterSyncService:
     def __init__(self) -> None:
         self._timeout = httpx.Timeout(30.0)
 
-    def _headers(self, cookie: str) -> dict[str, str]:
+    def _headers(self, cookie: str, *, referer: str | None = None) -> dict[str, str]:
         return {
             "accept": "application/json, text/javascript, */*; q=0.01",
             "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
             "content-type": "application/json; charset=UTF-8",
             "origin": BASTTER_BASE_URL,
-            "referer": f"{BASTTER_BASE_URL}/bs2/ativos/consolidado",
+            "referer": referer or f"{BASTTER_BASE_URL}/bs2/ativos/consolidado",
             "priority": "u=1, i",
             "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
             "sec-ch-ua-mobile": "?0",
@@ -138,12 +142,16 @@ class BastterSyncService:
         *,
         endpoint: str,
         payload: dict[str, Any],
+        bastter_tipo: str | None = None,
     ) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
                     endpoint,
-                    headers=self._headers(cookie),
+                    headers=self._headers(
+                        cookie,
+                        referer=BASTTER_REFERERS.get(bastter_tipo or "", None),
+                    ),
                     json=payload,
                 )
         except httpx.HTTPError as exc:
@@ -164,8 +172,8 @@ class BastterSyncService:
         if purchase.asset is None or purchase.asset.type not in SUPPORTED_TYPES:
             raise BastterSyncError("Tipo de ativo nao suportado para sincronizacao com Bastter")
 
-        bastter_tipo = SUPPORTED_TYPES[purchase.asset.type]
-        if purchase.asset.type == AssetType.STOCK:
+        bastter_tipo = self.resolve_bastter_tipo(purchase)
+        if self.uses_stock_movement_endpoint(bastter_tipo):
             payload = {
                 "movimentacaoID": 0,
                 "tipo": bastter_tipo,
@@ -194,6 +202,33 @@ class BastterSyncService:
             "subscricaoID": 0,
         }
         return BASTTER_MOVEMENT_ENDPOINT, payload, bastter_tipo
+
+    def resolve_bastter_tipo(self, purchase: Purchase) -> str:
+        if purchase.asset is None:
+            raise BastterSyncError("Movimentacao sem ativo associado")
+
+        asset_class, market, _quote_currency = resolve_asset_metadata(
+            legacy_type=purchase.asset.type,
+            asset_class=purchase.asset.asset_class,
+            market=purchase.asset.market,
+            quote_currency=purchase.asset.quote_currency,
+        )
+
+        if purchase.asset.type == AssetType.ACAO:
+            return "acao"
+        if purchase.asset.type == AssetType.FII:
+            return "fii"
+        if purchase.asset.type == AssetType.STOCK and market == Market.EU:
+            return "europa"
+        if purchase.asset.type == AssetType.STOCK:
+            return "stock"
+
+        raise BastterSyncError(
+            f"Tipo de ativo nao suportado para sincronizacao com Bastter: {asset_class.value}/{market.value}"
+        )
+
+    def uses_stock_movement_endpoint(self, bastter_tipo: str) -> bool:
+        return bastter_tipo in {"stock", "europa"}
 
     def _format_bastter_date(self, value: date) -> str:
         return value.strftime("%m/%d/%Y")

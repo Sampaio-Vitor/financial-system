@@ -310,11 +310,13 @@ export interface BastterSyncPreviewItem {
   id: number;
   ticker: string;
   asset_type: AssetType;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
   purchase_date: string;
   quantity: number;
   total_value: number;
   total_value_native: number;
-  trade_currency: "BRL" | "USD";
+  trade_currency: CurrencyCode;
   bastter_synced_at: string | null;
 }
 
@@ -327,6 +329,8 @@ export interface BastterSyncItemResult {
   purchase_id: number;
   ticker: string;
   local_type: string;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
   bastter_tipo: string;
   ativo_id: number | null;
   endpoint: string | null;
