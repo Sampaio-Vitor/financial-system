@@ -340,52 +340,6 @@ export default function PlanejadorAportePage() {
               Pós-Aporte: {formatBRL(rebalancing.patrimonio_pos_aporte)}
             </div>
 
-            {/* Reserve priority alert */}
-            {rebalancing.reserva_gap != null &&
-              rebalancing.reserva_gap > 0 && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
-                  <div className="shrink-0 w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-                    <span className="text-cyan-400 text-lg font-bold">!</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-cyan-400">
-                      Reserva Financeira (Prioridade)
-                    </p>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                      Atual: {formatBRL(rebalancing.reserva_valor)} | Meta:{" "}
-                      {formatBRL(rebalancing.reserva_target!)} | Aportar na
-                      reserva:{" "}
-                      <span className="font-bold text-cyan-400">
-                        {formatBRL(reserveAllocation)}
-                      </span>
-                    </p>
-                    {reserveConsumesAllContribution ? (
-                      <p className="text-xs text-[var(--color-warning)] mt-1">
-                        Todo o aporte vai para a reserva. Faltam{" "}
-                        {formatBRL(reserveShortfallAfterContribution)}{" "}
-                        após este aporte.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                        Restante para investimentos:{" "}
-                        {formatBRL(remainingForInvestments)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-            {rebalancing.reserva_target != null &&
-              rebalancing.reserva_gap != null &&
-              rebalancing.reserva_gap <= 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--color-positive)]/10 border border-[var(--color-positive)]/20">
-                  <p className="text-xs text-[var(--color-positive)] font-medium">
-                    Reserva completa ({formatBRL(rebalancing.reserva_valor)} /{" "}
-                    {formatBRL(rebalancing.reserva_target)}) — todo o aporte vai
-                    para investimentos.
-                  </p>
-                </div>
-              )}
 
             {projectedClassBreakdown.length > 0 && (
               <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-main)]/30 p-4 md:p-5">
@@ -520,133 +474,134 @@ export default function PlanejadorAportePage() {
                 </div>
 
                 <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Ticker
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Classe
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Valor Atual
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Valor Alvo
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Gap
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Após Aporte
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (R$)
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (Moeda do Ativo)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Reserve row (priority) */}
-                    {rebalancing.reserva_gap != null &&
-                      rebalancing.reserva_gap > 0 && (
-                        <tr className="border-b-2 border-cyan-500/30 bg-cyan-500/5">
-                          <td className="px-3 py-2 font-medium">
-                            <div className="flex items-center gap-2 text-cyan-400">
-                              <ShieldCheck size={20} />
-                              Reserva Financeira
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-cyan-400 text-xs font-semibold">
-                            PRIORIDADE
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatBRL(rebalancing.reserva_valor)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {rebalancing.reserva_target != null
-                              ? formatBRL(rebalancing.reserva_target)
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-cyan-400">
-                            {formatBRL(rebalancing.reserva_gap)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatBRL(projectedReserveValue)}
-                          </td>
-                          <td className="px-3 py-2 font-bold text-cyan-400">
-                            {formatBRL(reserveAllocation)}
-                          </td>
-                          <td className="px-3 py-2 text-[var(--color-text-muted)]">
-                            —
-                          </td>
+                {(() => {
+                  const grouped = rebalancing.asset_plan.reduce((acc, a) => {
+                    (acc[a.allocation_bucket] ??= []).push(a);
+                    return acc;
+                  }, {} as Record<AllocationBucket, typeof rebalancing.asset_plan>);
+                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "RF"];
+                  const activeBuckets = bucketOrder.filter((b) => grouped[b]?.length > 0);
+
+                  return (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="w-0 p-0" />
+                          <th className="px-2 py-1.5 text-left font-medium text-[var(--color-text-muted)]">
+                            Ticker
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Gap
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Aportar (R$)
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Após Aporte
+                          </th>
+                          <th className="px-2 py-1.5 text-right font-medium text-[var(--color-text-muted)]">
+                            Moeda do Ativo
+                          </th>
                         </tr>
-                      )}
-                    {rebalancing.asset_plan.map((a) => (
-                      <tr
-                        key={a.ticker}
-                        className="border-b border-[var(--color-border)]/50"
-                      >
-                        <td className="px-3 py-2 font-medium">
-                          <div className="flex items-center gap-2">
-                            <TickerLogo
-                              ticker={a.ticker}
-                              type={a.asset_class === "STOCK" && a.market === "BR" ? "ACAO" : a.asset_class === "STOCK" ? "STOCK" : undefined}
-                              assetClass={a.asset_class}
-                              market={a.market}
-                              size={20}
-                            />
-                            {a.ticker}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-text-secondary)]">
-                          {BUCKET_LABELS[a.allocation_bucket]}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(a.current_value)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(a.target_value)}
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-positive)]">
-                          {formatBRL(a.gap)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBRL(
-                            Number(a.current_value) + Number(a.amount_to_invest)
+                      </thead>
+                      <tbody>
+                        {/* Reserve row (priority) */}
+                        {rebalancing.reserva_gap != null &&
+                          rebalancing.reserva_gap > 0 && (
+                            <tr className="border-b-2 border-cyan-500/30 bg-cyan-500/5">
+                              <td className="w-0 p-0" style={{ borderLeft: "3px solid #06b6d4" }} />
+                              <td className="px-2 py-1.5 font-medium">
+                                <div className="flex items-center gap-1.5 text-cyan-400">
+                                  <ShieldCheck size={16} />
+                                  Reserva Financeira
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-cyan-400">
+                                {formatBRL(rebalancing.reserva_gap)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-bold text-cyan-400">
+                                {formatBRL(reserveAllocation)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                {formatBRL(projectedReserveValue)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-text-muted)]">
+                                —
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td className="px-3 py-2 font-bold">
-                          {formatBRL(a.amount_to_invest)}
-                        </td>
-                        <td className="px-3 py-2 text-[var(--color-text-muted)]">
-                          {a.amount_to_invest_native != null && a.quote_currency !== "BRL"
-                            ? formatCurrency(a.amount_to_invest_native, a.quote_currency)
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                      <td className="px-3 py-2" colSpan={6}>
-                        TOTAL PLANEJADO
-                      </td>
-                      <td className="px-3 py-2">
-                        {formatBRL(
-                          Number(rebalancing.total_planned || 0) +
-                            (rebalancing.reserva_gap != null && reserveGap > 0
-                              ? reserveAllocation
-                              : 0)
-                        )}
-                      </td>
-                      <td className="px-3 py-2" />
-                    </tr>
-                  </tfoot>
-                </table>
+                        {activeBuckets.map((bucket) => {
+                          const assets = grouped[bucket];
+                          return assets.map((a, i) => (
+                            <tr
+                              key={a.ticker}
+                              className="border-b border-[var(--color-border)]/50"
+                            >
+                              {i === 0 ? (
+                                <td
+                                  rowSpan={assets.length}
+                                  className="w-0 p-0 relative"
+                                  style={{ borderLeft: `3px solid ${CLASS_COLORS[bucket]}` }}
+                                >
+                                  <span
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-2 text-[10px] font-semibold whitespace-nowrap text-[var(--color-text-muted)]"
+                                  >
+                                    {BUCKET_LABELS[bucket]}
+                                  </span>
+                                </td>
+                              ) : null}
+                              <td className="px-2 py-1.5 font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  <TickerLogo
+                                    ticker={a.ticker}
+                                    type={a.asset_class === "STOCK" && a.market === "BR" ? "ACAO" : a.asset_class === "STOCK" ? "STOCK" : undefined}
+                                    assetClass={a.asset_class}
+                                    market={a.market}
+                                    size={18}
+                                  />
+                                  {a.ticker}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-positive)]">
+                                {formatBRL(a.gap)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-bold">
+                                {formatBRL(a.amount_to_invest)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                {formatBRL(
+                                  Number(a.current_value) + Number(a.amount_to_invest)
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-[var(--color-text-muted)]">
+                                {a.amount_to_invest_native != null && a.quote_currency !== "BRL"
+                                  ? formatCurrency(a.amount_to_invest_native, a.quote_currency)
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ));
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-[var(--color-border)] font-bold text-xs">
+                          <td className="w-0 p-0" />
+                          <td className="px-2 py-1.5" colSpan={2}>
+                            TOTAL PLANEJADO
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatBRL(
+                              Number(rebalancing.total_planned || 0) +
+                                (rebalancing.reserva_gap != null && reserveGap > 0
+                                  ? reserveAllocation
+                                  : 0)
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5" colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  );
+                })()}
               </div>
               </div>
             )}
