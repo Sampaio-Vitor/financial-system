@@ -2,11 +2,11 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.models.asset import AssetType
+from app.models.asset import AllocationBucket, AssetClass, CurrencyCode, Market
 
 
 class ClassRebalancing(BaseModel):
-    asset_class: AssetType
+    allocation_bucket: AllocationBucket
     label: str
     target_pct: Decimal
     current_pct: Decimal
@@ -19,13 +19,17 @@ class ClassRebalancing(BaseModel):
 
 class AssetRebalancing(BaseModel):
     ticker: str
-    asset_class: AssetType
+    asset_class: AssetClass
+    market: Market
+    quote_currency: CurrencyCode
+    allocation_bucket: AllocationBucket
     current_value: Decimal
     target_value: Decimal
     gap: Decimal
     gap_pct: Decimal
     amount_to_invest: Decimal
     amount_to_invest_usd: Decimal | None = None
+    amount_to_invest_native: Decimal | None = None
 
 
 class RebalancingResponse(BaseModel):

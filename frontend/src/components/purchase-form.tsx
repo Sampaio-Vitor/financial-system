@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Asset, PositionsResponse, PositionItem, PriceContextResponse } from "@/types";
-import { formatBRL, formatQuantity, formatUSD } from "@/lib/format";
+import {
+  Asset,
+  CurrencyCode,
+  PositionsResponse,
+  PositionItem,
+  PriceContextResponse,
+} from "@/types";
+import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import { X, Search, ChevronDown, ArrowRightLeft } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 
@@ -11,6 +17,14 @@ interface PurchaseFormProps {
   mode?: "compra" | "venda";
   onClose: () => void;
   onSaved: () => void;
+}
+
+function getFxRate(priceContext: PriceContextResponse, currency: CurrencyCode): number | null {
+  if (currency === "BRL") return 1;
+  if (currency === "USD") return priceContext.usd_brl_rate ?? null;
+  if (currency === "EUR") return priceContext.eur_brl_rate ?? null;
+  if (currency === "GBP") return priceContext.gbp_brl_rate ?? null;
+  return null;
 }
 
 export default function PurchaseForm({ mode = "compra", onClose, onSaved }: PurchaseFormProps) {
@@ -24,32 +38,39 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
   const [search, setSearch] = useState("");
   const [priceContext, setPriceContext] = useState<PriceContextResponse>({
     usd_brl_rate: null,
+    eur_brl_rate: null,
+    gbp_brl_rate: null,
     rate_updated_at: null,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isVenda) {
-      // Fetch positions for all variable income classes
       Promise.all([
-        apiFetch<PositionsResponse>("/portfolio/STOCK").catch(() => null),
-        apiFetch<PositionsResponse>("/portfolio/ACAO").catch(() => null),
+        apiFetch<PositionsResponse>("/portfolio/positions?asset_class=STOCK").catch(() => null),
+        apiFetch<PositionsResponse>("/portfolio/positions?asset_class=ETF").catch(() => null),
         apiFetch<PositionsResponse>("/portfolio/FII").catch(() => null),
-      ]).then(([stocks, acoes, fiis]) => {
+      ]).then(([stocks, etfs, fiis]) => {
         const all: PositionItem[] = [];
         if (stocks) all.push(...stocks.positions);
-        if (acoes) all.push(...acoes.positions);
+        if (etfs) all.push(...etfs.positions);
         if (fiis) all.push(...fiis.positions);
         setOwnedPositions(all);
-        // Also create Asset-like entries for the dropdown
         const assetList: Asset[] = all.map((p) => ({
           id: p.asset_id,
           ticker: p.ticker,
           type: p.type,
+          asset_class: p.asset_class,
+          market: p.market,
+          quote_currency: p.quote_currency,
           description: p.description,
           paused: false,
           current_price: p.current_price,
+          current_price_native: p.current_price_native,
+          fx_rate_to_brl: p.fx_rate_to_brl,
           price_updated_at: null,
           created_at: "",
         }));
@@ -68,10 +89,6 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
       .catch(() => {});
   }, []);
 
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -90,8 +107,9 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
   const selectedAsset = assets.find((a) => a.id === assetId);
   const selectedPosition = ownedPositions.find((p) => p.asset_id === assetId);
-  const isUsdTrade = selectedAsset?.type === "STOCK";
-  const usdBrlRate = priceContext.usd_brl_rate;
+  const selectedCurrency = selectedAsset?.quote_currency || "BRL";
+  const fxRate = getFxRate(priceContext, selectedCurrency);
+  const isForeignTrade = selectedCurrency !== "BRL";
   const parsedQuantity = parseFloat(quantity);
   const parsedTotalAmount = parseFloat(totalAmount);
   const hasValidInputs =
@@ -101,9 +119,8 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
     parsedTotalAmount > 0;
   const derivedUnitPrice = hasValidInputs ? parsedTotalAmount / parsedQuantity : 0;
   const totalNative = hasValidInputs ? parsedTotalAmount : 0;
-  const totalBrl = isUsdTrade && usdBrlRate ? totalNative * usdBrlRate : totalNative;
-  const unitPriceBrl =
-    isUsdTrade && hasValidInputs && usdBrlRate ? derivedUnitPrice * usdBrlRate : null;
+  const totalBrl = isForeignTrade && fxRate ? totalNative * fxRate : totalNative;
+  const unitPriceBrl = isForeignTrade && hasValidInputs && fxRate ? derivedUnitPrice * fxRate : derivedUnitPrice;
   const rateUpdatedLabel = priceContext.rate_updated_at
     ? new Date(priceContext.rate_updated_at).toLocaleString("pt-BR", {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -118,15 +135,15 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assetId || !hasValidInputs) return;
+    if (!assetId || !hasValidInputs || !selectedAsset) return;
 
     const qty = parsedQuantity;
     if (isVenda && selectedPosition && qty > selectedPosition.quantity) {
       setError(`Quantidade excede a posicao atual (${formatQuantity(selectedPosition.quantity)})`);
       return;
     }
-    if (isUsdTrade && (!usdBrlRate || usdBrlRate <= 0)) {
-      setError("Cotacao USD/BRL indisponivel. Atualize os precos antes de registrar.");
+    if (isForeignTrade && (!fxRate || fxRate <= 0)) {
+      setError(`Cotacao ${selectedCurrency}/BRL indisponivel. Atualize os precos antes de registrar.`);
       return;
     }
 
@@ -138,13 +155,14 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         asset_id: assetId,
         purchase_date: date,
         quantity: isVenda ? -qty : qty,
-        ...(isUsdTrade
+        ...(isForeignTrade
           ? {
-              trade_currency: "USD" as const,
+              trade_currency: selectedCurrency,
               unit_price_native: derivedUnitPrice,
-              fx_rate: usdBrlRate,
+              fx_rate: fxRate,
             }
           : {
+              trade_currency: "BRL" as const,
               unit_price: derivedUnitPrice,
             }),
       };
@@ -185,9 +203,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                   onChange={(e) => {
                     setSearch(e.target.value);
                     setDropdownOpen(true);
-                    if (!e.target.value) {
-                      setAssetId("");
-                    }
+                    if (!e.target.value) setAssetId("");
                   }}
                   onFocus={() => setDropdownOpen(true)}
                   className="w-full pl-9 pr-8 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
@@ -210,12 +226,18 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                           assetId === a.id ? "bg-[var(--color-accent)]/10" : ""
                         }`}
                       >
-                        <TickerLogo ticker={a.ticker} type={a.type} size={20} />
+                        <TickerLogo
+                          ticker={a.ticker}
+                          type={a.type}
+                          assetClass={a.asset_class}
+                          market={a.market}
+                          size={20}
+                        />
                         <span className="font-medium">{a.ticker}</span>
                         <span className="text-[var(--color-text-muted)] text-xs truncate">
                           {isVenda
                             ? `${formatQuantity(ownedPositions.find((p) => p.asset_id === a.id)?.quantity ?? 0)} cotas`
-                            : a.description}
+                            : `${a.asset_class || a.type} · ${a.market || "—"} · ${a.quote_currency || "BRL"}`}
                         </span>
                       </button>
                     ))
@@ -260,7 +282,7 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[var(--color-text-muted)]">
-                  {isUsdTrade ? "US$" : "R$"}
+                  {selectedCurrency}
                 </span>
                 <input
                   type="number"
@@ -268,30 +290,28 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
                   min="0.01"
                   value={totalAmount}
                   onChange={(e) => setTotalAmount(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                  className="w-full pl-12 pr-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                   required
                 />
               </div>
             </div>
           </div>
 
-          {isUsdTrade && (
+          {isForeignTrade && (
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
               <div className="flex items-center gap-1.5 mb-2">
                 <ArrowRightLeft size={12} className="text-[var(--color-accent)]" />
                 <span className="text-xs font-medium text-[var(--color-text-secondary)]">Conversao Cambial</span>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                <div className="text-[var(--color-text-muted)]">Cambio USD/BRL</div>
+                <div className="text-[var(--color-text-muted)]">Cambio {selectedCurrency}/BRL</div>
                 <div className="text-right font-medium text-[var(--color-text-primary)]">
-                  {usdBrlRate ? `R$ ${usdBrlRate.toFixed(4)}` : "indisponivel"}
+                  {fxRate ? `R$ ${fxRate.toFixed(4)}` : "indisponivel"}
                 </div>
-                {unitPriceBrl !== null && (
-                  <>
-                    <div className="text-[var(--color-text-muted)]">Preco unitario em BRL</div>
-                    <div className="text-right font-medium text-[var(--color-text-primary)]">{formatBRL(unitPriceBrl)}</div>
-                  </>
-                )}
+                <div className="text-[var(--color-text-muted)]">Preco unitario em BRL</div>
+                <div className="text-right font-medium text-[var(--color-text-primary)]">
+                  {formatBRL(unitPriceBrl)}
+                </div>
                 {rateUpdatedLabel && (
                   <>
                     <div className="text-[var(--color-text-muted)]">Atualizado em</div>
@@ -306,19 +326,21 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
             <div className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-muted)]">Preco unitario calculado</span>
               <span className="text-base font-bold text-[var(--color-text-primary)]">
-                {isUsdTrade ? formatUSD(derivedUnitPrice) : formatBRL(derivedUnitPrice)}
+                {formatCurrency(derivedUnitPrice, selectedCurrency)}
               </span>
             </div>
             <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
               <span className="text-xs text-[var(--color-text-muted)]">Total da operacao</span>
               <span className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                {isUsdTrade ? formatUSD(totalNative) : formatBRL(totalBrl)}
+                {formatCurrency(totalNative, selectedCurrency)}
               </span>
             </div>
-            {isUsdTrade && (
+            {isForeignTrade && (
               <div className="flex items-center justify-between mt-1 pt-1 border-t border-[var(--color-border)]/50">
                 <span className="text-xs text-[var(--color-text-muted)]">Equivalente em BRL</span>
-                <span className="text-sm font-semibold text-[var(--color-text-secondary)]">{formatBRL(totalBrl)}</span>
+                <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  {formatBRL(totalBrl)}
+                </span>
               </div>
             )}
           </div>
@@ -327,18 +349,10 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
 
           <button
             type="submit"
-            disabled={submitting || !assetId || !hasValidInputs || (isUsdTrade && !usdBrlRate)}
-            className={`w-full py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-opacity ${
-              isVenda
-                ? "bg-[var(--color-negative)] text-white"
-                : "bg-[var(--color-accent)] text-white"
-            }`}
+            disabled={submitting}
+            className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            {submitting
-              ? "Salvando..."
-              : isVenda
-                ? "Registrar Venda"
-                : "Registrar Aporte"}
+            {submitting ? "Salvando..." : isVenda ? "Registrar Venda" : "Registrar Aporte"}
           </button>
         </form>
       </div>

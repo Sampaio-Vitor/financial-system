@@ -19,8 +19,14 @@ import type { BankConnection } from "@/types";
 
 function timeSince(dateStr: string | null) {
   if (!dateStr) return "nunca";
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const normalizedDate = /(?:Z|[+-]\d{2}:?\d{2})$/.test(dateStr)
+    ? dateStr
+    : `${dateStr}Z`;
+  const timestamp = new Date(normalizedDate).getTime();
+  if (!Number.isFinite(timestamp)) return "nunca";
+  const diff = Math.max(0, Date.now() - timestamp);
   const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "agora";
   if (mins < 60) return `${mins}min atrás`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h atrás`;

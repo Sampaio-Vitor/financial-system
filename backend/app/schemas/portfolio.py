@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.models.asset import AssetType
+from app.models.asset import AllocationBucket, AssetClass, AssetType, CurrencyCode, Market
 from app.schemas.purchase import PurchaseResponse
 from app.schemas.dividend import DividendEventResponse
 
@@ -20,18 +20,24 @@ class PositionItem(BaseModel):
     ticker: str
     description: str
     type: AssetType
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
     first_date: str | None
     quantity: Decimal
     total_cost: Decimal
     avg_price: Decimal
     current_price: Decimal | None
+    current_price_native: Decimal | None = None
+    fx_rate_to_brl: Decimal | None = None
     market_value: Decimal | None
     pnl: Decimal | None
     pnl_pct: Decimal | None
 
 
 class ClassSummary(BaseModel):
-    asset_class: AssetType
+    asset_class: AssetType | None = None
+    allocation_bucket: AllocationBucket | None = None
     label: str
     value: Decimal
     pct: Decimal
@@ -63,6 +69,9 @@ class MonthlyOverview(BaseModel):
 
 class PositionsResponse(BaseModel):
     asset_class: AssetType
+    asset_class_v2: AssetClass | None = None
+    market: Market | None = None
+    allocation_bucket: AllocationBucket | None = None
     positions: list[PositionItem]
     total_cost: Decimal
     total_market_value: Decimal

@@ -1,26 +1,66 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
-from app.models.asset import AssetType
+from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
 
 
 class AssetCreate(BaseModel):
     ticker: str
-    type: AssetType
+    type: AssetType | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
+    price_symbol: str | None = None
     description: str = ""
+
+    @model_validator(mode="after")
+    def validate_classification(self) -> "AssetCreate":
+        has_legacy = self.type is not None
+        has_new_shape = (
+            self.asset_class is not None
+            and self.market is not None
+            and self.quote_currency is not None
+        )
+        if not has_legacy and not has_new_shape:
+            raise ValueError(
+                "Informe o tipo legado ou asset_class + market + quote_currency"
+            )
+        return self
 
 
 class AssetUpdate(BaseModel):
     ticker: str | None = None
     description: str | None = None
     paused: bool | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
+    price_symbol: str | None = None
 
 
 class BulkAssetItem(BaseModel):
     ticker: str
-    type: AssetType
+    type: AssetType | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
+    price_symbol: str | None = None
+
+    @model_validator(mode="after")
+    def validate_classification(self) -> "BulkAssetItem":
+        has_legacy = self.type is not None
+        has_new_shape = (
+            self.asset_class is not None
+            and self.market is not None
+            and self.quote_currency is not None
+        )
+        if not has_legacy and not has_new_shape:
+            raise ValueError(
+                "Informe o tipo legado ou asset_class + market + quote_currency"
+            )
+        return self
 
 
 class BulkAssetRequest(BaseModel):
@@ -38,12 +78,18 @@ class BulkAssetRequest(BaseModel):
 
 class BulkAssetCreated(BaseModel):
     ticker: str
-    type: AssetType
+    type: AssetType | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
 
 
 class BulkAssetLinked(BaseModel):
     ticker: str
-    type: AssetType
+    type: AssetType | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
 
 
 class BulkAssetSkipped(BaseModel):
@@ -61,9 +107,15 @@ class AssetResponse(BaseModel):
     id: int
     ticker: str
     type: AssetType
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
     description: str
     paused: bool
+    price_symbol: str | None = None
     current_price: Decimal | None
+    current_price_native: Decimal | None = None
+    fx_rate_to_brl: Decimal | None = None
     price_updated_at: datetime | None
     created_at: datetime
 

@@ -2,25 +2,42 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
-import { AssetType, PositionsResponse } from "@/types";
+import { AssetClass, AssetType, Market, PositionsResponse } from "@/types";
 import PositionsTable from "@/components/positions-table";
 
 interface AssetListPageProps {
-  assetType: AssetType;
+  assetType?: AssetType;
+  assetClass?: AssetClass;
+  market?: Market;
+  metadataMode?: "none" | "market_currency";
   title: string;
   emptyMessage: string;
 }
 
-export default function AssetListPage({ assetType, title, emptyMessage }: AssetListPageProps) {
+export default function AssetListPage({
+  assetType,
+  assetClass,
+  market,
+  metadataMode = "none",
+  title,
+  emptyMessage,
+}: AssetListPageProps) {
   const [data, setData] = useState<PositionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch<PositionsResponse>(`/portfolio/${assetType}`)
+    const params = new URLSearchParams();
+    if (assetClass) params.set("asset_class", assetClass);
+    if (market) params.set("market", market);
+    const endpoint = assetType
+      ? `/portfolio/${assetType}`
+      : `/portfolio/positions?${params.toString()}`;
+
+    apiFetch<PositionsResponse>(endpoint)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [assetType]);
+  }, [assetType, assetClass, market]);
 
   if (loading) {
     return (
@@ -52,6 +69,7 @@ export default function AssetListPage({ assetType, title, emptyMessage }: AssetL
           totalMarketValue={data.total_market_value}
           totalPnl={data.total_pnl}
           totalPnlPct={data.total_pnl_pct}
+          metadataMode={metadataMode}
         />
       </div>
     </div>

@@ -16,10 +16,14 @@ async def get_price_context(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rate = await _get_system_setting(db, "usd_brl_rate")
+    usd_rate = await _get_system_setting(db, "usd_brl_rate")
+    eur_rate = await _get_system_setting(db, "eur_brl_rate")
+    gbp_rate = await _get_system_setting(db, "gbp_brl_rate")
     rate_updated = await _get_system_setting(db, "usd_brl_rate_updated_at")
     return {
-        "usd_brl_rate": float(rate) if rate else None,
+        "usd_brl_rate": float(usd_rate) if usd_rate else None,
+        "eur_brl_rate": float(eur_rate) if eur_rate else None,
+        "gbp_brl_rate": float(gbp_rate) if gbp_rate else None,
         "rate_updated_at": rate_updated,
     }
 

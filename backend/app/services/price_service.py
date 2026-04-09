@@ -8,11 +8,17 @@ import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset, AssetType
+from app.models.asset import Asset, CurrencyCode, Market, resolve_asset_metadata
 from app.models.system_setting import SystemSetting
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+FX_TICKERS: dict[CurrencyCode, str] = {
+    CurrencyCode.USD: "USDBRL=X",
+    CurrencyCode.EUR: "EURBRL=X",
+    CurrencyCode.GBP: "GBPBRL=X",
+}
 
 
 def _is_demo_asset(asset: Asset) -> bool:
@@ -20,7 +26,6 @@ def _is_demo_asset(asset: Asset) -> bool:
 
 
 def _extract_close(data, yf_ticker: str) -> float | None:
-    """Extract closing price from yfinance DataFrame (always MultiIndex columns)."""
     try:
         val = data["Close"][yf_ticker].iloc[-1]
         close = float(val)
@@ -31,17 +36,13 @@ def _extract_close(data, yf_ticker: str) -> float | None:
 
 
 async def _get_system_setting(db: AsyncSession, key: str) -> str | None:
-    result = await db.execute(
-        select(SystemSetting).where(SystemSetting.key == key)
-    )
+    result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
     setting = result.scalar_one_or_none()
     return setting.value if setting else None
 
 
 async def _upsert_system_setting(db: AsyncSession, key: str, value: str) -> None:
-    result = await db.execute(
-        select(SystemSetting).where(SystemSetting.key == key)
-    )
+    result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
     setting = result.scalar_one_or_none()
     if setting:
         setting.value = value
@@ -55,19 +56,10 @@ class PriceService:
         self.user = user
 
     async def update_all_prices(self) -> dict:
-        results = {"updated": [], "failed": [], "skipped": [], "usd_brl_rate": None}
+        results = {"updated": [], "failed": [], "skipped": [], "fx_rates": {}}
 
-        # Fetch USD/BRL rate first
-        rate = None
-        try:
-            rate = await self._fetch_usd_brl()
-            if rate:
-                results["usd_brl_rate"] = float(rate)
-                await self._save_usd_brl(rate)
-        except Exception as e:
-            results["failed"].append({"ticker": "USDBRL=X", "error": str(e)})
+        fx_rates = await self._refresh_fx_rates(results)
 
-        # Get all assets
         asset_result = await self.db.execute(select(Asset))
         all_assets = asset_result.scalars().all()
         assets = [asset for asset in all_assets if not _is_demo_asset(asset)]
@@ -77,70 +69,66 @@ class PriceService:
             if _is_demo_asset(asset)
         )
 
-        # Split by type
-        us_stocks = [a for a in assets if a.type == AssetType.STOCK]
-        br_assets = [a for a in assets if a.type in (AssetType.ACAO, AssetType.FII)]
-
-        # Fetch US stock prices via yfinance (batched, converted to BRL)
-        if us_stocks:
-            us_results = await self._fetch_yf_prices(us_stocks, usd_brl_rate=rate, convert_to_brl=True)
-            results["updated"].extend(us_results["updated"])
-            results["failed"].extend(us_results["failed"])
-
-        # Fetch BR prices via yfinance with .SA suffix (already in BRL)
-        if br_assets:
-            br_results = await self._fetch_yf_prices(br_assets, usd_brl_rate=None, convert_to_brl=False)
-            results["updated"].extend(br_results["updated"])
-            results["failed"].extend(br_results["failed"])
+        price_results = await self._fetch_yf_prices(assets, fx_rates)
+        results["updated"].extend(price_results["updated"])
+        results["failed"].extend(price_results["failed"])
 
         await self.db.commit()
         return results
 
-    async def _fetch_usd_brl(self) -> Decimal | None:
-        """Fetch USD/BRL exchange rate via yfinance."""
+    async def _refresh_fx_rates(self, results: dict) -> dict[CurrencyCode, Decimal]:
+        fx_rates: dict[CurrencyCode, Decimal] = {CurrencyCode.BRL: Decimal("1")}
+        for currency, yf_ticker in FX_TICKERS.items():
+            try:
+                rate = await self._fetch_fx_to_brl(yf_ticker)
+                if rate:
+                    fx_rates[currency] = rate
+                    results["fx_rates"][currency.value] = float(rate)
+                    await self._save_fx_rate(currency, rate)
+            except Exception as exc:
+                results["failed"].append({"ticker": yf_ticker, "error": str(exc)})
+                cached = await self._get_rate_to_brl(currency)
+                if cached:
+                    fx_rates[currency] = cached
+        return fx_rates
+
+    async def _fetch_fx_to_brl(self, yf_ticker: str) -> Decimal | None:
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
-            None, lambda: yf.download("USDBRL=X", period="1d", progress=False)
+            None, lambda: yf.download(yf_ticker, period="1d", progress=False)
         )
         if not data.empty:
-            close = _extract_close(data, "USDBRL=X")
+            close = _extract_close(data, yf_ticker)
             if close:
                 return Decimal(str(close))
         return None
 
-    async def _save_usd_brl(self, rate: Decimal):
-        await _upsert_system_setting(self.db, "usd_brl_rate", str(rate))
+    async def _save_fx_rate(self, currency: CurrencyCode, rate: Decimal) -> None:
+        key_prefix = currency.value.lower()
+        await _upsert_system_setting(self.db, f"{key_prefix}_brl_rate", str(rate))
         await _upsert_system_setting(
-            self.db, "usd_brl_rate_updated_at", datetime.now(timezone.utc).isoformat()
+            self.db,
+            f"{key_prefix}_brl_rate_updated_at",
+            datetime.now(timezone.utc).isoformat(),
         )
 
-    async def _get_usd_brl(self) -> Decimal | None:
-        val = await _get_system_setting(self.db, "usd_brl_rate")
+    async def _get_rate_to_brl(self, currency: CurrencyCode) -> Decimal | None:
+        if currency == CurrencyCode.BRL:
+            return Decimal("1")
+        val = await _get_system_setting(self.db, f"{currency.value.lower()}_brl_rate")
         return Decimal(val) if val else None
 
-    async def _fetch_yf_prices(self, assets: list[Asset], usd_brl_rate: Decimal | None, convert_to_brl: bool) -> dict:
+    async def _fetch_yf_prices(self, assets: list[Asset], fx_rates: dict[CurrencyCode, Decimal]) -> dict:
         results = {"updated": [], "failed": []}
-
-        if convert_to_brl:
-            if not usd_brl_rate:
-                usd_brl_rate = await self._get_usd_brl()
-            if not usd_brl_rate:
-                for a in assets:
-                    results["failed"].append({"ticker": a.ticker, "error": "No USD/BRL rate available"})
-                return results
-
-        # Map DB ticker -> yfinance ticker
-        ticker_map = {}  # yf_ticker -> asset
-        for a in assets:
-            if a.type in (AssetType.ACAO, AssetType.FII):
-                ticker_map[f"{a.ticker}.SA"] = a
-            else:
-                ticker_map[a.ticker] = a
+        ticker_map: dict[str, Asset] = {}
+        for asset in assets:
+            yf_ticker = self._price_symbol_for(asset)
+            ticker_map[yf_ticker] = asset
 
         yf_tickers = list(ticker_map.keys())
         loop = asyncio.get_running_loop()
+        now = datetime.now(timezone.utc)
 
-        # Process in batches of 10
         for i in range(0, len(yf_tickers), 10):
             batch = yf_tickers[i : i + 10]
             try:
@@ -157,98 +145,135 @@ class PriceService:
                 for yf_ticker in batch:
                     asset = ticker_map[yf_ticker]
                     close_val = _extract_close(data, yf_ticker)
-                    if close_val:
-                        if convert_to_brl:
-                            price = Decimal(str(close_val)) * usd_brl_rate
-                            asset.current_price = round(price, 4)
-                        else:
-                            asset.current_price = Decimal(str(round(close_val, 4)))
-                        asset.price_updated_at = datetime.now(timezone.utc)
-                        results["updated"].append({"ticker": asset.ticker, "price": float(asset.current_price)})
-                    else:
+                    if not close_val:
                         results["failed"].append({"ticker": asset.ticker, "error": "No close price"})
-            except Exception as e:
+                        continue
+                    _asset_class, _market, quote_currency = resolve_asset_metadata(
+                        legacy_type=asset.type,
+                        asset_class=asset.asset_class,
+                        market=asset.market,
+                        quote_currency=asset.quote_currency,
+                    )
+                    fx_rate = fx_rates.get(quote_currency)
+                    if fx_rate is None:
+                        results["failed"].append({
+                            "ticker": asset.ticker,
+                            "error": f"No FX rate available for {quote_currency.value}/BRL",
+                        })
+                        continue
+                    native_price = Decimal(str(round(close_val, 6)))
+                    asset.current_price_native = native_price
+                    asset.fx_rate_to_brl = fx_rate
+                    asset.current_price = round(native_price * fx_rate, 4)
+                    asset.price_updated_at = now
+                    results["updated"].append({"ticker": asset.ticker, "price": float(asset.current_price)})
+            except Exception as exc:
                 for t in batch:
                     asset = ticker_map[t]
-                    results["failed"].append({"ticker": asset.ticker, "error": str(e)})
+                    results["failed"].append({"ticker": asset.ticker, "error": str(exc)})
 
-            # Rate limit between batches
             if i + 10 < len(yf_tickers):
                 await asyncio.sleep(2)
 
         return results
 
-    # ── Historical prices ────────────────────────────────────────────
+    def _price_symbol_for(self, asset: Asset) -> str:
+        if asset.price_symbol:
+            return asset.price_symbol
+        asset_class, market, _quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        if market == Market.BR and asset_class.value in {"STOCK", "ETF", "FII"}:
+            return f"{asset.ticker}.SA"
+        return asset.ticker
 
-    async def _fetch_historical_usd_brl(self, target_date: date) -> Decimal | None:
-        """Fetch USD/BRL closing rate for target_date (tries a 7-day window to find last trading day)."""
+    async def _fetch_historical_fx(self, currency: CurrencyCode, target_date: date) -> Decimal | None:
+        if currency == CurrencyCode.BRL:
+            return Decimal("1")
+        yf_ticker = FX_TICKERS[currency]
         loop = asyncio.get_running_loop()
         start = target_date - timedelta(days=7)
         end = target_date + timedelta(days=1)
         data = await loop.run_in_executor(
             None,
-            lambda: yf.download("USDBRL=X", start=start.isoformat(), end=end.isoformat(), progress=False),
+            lambda: yf.download(yf_ticker, start=start.isoformat(), end=end.isoformat(), progress=False),
         )
         if not data.empty:
-            close = _extract_close(data, "USDBRL=X")
+            close = _extract_close(data, yf_ticker)
             if close:
                 return Decimal(str(close))
         return None
 
-    async def fetch_historical_prices(
+    async def fetch_historical_price_details(
         self, assets: list[Asset], target_date: date
-    ) -> dict[int, Decimal]:
-        """Return {asset_id: price_brl} for each asset on target_date."""
-        prices: dict[int, Decimal] = {}
+    ) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+        prices: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
         if not assets:
             return prices
 
-        us_stocks = [a for a in assets if a.type == AssetType.STOCK]
-        br_assets = [a for a in assets if a.type in (AssetType.ACAO, AssetType.FII)]
+        currencies_needed = {
+            resolve_asset_metadata(
+                legacy_type=asset.type,
+                asset_class=asset.asset_class,
+                market=asset.market,
+                quote_currency=asset.quote_currency,
+            )[2]
+            for asset in assets
+        }
+        fx_rates: dict[CurrencyCode, Decimal] = {}
+        for currency in currencies_needed:
+            rate = await self._fetch_historical_fx(currency, target_date)
+            if not rate:
+                rate = await self._get_rate_to_brl(currency)
+            if rate:
+                fx_rates[currency] = rate
 
-        usd_brl = None
-        if us_stocks:
-            usd_brl = await self._fetch_historical_usd_brl(target_date)
-            if not usd_brl:
-                usd_brl = await self._get_usd_brl()  # fallback to cached
+        ticker_map: dict[str, Asset] = {self._price_symbol_for(asset): asset for asset in assets}
+        yf_tickers = list(ticker_map.keys())
+        loop = asyncio.get_running_loop()
+        start = target_date - timedelta(days=7)
+        end = target_date + timedelta(days=1)
 
-        for group, convert in [(us_stocks, True), (br_assets, False)]:
-            if not group:
-                continue
-            ticker_map: dict[str, Asset] = {}
-            for a in group:
-                yf_ticker = f"{a.ticker}.SA" if a.type in (AssetType.ACAO, AssetType.FII) else a.ticker
-                ticker_map[yf_ticker] = a
+        for i in range(0, len(yf_tickers), 10):
+            batch = yf_tickers[i : i + 10]
+            try:
+                data = await loop.run_in_executor(
+                    None,
+                    lambda b=batch, s=start.isoformat(), e=end.isoformat(): yf.download(
+                        b, start=s, end=e, progress=False
+                    ),
+                )
+                if data.empty:
+                    continue
 
-            yf_tickers = list(ticker_map.keys())
-            loop = asyncio.get_running_loop()
-            start = target_date - timedelta(days=7)
-            end = target_date + timedelta(days=1)
-
-            for i in range(0, len(yf_tickers), 10):
-                batch = yf_tickers[i : i + 10]
-                try:
-                    data = await loop.run_in_executor(
-                        None,
-                        lambda b=batch, s=start.isoformat(), e=end.isoformat(): yf.download(
-                            b, start=s, end=e, progress=False
-                        ),
-                    )
-                    if data.empty:
+                for yf_ticker in batch:
+                    asset = ticker_map[yf_ticker]
+                    close_val = _extract_close(data, yf_ticker)
+                    if not close_val:
                         continue
+                    _asset_class, _market, quote_currency = resolve_asset_metadata(
+                        legacy_type=asset.type,
+                        asset_class=asset.asset_class,
+                        market=asset.market,
+                        quote_currency=asset.quote_currency,
+                    )
+                    fx_rate = fx_rates.get(quote_currency)
+                    if not fx_rate:
+                        continue
+                    native_price = Decimal(str(round(close_val, 6)))
+                    brl_price = round(native_price * fx_rate, 4)
+                    prices[asset.id] = (native_price, fx_rate, brl_price)
+            except Exception:
+                logger.warning("Failed to fetch historical prices for batch", exc_info=True)
 
-                    for yf_ticker in batch:
-                        asset = ticker_map[yf_ticker]
-                        close_val = _extract_close(data, yf_ticker)
-                        if close_val:
-                            if convert and usd_brl:
-                                prices[asset.id] = round(Decimal(str(close_val)) * usd_brl, 4)
-                            elif not convert:
-                                prices[asset.id] = Decimal(str(round(close_val, 4)))
-                except Exception:
-                    logger.warning("Failed to fetch historical prices for batch", exc_info=True)
-
-                if i + 10 < len(yf_tickers):
-                    await asyncio.sleep(2)
+            if i + 10 < len(yf_tickers):
+                await asyncio.sleep(2)
 
         return prices
+
+    async def fetch_historical_prices(self, assets: list[Asset], target_date: date) -> dict[int, Decimal]:
+        details = await self.fetch_historical_price_details(assets, target_date)
+        return {asset_id: item[2] for asset_id, item in details.items()}

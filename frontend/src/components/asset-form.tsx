@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Asset, AssetType } from "@/types";
+import { Asset, AssetClass, CurrencyCode, Market } from "@/types";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -11,14 +11,63 @@ interface AssetFormProps {
   onSaved: () => void;
 }
 
+function defaultCurrencyFor(assetClass: AssetClass, market: Market): CurrencyCode {
+  if (assetClass === "RF" || assetClass === "FII") return "BRL";
+  if (assetClass === "STOCK") return market === "BR" ? "BRL" : "USD";
+  if (assetClass === "ETF") {
+    if (market === "BR") return "BRL";
+    if (market === "US") return "USD";
+    if (market === "EU") return "EUR";
+    return "GBP";
+  }
+  return "BRL";
+}
+
 export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
   const { isAdmin } = useAuth();
   const [ticker, setTicker] = useState("");
-  const [type, setType] = useState<AssetType>("STOCK");
+  const [assetClass, setAssetClass] = useState<AssetClass>("STOCK");
+  const [market, setMarket] = useState<Market>("BR");
+  const [priceSymbol, setPriceSymbol] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdAsset, setCreatedAsset] = useState<Asset | null>(null);
+
+  const quoteCurrency = useMemo(
+    () => defaultCurrencyFor(assetClass, market),
+    [assetClass, market]
+  );
+
+  const marketOptions = useMemo(() => {
+    if (assetClass === "RF" || assetClass === "FII") {
+      return [{ value: "BR" as Market, label: "Brasil" }];
+    }
+    if (assetClass === "STOCK") {
+      return [
+        { value: "BR" as Market, label: "Brasil" },
+        { value: "US" as Market, label: "Estados Unidos" },
+      ];
+    }
+    return [
+      { value: "BR" as Market, label: "Brasil" },
+      { value: "US" as Market, label: "Estados Unidos" },
+      { value: "EU" as Market, label: "Europa" },
+      { value: "UK" as Market, label: "Reino Unido" },
+    ];
+  }, [assetClass]);
+
+  const handleClassChange = (value: AssetClass) => {
+    setAssetClass(value);
+    const allowedMarkets = value === "ETF"
+      ? ["BR", "US", "EU", "UK"]
+      : value === "STOCK"
+        ? ["BR", "US"]
+        : ["BR"];
+    if (!allowedMarkets.includes(market)) {
+      setMarket(allowedMarkets[0] as Market);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +79,10 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
         method: "POST",
         body: JSON.stringify({
           ticker: ticker.toUpperCase(),
-          type,
+          asset_class: assetClass,
+          market,
+          quote_currency: quoteCurrency,
+          price_symbol: priceSymbol || null,
           description,
         }),
       });
@@ -58,11 +110,9 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
             <p className="text-[var(--color-positive)] font-medium mb-1">
               {createdAsset.ticker} adicionado!
             </p>
-            {createdAsset.current_price && (
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                Cotacao: R$ {createdAsset.current_price}
-              </p>
-            )}
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              {createdAsset.asset_class} · {createdAsset.market} · {createdAsset.quote_currency}
+            </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -81,24 +131,63 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                 type="text"
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value)}
-                placeholder="Ex: AAPL, PETR3, HGLG11"
+                placeholder="Ex: BOVA11, VOO, VWCE, VUKG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                 required
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Classe</label>
+                <select
+                  value={assetClass}
+                  onChange={(e) => handleClassChange(e.target.value as AssetClass)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                >
+                  <option value="STOCK">Ação</option>
+                  <option value="ETF">ETF</option>
+                  <option value="FII">FII</option>
+                  <option value="RF">Renda Fixa</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mercado</label>
+                <select
+                  value={market}
+                  onChange={(e) => setMarket(e.target.value as Market)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                >
+                  {marketOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Tipo</label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as AssetType)}
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Moeda</label>
+              <input
+                type="text"
+                value={quoteCurrency}
+                disabled
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-muted)] text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Price Symbol</label>
+              <input
+                type="text"
+                value={priceSymbol}
+                onChange={(e) => setPriceSymbol(e.target.value)}
+                placeholder="Opcional. Ex: BOVA11.SA, VOO, VWCE"
+                disabled={!isAdmin}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-              >
-                <option value="STOCK">Stock (EUA)</option>
-                <option value="ACAO">Acao (Brasil)</option>
-                <option value="FII">FII</option>
-                <option value="RF">Renda Fixa</option>
-              </select>
+              />
             </div>
 
             <div>

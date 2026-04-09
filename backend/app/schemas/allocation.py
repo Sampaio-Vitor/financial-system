@@ -2,11 +2,11 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.models.asset import AssetType
+from app.models.asset import AllocationBucket
 
 
 class AllocationTargetItem(BaseModel):
-    asset_class: AssetType
+    allocation_bucket: AllocationBucket
     target_pct: Decimal
 
 
@@ -15,7 +15,7 @@ class AllocationTargetsUpdate(BaseModel):
 
 
 class AllocationTargetResponse(BaseModel):
-    asset_class: AssetType
+    allocation_bucket: AllocationBucket
     target_pct: Decimal
 
     model_config = {"from_attributes": True}
