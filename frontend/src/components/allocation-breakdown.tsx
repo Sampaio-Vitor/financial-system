@@ -3,15 +3,17 @@ import { ClassSummary } from "@/types";
 import { TrendingUp, Building2, Landmark, PiggyBank, Shield } from "lucide-react";
 
 const classIcons: Record<string, typeof TrendingUp> = {
-  STOCK: TrendingUp,
-  ACAO: Building2,
+  STOCK_BR: Building2,
+  STOCK_US: TrendingUp,
+  ETF_INTL: TrendingUp,
   FII: Landmark,
   RF: PiggyBank,
 };
 
 const classColors: Record<string, string> = {
-  STOCK: "#3b82f6",
-  ACAO: "#10b981",
+  STOCK_BR: "#10b981",
+  STOCK_US: "#3b82f6",
+  ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
 };
@@ -36,9 +38,10 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
       </h3>
 
       <div className="space-y-5">
-        {items.map((item) => {
-          const Icon = classIcons[item.asset_class] || TrendingUp;
-          const color = classColors[item.asset_class] || "#64748b";
+        {items.filter((item) => Number(item.value) > 0 || Number(item.target_pct) > 0).map((item) => {
+          const bucket = item.allocation_bucket || item.asset_class || "RF";
+          const Icon = classIcons[bucket] || TrendingUp;
+          const color = classColors[bucket] || "#64748b";
           const pct = Number(item.pct);
           const targetPct = Number(item.target_pct);
           const barWidth = Math.min((pct / scale) * 100, 100);
@@ -47,7 +50,7 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
           const targetValue = (targetPct / 100) * patrimonioInvestivel;
 
           return (
-            <div key={item.asset_class}>
+            <div key={bucket}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2.5">
                   <div

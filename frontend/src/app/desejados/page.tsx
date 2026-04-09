@@ -2,19 +2,27 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
-import { AllocationTarget, AssetType, RebalancingResponse } from "@/types";
-import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
+import { AllocationBucket, AllocationTarget, CurrencyCode, RebalancingResponse } from "@/types";
+import { formatBRL, formatCurrency, formatPercent } from "@/lib/format";
 import { Calculator, Info, ShieldCheck, Save, FolderOpen } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
 import Link from "next/link";
 
-const CLASS_COLORS: Record<AssetType, string> = {
-  STOCK: "#3b82f6",
-  ACAO: "#10b981",
+const CLASS_COLORS: Record<AllocationBucket, string> = {
+  STOCK_BR: "#10b981",
+  STOCK_US: "#3b82f6",
+  ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
+};
+
+const BUCKET_LABELS: Record<AllocationBucket, string> = {
+  STOCK_BR: "Ações (Brasil)",
+  STOCK_US: "Stocks",
+  ETF_INTL: "ETFs (Exterior)",
+  FII: "FIIs",
+  RF: "Renda Fixa",
 };
 
 export default function PlanejadorAportePage() {
@@ -51,26 +59,33 @@ export default function PlanejadorAportePage() {
       : 0;
   const plannedInvestmentsByClass = rebalancing?.asset_plan.reduce(
     (acc, asset) => {
-      acc[asset.asset_class] =
-        (acc[asset.asset_class] ?? 0) + Number(asset.amount_to_invest);
+      acc[asset.allocation_bucket] =
+        (acc[asset.allocation_bucket] ?? 0) + Number(asset.amount_to_invest);
       return acc;
     },
     {
-      STOCK: 0,
-      ACAO: 0,
+      STOCK_BR: 0,
+      STOCK_US: 0,
+      ETF_INTL: 0,
       FII: 0,
       RF: 0,
-    } as Record<AssetType, number>
+    } as Record<AllocationBucket, number>
   ) ?? {
-    STOCK: 0,
-    ACAO: 0,
+    STOCK_BR: 0,
+    STOCK_US: 0,
+    ETF_INTL: 0,
     FII: 0,
     RF: 0,
   };
-  const totalPlannedUsd = rebalancing?.asset_plan.reduce(
-    (total, asset) => total + Number(asset.amount_to_invest_usd ?? 0),
-    0
-  ) ?? 0;
+  const plannedNativeTotals = rebalancing?.asset_plan.reduce(
+    (acc, asset) => {
+      if (asset.quote_currency === "BRL" || asset.amount_to_invest_native == null) return acc;
+      acc[asset.quote_currency] =
+        (acc[asset.quote_currency] ?? 0) + Number(asset.amount_to_invest_native);
+      return acc;
+    },
+    {} as Partial<Record<CurrencyCode, number>>
+  ) ?? {};
   const projectedInvestableTotal = rebalancing
     ? rebalancing.class_breakdown.reduce(
         (total, item) => total + Number(item.current_value),
@@ -82,7 +97,7 @@ export default function PlanejadorAportePage() {
     const targetPct = Number(item.target_pct);
     const targetValue = Number(item.target_value);
     const currentPct = Number(item.current_pct);
-    const plannedAmount = plannedInvestmentsByClass[item.asset_class] ?? 0;
+    const plannedAmount = plannedInvestmentsByClass[item.allocation_bucket] ?? 0;
     const projectedValue = currentValue + plannedAmount;
     const projectedPct =
       projectedInvestableTotal > 0
@@ -146,7 +161,18 @@ export default function PlanejadorAportePage() {
       const now = new Date();
       const label = `Plano ${now.toLocaleDateString("pt-BR")} ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 
-      const items: { ticker: string; asset_class: string; current_value: number; target_value: number; gap: number; amount_to_invest: number; amount_to_invest_usd: number | null; is_reserve: boolean }[] = [];
+      const items: {
+        ticker: string;
+        asset_class: string;
+        current_value: number;
+        target_value: number;
+        gap: number;
+        amount_to_invest: number;
+        amount_to_invest_usd: number | null;
+        amount_to_invest_native: number | null;
+        quote_currency: CurrencyCode | null;
+        is_reserve: boolean;
+      }[] = [];
 
       // Add reserve as item if applicable
       if (rebalancing.reserva_gap != null && Number(rebalancing.reserva_gap) > 0) {
@@ -158,6 +184,8 @@ export default function PlanejadorAportePage() {
           gap: Number(rebalancing.reserva_gap),
           amount_to_invest: reserveAllocation,
           amount_to_invest_usd: null,
+          amount_to_invest_native: null,
+          quote_currency: null,
           is_reserve: true,
         });
       }
@@ -165,7 +193,7 @@ export default function PlanejadorAportePage() {
       for (const a of rebalancing.asset_plan) {
         items.push({
           ticker: a.ticker,
-          asset_class: a.asset_class,
+          asset_class: a.allocation_bucket,
           current_value: Number(a.current_value),
           target_value: Number(a.target_value),
           gap: Number(a.gap),
@@ -174,6 +202,11 @@ export default function PlanejadorAportePage() {
             a.amount_to_invest_usd != null
               ? Number(a.amount_to_invest_usd)
               : null,
+          amount_to_invest_native:
+            a.amount_to_invest_native != null
+              ? Number(a.amount_to_invest_native)
+              : null,
+          quote_currency: a.quote_currency,
           is_reserve: false,
         });
       }
@@ -379,13 +412,13 @@ export default function PlanejadorAportePage() {
 
                 <div className="mt-5 space-y-4">
                   {projectedClassBreakdown.map((item) => (
-                    <div key={item.asset_class}>
+                    <div key={item.allocation_bucket}>
                       <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div className="flex items-center gap-2">
                           <span
                             className="h-2.5 w-2.5 rounded-full"
                             style={{
-                              backgroundColor: CLASS_COLORS[item.asset_class],
+                              backgroundColor: CLASS_COLORS[item.allocation_bucket],
                             }}
                           />
                           <span className="text-sm font-medium">
@@ -406,7 +439,7 @@ export default function PlanejadorAportePage() {
                           className="absolute inset-y-0 left-0 rounded-full transition-all"
                           style={{
                             width: `${Math.min(item.projectedPct, 100)}%`,
-                            backgroundColor: CLASS_COLORS[item.asset_class],
+                            backgroundColor: CLASS_COLORS[item.allocation_bucket],
                           }}
                         />
                         <div
@@ -516,7 +549,7 @@ export default function PlanejadorAportePage() {
                 <tbody>
                   {rebalancing.class_breakdown.map((c) => (
                     <tr
-                      key={c.asset_class}
+                      key={c.allocation_bucket}
                       className="border-b border-[var(--color-border)]/50"
                     >
                       <td className="px-3 py-2">{c.label}</td>
@@ -582,9 +615,13 @@ export default function PlanejadorAportePage() {
                       </span>
                     </div>
                     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
-                      <span className="block">Total em USD</span>
+                      <span className="block">Total Nativo</span>
                       <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        {totalPlannedUsd > 0 ? formatUSD(totalPlannedUsd) : "—"}
+                        {Object.entries(plannedNativeTotals).length > 0
+                          ? Object.entries(plannedNativeTotals)
+                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
+                              .join(" · ")
+                          : "\u2014"}
                       </span>
                     </div>
                     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2">
@@ -622,7 +659,7 @@ export default function PlanejadorAportePage() {
                         Aportar (R$)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                        Aportar (USD)
+                        Aportar (Nativo)
                       </th>
                     </tr>
                   </thead>
@@ -671,14 +708,16 @@ export default function PlanejadorAportePage() {
                           <div className="flex items-center gap-2">
                             <TickerLogo
                               ticker={a.ticker}
-                              type={a.asset_class}
+                              type={a.asset_class === "STOCK" && a.market === "BR" ? "ACAO" : a.asset_class === "STOCK" ? "STOCK" : undefined}
+                              assetClass={a.asset_class}
+                              market={a.market}
                               size={20}
                             />
                             {a.ticker}
                           </div>
                         </td>
                         <td className="px-3 py-2 text-[var(--color-text-secondary)]">
-                          {a.asset_class}
+                          {BUCKET_LABELS[a.allocation_bucket]}
                         </td>
                         <td className="px-3 py-2">
                           {formatBRL(a.current_value)}
@@ -698,8 +737,8 @@ export default function PlanejadorAportePage() {
                           {formatBRL(a.amount_to_invest)}
                         </td>
                         <td className="px-3 py-2 text-[var(--color-text-muted)]">
-                          {a.amount_to_invest_usd
-                            ? formatUSD(a.amount_to_invest_usd)
+                          {a.amount_to_invest_native != null && a.quote_currency !== "BRL"
+                            ? formatCurrency(a.amount_to_invest_native, a.quote_currency)
                             : "—"}
                         </td>
                       </tr>
@@ -719,7 +758,11 @@ export default function PlanejadorAportePage() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        {totalPlannedUsd > 0 ? formatUSD(totalPlannedUsd) : "—"}
+                        {Object.entries(plannedNativeTotals).length > 0
+                          ? Object.entries(plannedNativeTotals)
+                              .map(([currency, total]) => formatCurrency(total, currency as CurrencyCode))
+                              .join(" · ")
+                          : "\u2014"}
                       </td>
                     </tr>
                   </tfoot>

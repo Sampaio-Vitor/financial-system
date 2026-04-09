@@ -5,8 +5,9 @@ import { formatBRL } from "@/lib/format";
 import { ClassSummary } from "@/types";
 
 const CLASS_COLORS: Record<string, string> = {
-  STOCK: "#3b82f6",
-  ACAO: "#10b981",
+  STOCK_BR: "#10b981",
+  STOCK_US: "#3b82f6",
+  ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
 };
@@ -28,7 +29,7 @@ export default function AllocationDonutChart({
       name: item.label,
       value: Number(item.value),
       pct: Number(item.pct),
-      color: CLASS_COLORS[item.asset_class] || "#64748b",
+      color: CLASS_COLORS[item.allocation_bucket || item.asset_class || "RF"] || "#64748b",
     }));
 
   if (reservaFinanceira && Number(reservaFinanceira) > 0) {

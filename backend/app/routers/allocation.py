@@ -44,7 +44,11 @@ async def update_allocation_targets(
     # Create new targets
     new_targets = []
     for t in data.targets:
-        target = AllocationTarget(user_id=user.id, asset_class=t.asset_class, target_pct=t.target_pct)
+        target = AllocationTarget(
+            user_id=user.id,
+            allocation_bucket=t.allocation_bucket,
+            target_pct=t.target_pct,
+        )
         db.add(target)
         new_targets.append(target)
 

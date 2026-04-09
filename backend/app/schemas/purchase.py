@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.models.asset import AssetType
+from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
 
 
 class PurchaseCreate(BaseModel):
@@ -12,7 +12,7 @@ class PurchaseCreate(BaseModel):
     purchase_date: date
     quantity: Decimal
     unit_price: Decimal | None = None
-    trade_currency: Literal["BRL", "USD"] | None = None
+    trade_currency: Literal["BRL", "USD", "EUR", "GBP"] | None = None
     unit_price_native: Decimal | None = None
     fx_rate: Decimal | None = None
 
@@ -21,7 +21,7 @@ class PurchaseUpdate(BaseModel):
     purchase_date: date | None = None
     quantity: Decimal | None = None
     unit_price: Decimal | None = None
-    trade_currency: Literal["BRL", "USD"] | None = None
+    trade_currency: Literal["BRL", "USD", "EUR", "GBP"] | None = None
     unit_price_native: Decimal | None = None
     fx_rate: Decimal | None = None
 
@@ -31,7 +31,7 @@ class PurchaseResponse(BaseModel):
     asset_id: int
     purchase_date: date
     quantity: Decimal
-    trade_currency: Literal["BRL", "USD"]
+    trade_currency: Literal["BRL", "USD", "EUR", "GBP"]
     unit_price: Decimal
     total_value: Decimal
     unit_price_native: Decimal
@@ -40,6 +40,9 @@ class PurchaseResponse(BaseModel):
     created_at: datetime
     ticker: str | None = None
     asset_type: AssetType | None = None
+    asset_class: AssetClass | None = None
+    market: Market | None = None
+    quote_currency: CurrencyCode | None = None
 
     model_config = {"from_attributes": True}
 

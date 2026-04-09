@@ -268,16 +268,6 @@ export default function ProventosPage() {
                     tickLine={false}
                   />
                   <YAxis
-                    yAxisId="left"
-                    tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => formatBRL(v).replace("R$\u00a0", "R$")}
-                    width={80}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
                     tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
                     axisLine={false}
                     tickLine={false}
@@ -300,7 +290,6 @@ export default function ProventosPage() {
                       key={type}
                       dataKey={type}
                       stackId="a"
-                      yAxisId="left"
                       fill={eventTypeColors[type]}
                       radius={i === activeTypes.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                     />
@@ -308,7 +297,6 @@ export default function ProventosPage() {
                   <Line
                     type="monotone"
                     dataKey="acumulado"
-                    yAxisId="right"
                     stroke="#f59e0b"
                     strokeWidth={2}
                     dot={{ r: 3, fill: "#f59e0b" }}

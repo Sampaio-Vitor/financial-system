@@ -91,7 +91,7 @@ export default function RendaFixaPage() {
     apiFetch<MonthlyOverview>(`/portfolio/overview?month=${month}`)
       .then((overview) => {
         const breakdown = overview.allocation_breakdown;
-        const rfClass = breakdown.find((c) => c.asset_class === "RF");
+        const rfClass = breakdown.find((c) => c.allocation_bucket === "RF" || c.asset_class === "RF");
         if (rfClass && Number(rfClass.target_pct) > 0) {
           const patrimonioInvestivel = breakdown.reduce((s, c) => s + Number(c.value), 0);
           setRfTargetValue((Number(rfClass.target_pct) / 100) * patrimonioInvestivel);

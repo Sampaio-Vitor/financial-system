@@ -78,6 +78,7 @@ export const navItems: NavItem[] = [
       { label: "Catálogo", href: "/carteira/catalogo", icon: BookOpen },
       { label: "Stocks (EUA)", href: "/carteira/stocks", icon: TrendingUp },
       { label: "Ações (Brasil)", href: "/carteira/acoes", icon: Building2 },
+      { label: "ETFs", href: "/carteira/etfs", icon: TrendingUp },
       { label: "FIIs", href: "/carteira/fiis", icon: Landmark },
       { label: "Renda Fixa", href: "/carteira/renda-fixa", icon: PiggyBank },
       { label: "Reserva", href: "/carteira/reserva", icon: ShieldCheck },

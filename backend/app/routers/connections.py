@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +25,8 @@ from app.services.encryption_service import decrypt
 from app.services import dividend_service, pluggy_service
 
 router = APIRouter()
+
+TRANSACTION_SYNC_LOOKBACK_DAYS = 40
 
 
 async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, str, list[str]]:
@@ -63,6 +65,12 @@ async def _create_transaction_with_dividend(
     await db.flush()
     await dividend_service.upsert_dividend_event_for_transaction(db, txn)
     return txn
+
+
+def _transaction_sync_since(last_sync_at: datetime | None) -> date | None:
+    if not last_sync_at:
+        return None
+    return last_sync_at.date() - timedelta(days=TRANSACTION_SYNC_LOOKBACK_DAYS)
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
@@ -206,7 +214,7 @@ async def sync_connection(
         return SyncResponse(new_transactions=0, connection_status="error")
 
     new_count = 0
-    since_date = connection.last_sync_at.date() if connection.last_sync_at else None
+    since_date = _transaction_sync_since(connection.last_sync_at)
 
     for account in connection.accounts:
         # Update account balance

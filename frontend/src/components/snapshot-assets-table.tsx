@@ -2,23 +2,64 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatBRL } from "@/lib/format";
-import { SnapshotAssetItem } from "@/types";
+import { formatBRL, formatCurrency } from "@/lib/format";
+import { AllocationBucket, AssetClass, CurrencyCode, Market, SnapshotAssetItem } from "@/types";
 import MobileCard from "@/components/mobile-card";
+import TickerLogo from "@/components/ticker-logo";
 
-const TYPE_LABELS: Record<string, string> = {
-  STOCK: "Stock",
-  ACAO: "Acao",
+const BUCKET_LABELS: Record<AllocationBucket, string> = {
+  STOCK_BR: "Ações BR",
+  STOCK_US: "Stocks",
+  ETF_INTL: "ETFs Exterior",
+  FII: "FIIs",
+  RF: "Renda Fixa",
+};
+
+const BUCKET_COLORS: Record<AllocationBucket, string> = {
+  STOCK_BR: "bg-emerald-500/20 text-emerald-400",
+  STOCK_US: "bg-blue-500/20 text-blue-400",
+  ETF_INTL: "bg-cyan-500/20 text-cyan-400",
+  FII: "bg-amber-500/20 text-amber-400",
+  RF: "bg-violet-500/20 text-violet-400",
+};
+
+const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  STOCK: "Ação",
+  ETF: "ETF",
+  FII: "FII",
+  RF: "Renda Fixa",
+};
+
+const MARKET_LABELS: Record<Market, string> = {
+  BR: "Brasil",
+  US: "EUA",
+  EU: "Europa",
+  UK: "Reino Unido",
+};
+
+const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {
+  STOCK: "STOCK_US",
+  ACAO: "STOCK_BR",
   FII: "FII",
   RF: "RF",
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  STOCK: "bg-blue-500/20 text-blue-400",
-  ACAO: "bg-emerald-500/20 text-emerald-400",
-  FII: "bg-amber-500/20 text-amber-400",
-  RF: "bg-violet-500/20 text-violet-400",
-};
+function getBucket(row: SnapshotAssetItem): AllocationBucket {
+  return row.allocation_bucket || FALLBACK_TYPE_TO_BUCKET[row.type] || "RF";
+}
+
+function metaLabel(row: SnapshotAssetItem): string | null {
+  if (!row.asset_class || !row.market || !row.quote_currency) return null;
+  return `${ASSET_CLASS_LABELS[row.asset_class]} • ${MARKET_LABELS[row.market]} • ${row.quote_currency}`;
+}
+
+function closingLabel(row: SnapshotAssetItem): string {
+  const currency = (row.quote_currency || "BRL") as CurrencyCode;
+  if (row.closing_price_native != null && currency !== "BRL") {
+    return `${formatCurrency(row.closing_price_native, currency)} (${formatBRL(row.closing_price)})`;
+  }
+  return row.closing_price != null ? formatBRL(row.closing_price) : "—";
+}
 
 export default function SnapshotAssetsTable({ month }: { month: string }) {
   const [data, setData] = useState<SnapshotAssetItem[]>([]);
@@ -75,18 +116,27 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
           <MobileCard
             key={row.ticker}
             header={
-              <>
-                <span className="font-medium text-sm text-[var(--color-text-primary)]">
-                  {row.ticker}
-                </span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[row.type] || ""}`}>
-                  {TYPE_LABELS[row.type] || row.type}
-                </span>
-              </>
+              <div className="flex items-center gap-2">
+                <TickerLogo
+                  ticker={row.ticker}
+                  type={row.type === "ACAO" ? "ACAO" : row.type === "STOCK" ? "STOCK" : undefined}
+                  assetClass={row.asset_class}
+                  market={row.market}
+                  size={22}
+                />
+                <div>
+                  <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                    {row.ticker}
+                  </span>
+                  {metaLabel(row) && (
+                    <div className="text-[10px] text-[var(--color-text-muted)]">{metaLabel(row)}</div>
+                  )}
+                </div>
+              </div>
             }
             badge={
-              <span className={`text-sm font-semibold ${pnlColor(row.pnl_pct)}`}>
-                {row.pnl_pct != null ? `${row.pnl_pct >= 0 ? "+" : ""}${row.pnl_pct.toFixed(2)}%` : "\u2014"}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BUCKET_COLORS[getBucket(row)] || ""}`}>
+                {BUCKET_LABELS[getBucket(row)]}
               </span>
             }
             bodyItems={[
@@ -95,7 +145,15 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
             ]}
             expandedItems={[
               { label: "Preco Medio", value: formatBRL(row.avg_price) },
-              { label: "Fechamento", value: row.closing_price != null ? formatBRL(row.closing_price) : "\u2014" },
+              { label: "Fechamento", value: closingLabel(row) },
+              {
+                label: "FX para BRL",
+                value: row.quote_currency && row.quote_currency !== "BRL" ? formatBRL(row.fx_rate_to_brl) : formatBRL(1),
+              },
+              {
+                label: "PnL (%)",
+                value: <span className={pnlColor(row.pnl_pct)}>{row.pnl_pct != null ? `${row.pnl_pct >= 0 ? "+" : ""}${row.pnl_pct.toFixed(2)}%` : "\u2014"}</span>,
+              },
               {
                 label: "PnL (R$)",
                 value: (
@@ -151,11 +209,27 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
                   className="border-b border-[var(--color-border)]/50 last:border-0 hover:bg-[var(--color-bg-main)]/50 transition-colors"
                 >
                   <td className="py-2.5 px-3 font-medium text-[var(--color-text-primary)]">
-                    {row.ticker}
+                    <div className="flex items-center gap-2">
+                      <TickerLogo
+                        ticker={row.ticker}
+                        type={row.type === "ACAO" ? "ACAO" : row.type === "STOCK" ? "STOCK" : undefined}
+                        assetClass={row.asset_class}
+                        market={row.market}
+                        size={22}
+                      />
+                      <div>
+                        <div>{row.ticker}</div>
+                        {metaLabel(row) && (
+                          <div className="text-[10px] font-normal text-[var(--color-text-muted)]">
+                            {metaLabel(row)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2.5 px-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[row.type] || ""}`}>
-                      {TYPE_LABELS[row.type] || row.type}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BUCKET_COLORS[getBucket(row)] || ""}`}>
+                      {BUCKET_LABELS[getBucket(row)]}
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
@@ -165,7 +239,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
                     {formatBRL(row.avg_price)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.closing_price != null ? formatBRL(row.closing_price) : "\u2014"}
+                    {closingLabel(row)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
                     {row.market_value != null ? formatBRL(row.market_value) : "\u2014"}

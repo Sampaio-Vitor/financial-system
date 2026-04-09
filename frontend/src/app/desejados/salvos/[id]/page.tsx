@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
-import { SavedPlan, ClassRebalancing, AssetType } from "@/types";
-import { formatBRL, formatUSD, formatPercent } from "@/lib/format";
+import { CurrencyCode, SavedPlan, ClassRebalancing } from "@/types";
+import { formatBRL, formatCurrency, formatPercent } from "@/lib/format";
 import {
   ChevronLeft,
   ShieldCheck,
@@ -19,6 +19,9 @@ import Link from "next/link";
 const CLASS_COLORS: Record<string, string> = {
   STOCK: "#3b82f6",
   ACAO: "#10b981",
+  STOCK_BR: "#10b981",
+  STOCK_US: "#3b82f6",
+  ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
   RESERVA: "#06b6d4",
@@ -329,10 +332,24 @@ export default function SavedPlanDetailPage() {
     (sum, i) => sum + Number(i.amount_to_invest),
     0
   );
-  const totalPlannedUsd = plan.items.reduce(
-    (sum, i) => sum + Number(i.amount_to_invest_usd ?? 0),
-    0
+  const nativeTotals = plan.items.reduce(
+    (acc, item) => {
+      if (!item.quote_currency || item.quote_currency === "BRL" || item.amount_to_invest_native == null) {
+        return acc;
+      }
+      acc[item.quote_currency] =
+        (acc[item.quote_currency] ?? 0) + Number(item.amount_to_invest_native);
+      return acc;
+    },
+    {} as Partial<Record<CurrencyCode, number>>
   );
+  const formatNativeTotals = (totals: Partial<Record<CurrencyCode, number>>) => {
+    const entries = Object.entries(totals).filter(([, value]) => Number(value) > 0);
+    if (entries.length === 0) return "—";
+    return entries
+      .map(([currency, value]) => formatCurrency(value, currency as CurrencyCode))
+      .join(" · ");
+  };
   const selectedStartIndex =
     topRulerIndex == null || bottomRulerIndex == null
       ? null
@@ -349,15 +366,19 @@ export default function SavedPlanDetailPage() {
           .filter((item) => !item.checked);
   const rulerSumBrl =
     selectedItems.reduce(
-      (sum, item) =>
-        item.asset_class === "STOCK"
-          ? sum
-          : sum + Number(item.amount_to_invest),
+      (sum, item) => sum + Number(item.amount_to_invest),
       0
     );
-  const rulerSumUsd = selectedItems.reduce(
-    (sum, item) => sum + Number(item.amount_to_invest_usd ?? 0),
-    0
+  const rulerNativeTotals = selectedItems.reduce(
+    (acc, item) => {
+      if (!item.quote_currency || item.quote_currency === "BRL" || item.amount_to_invest_native == null) {
+        return acc;
+      }
+      acc[item.quote_currency] =
+        (acc[item.quote_currency] ?? 0) + Number(item.amount_to_invest_native);
+      return acc;
+    },
+    {} as Partial<Record<CurrencyCode, number>>
   );
   const topRulerLabel =
     topRulerIndex == null ? null : plan.items[topRulerIndex]?.is_reserve
@@ -474,7 +495,7 @@ export default function SavedPlanDetailPage() {
               <tbody>
                 {classBreakdown.map((c) => (
                   <tr
-                    key={c.asset_class}
+                    key={c.allocation_bucket}
                     className="border-b border-[var(--color-border)]/50"
                   >
                     <td className="px-3 py-2">{c.label}</td>
@@ -535,7 +556,7 @@ export default function SavedPlanDetailPage() {
                   Intervalo: {topRulerLabel ?? "—"} até {bottomRulerLabel ?? "—"}
                 </p>
                 <p>Total no intervalo: {formatBRL(rulerSumBrl)}</p>
-                <p>USD no intervalo: {rulerSumUsd > 0 ? formatUSD(rulerSumUsd) : "—"}</p>
+                <p>Nativo no intervalo: {formatNativeTotals(rulerNativeTotals)}</p>
               </div>
             )}
             {savingChecks && (
@@ -595,7 +616,7 @@ export default function SavedPlanDetailPage() {
                     Aportar (R$)
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    Aportar (USD)
+                    Aportar (Nativo)
                   </th>
                 </tr>
               </thead>
@@ -654,7 +675,6 @@ export default function SavedPlanDetailPage() {
                           >
                             <TickerLogo
                               ticker={item.ticker}
-                              type={item.asset_class as AssetType}
                               size={20}
                             />
                             {item.ticker}
@@ -689,8 +709,10 @@ export default function SavedPlanDetailPage() {
                       <td
                         className={`px-3 py-2 text-[var(--color-text-muted)] ${item.checked ? "line-through opacity-60" : ""}`}
                       >
-                        {item.amount_to_invest_usd
-                          ? formatUSD(item.amount_to_invest_usd)
+                        {item.quote_currency &&
+                        item.quote_currency !== "BRL" &&
+                        item.amount_to_invest_native
+                          ? formatCurrency(item.amount_to_invest_native, item.quote_currency)
                           : "—"}
                       </td>
                     </tr>
@@ -705,7 +727,7 @@ export default function SavedPlanDetailPage() {
                   </td>
                   <td className="px-3 py-2">{formatBRL(totalPlannedBrl)}</td>
                   <td className="px-3 py-2">
-                    {totalPlannedUsd > 0 ? formatUSD(totalPlannedUsd) : "—"}
+                    {formatNativeTotals(nativeTotals)}
                   </td>
                 </tr>
               </tfoot>
@@ -752,7 +774,9 @@ export default function SavedPlanDetailPage() {
               </button>
               <div className="absolute right-2 -top-5 rounded-full border border-cyan-400/40 bg-slate-950/95 px-3 py-1.5 text-xs text-cyan-100 shadow-lg">
                 Fim: {bottomRulerLabel ?? "—"} • {formatBRL(rulerSumBrl)}
-                {rulerSumUsd > 0 ? ` • ${formatUSD(rulerSumUsd)}` : ""}
+                {formatNativeTotals(rulerNativeTotals) !== "—"
+                  ? ` • ${formatNativeTotals(rulerNativeTotals)}`
+                  : ""}
               </div>
             </div>
           )}
