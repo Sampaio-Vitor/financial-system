@@ -111,7 +111,7 @@ export default function PositionsTable({
   return (
     <>
       {/* Mobile card view */}
-      <div className="md:hidden space-y-2">
+      <div className="md:hidden space-y-2 max-h-[792px] overflow-y-auto">
         {/* Sort control */}
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs text-[var(--color-text-muted)]">Ordenar:</span>
@@ -171,15 +171,8 @@ export default function PositionsTable({
                 { label: "Quantidade", value: formatQuantity(p.quantity) },
               ]}
               expandedItems={[
-                { label: "Descricao", value: p.description || "\u2014" },
-                {
-                  label: "1o Aporte",
-                  value: p.first_date
-                    ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
-                    : "\u2014",
-                },
-                { label: "Preco Medio", value: formatBRL(p.avg_price) },
-                { label: "Cotacao Atual", value: currentPriceLabel(p) },
+                { label: "Preço Médio", value: formatBRL(p.avg_price) },
+                { label: "Cotação Atual", value: currentPriceLabel(p) },
                 {
                   label: "FX para BRL",
                   value:
@@ -245,24 +238,47 @@ export default function PositionsTable({
         </div>
       </div>
 
-      {/* Desktop table view */}
-      <div className="hidden md:block overflow-x-auto bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
-        <table className="w-full text-sm">
+      {/* Desktop: totals header + scrollable table */}
+      <div className="hidden md:block bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[10%]" />
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <thead>
-            <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-main)]/30">
+            <tr className="border-b border-[var(--color-border)]">
               {colHeader("Ticker", "ticker")}
-              <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">
-                Descricao
-              </th>
-              {colHeader("1o Aporte", "first_date")}
               {colHeader("Qtd", "quantity")}
-              {colHeader("Preco Medio", "avg_price")}
-              {colHeader("Cotacao Atual", "current_price")}
+              {colHeader("Preço Médio", "avg_price")}
+              {colHeader("Cotação Atual", "current_price")}
               {colHeader("Valor Mercado", "market_value")}
               {colHeader("P&L (R$)", "pnl")}
               {colHeader("P&L (%)", "pnl_pct")}
             </tr>
+            <tr className="border-b-2 border-[var(--color-border)] font-bold text-sm">
+              <td className="px-3 py-2" colSpan={4}>TOTAL</td>
+              <td className="px-3 py-2">{formatBRL(totalMarketValue)}</td>
+              <td className={`px-3 py-2 ${pnlColor(totalPnl)}`}>{formatBRL(totalPnl)}</td>
+              <td className={`px-3 py-2 ${pnlColor(totalPnlPct)}`}>{formatPercent(totalPnlPct)}</td>
+            </tr>
           </thead>
+        </table>
+        <div className="overflow-x-auto max-h-[792px] overflow-y-auto">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[10%]" />
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <tbody>
             {sorted.map((p) => {
               const isExpanded = expandedId === p.asset_id;
@@ -295,14 +311,6 @@ export default function PositionsTable({
                         />
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate">
-                      {p.description}
-                    </td>
-                    <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-                      {p.first_date
-                        ? new Date(p.first_date + "T00:00:00").toLocaleDateString("pt-BR")
-                        : "\u2014"}
-                    </td>
                     <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
                     <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
                     <td className="px-3 py-2.5">{currentPriceLabel(p)}</td>
@@ -316,7 +324,7 @@ export default function PositionsTable({
                   </tr>
                   {isExpanded && (
                     <tr className="border-b border-[var(--color-border)]/50">
-                      <td colSpan={9} className="p-0 bg-[var(--color-bg-main)]/40">
+                      <td colSpan={7} className="p-0 bg-[var(--color-bg-main)]/40">
                         <div className="border-b border-[var(--color-border)]/50 px-4 py-3 text-xs text-[var(--color-text-muted)]">
                           <span className="mr-4">
                             Mercado: {p.market ? MARKET_LABELS[p.market] : "—"}
@@ -339,21 +347,8 @@ export default function PositionsTable({
               );
             })}
           </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-[var(--color-border)] font-bold">
-              <td className="px-3 py-2.5" colSpan={6}>
-                TOTAL
-              </td>
-              <td className="px-3 py-2.5">{formatBRL(totalMarketValue)}</td>
-              <td className={`px-3 py-2.5 ${pnlColor(totalPnl)}`}>
-                {formatBRL(totalPnl)}
-              </td>
-              <td className={`px-3 py-2.5 ${pnlColor(totalPnlPct)}`}>
-                {formatPercent(totalPnlPct)}
-              </td>
-            </tr>
-          </tfoot>
         </table>
+        </div>
       </div>
     </>
   );
