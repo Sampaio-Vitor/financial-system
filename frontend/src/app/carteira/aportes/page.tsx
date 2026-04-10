@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-modal";
 import { apiFetch } from "@/lib/api";
-import { AssetClass, AssetType, CurrencyCode, Purchase, PurchasePageResponse } from "@/types";
+import { AssetType, CurrencyCode, Purchase, PurchasePageResponse } from "@/types";
 import { formatBRL, formatCurrency, formatEditableNumber, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
 import TickerLogo from "@/components/ticker-logo";
@@ -42,13 +42,13 @@ export default function AportesPage() {
   const [saving, setSaving] = useState(false);
 
   // Filters
-  const [filterType, setFilterType] = useState<AssetClass | "">("");
+  const [filterType, setFilterType] = useState<AssetType | "">("");
   const [filterTicker, setFilterTicker] = useState("");
   const [filterOperation, setFilterOperation] = useState<OperationFilter>("todos");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(15);
 
   const dateFromRef = useRef<HTMLInputElement>(null);
   const dateToRef = useRef<HTMLInputElement>(null);
@@ -78,7 +78,7 @@ export default function AportesPage() {
         page_size: String(pageSize),
       });
 
-      if (filterType) params.set("asset_class", filterType);
+      if (filterType) params.set("asset_type", filterType);
       if (filterTicker.trim()) params.set("ticker", filterTicker.trim());
       if (filterOperation !== "todos") params.set("operation", filterOperation);
       if (filterDateFrom) params.set("date_from", filterDateFrom);
@@ -239,9 +239,9 @@ export default function AportesPage() {
   const editCalculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity) || 0;
 
   return (
-    <div>
+    <div className="flex flex-col h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4rem)] min-h-0">
       <ConfirmDialog />
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4 shrink-0">
         <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
         <div className="flex gap-2">
           <button
@@ -272,18 +272,18 @@ export default function AportesPage() {
 
       {/* Filters */}
       {!loading && (totalCount > 0 || hasActiveFilters) && (
-        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-4">
+        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-3 shrink-0">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-[var(--color-text-muted)]">Tipo</label>
               <select
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value as AssetClass | "")}
+                onChange={(e) => setFilterType(e.target.value as AssetType | "")}
                 className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
               >
                 <option value="">Todos</option>
-                <option value="STOCK">Ações</option>
-                <option value="ETF">ETFs</option>
+                <option value="ACAO">Acoes</option>
+                <option value="STOCK">Stocks</option>
                 <option value="FII">FIIs</option>
               </select>
             </div>
@@ -344,7 +344,7 @@ export default function AportesPage() {
         </div>
       )}
 
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
+      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 flex flex-col min-h-0 flex-1">
         {loading ? (
           <div className="animate-pulse h-64" />
         ) : totalCount === 0 && !hasActiveFilters ? (
@@ -357,7 +357,7 @@ export default function AportesPage() {
           </p>
         ) : (
           <>
-          <div className="mb-4 flex items-center justify-end">
+          <div className="mb-3 flex items-center justify-end shrink-0">
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 py-2 text-right">
               <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
                 Subtotal exibido
@@ -369,7 +369,7 @@ export default function AportesPage() {
           </div>
 
           {/* Mobile card view */}
-          <div className="md:hidden space-y-2 p-2">
+          <div className="md:hidden space-y-2 p-2 flex-1 overflow-auto min-h-0">
             {purchases.map((p) => {
               const isSale = p.quantity < 0;
               return (
@@ -497,9 +497,9 @@ export default function AportesPage() {
           )}
 
           {/* Desktop table view */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:flex md:flex-col min-h-0 flex-1 overflow-auto">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-[var(--color-bg-card)] z-10">
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Ticker</th>
@@ -609,7 +609,7 @@ export default function AportesPage() {
             </table>
           </div>
 
-          <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)]/50 pt-4 md:flex-row md:items-center md:justify-between">
+          <div className="mt-3 flex flex-col gap-3 border-t border-[var(--color-border)]/50 pt-3 md:flex-row md:items-center md:justify-between shrink-0">
             <div className="text-xs text-[var(--color-text-muted)]">
               Exibindo {pageStart}-{pageEnd} de {totalCount} registros
             </div>
@@ -625,9 +625,9 @@ export default function AportesPage() {
                   className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2 py-1 text-sm text-[var(--color-text-primary)]"
                 >
                   <option value={10}>10</option>
+                  <option value={15}>15</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>
-                  <option value={100}>100</option>
                 </select>
               </label>
               <div className="flex items-center gap-2">
