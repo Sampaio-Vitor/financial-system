@@ -6,7 +6,7 @@ import { MonthlyOverview, AssetType, Purchase, DividendEvent } from "@/types";
 
 const classLabels: Record<string, string> = {
   STOCK: "Stocks (EUA)",
-  ACAO: "Acoes (Brasil)",
+  ACAO: "Ações (Brasil)",
   FII: "FIIs",
   RF: "Renda Fixa",
   RESERVA: "Reserva Financeira",

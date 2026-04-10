@@ -5,8 +5,8 @@ export default function AcoesPage() {
     <AssetListPage
       assetClass="STOCK"
       market="BR"
-      title="Acoes (Brasil)"
-      emptyMessage="Nenhuma posicao em Acoes. Registre aportes para ver suas posicoes."
+      title="Ações (Brasil)"
+      emptyMessage="Nenhuma posição em Ações. Registre aportes para ver suas posições."
     />
   );
 }

@@ -282,7 +282,7 @@ export default function AportesPage() {
                 className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm w-full"
               >
                 <option value="">Todos</option>
-                <option value="STOCK">Acoes</option>
+                <option value="STOCK">Ações</option>
                 <option value="ETF">ETFs</option>
                 <option value="FII">FIIs</option>
               </select>
@@ -507,7 +507,7 @@ export default function AportesPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Qtd</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Preco Unit.</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Total</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Acoes</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Ações</th>
                 </tr>
               </thead>
               <tbody>

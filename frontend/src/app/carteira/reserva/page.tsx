@@ -563,7 +563,7 @@ export default function ReservaPage() {
                     Nota
                   </th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">
-                    Acoes
+                    Ações
                   </th>
                 </tr>
               </thead>

@@ -34,7 +34,7 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
   return (
     <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-4 md:p-6 shadow-sm">
       <h3 className="text-base font-semibold mb-5 text-[var(--color-text-primary)] tracking-tight">
-        Alocacao por Classe
+        Alocação por Classe
       </h3>
 
       <div className="space-y-5">
@@ -46,7 +46,6 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
           const targetPct = Number(item.target_pct);
           const barWidth = Math.min((pct / scale) * 100, 100);
           const markerPos = Math.min((targetPct / scale) * 100, 100);
-          const onTarget = pct >= targetPct;
           const targetValue = (targetPct / 100) * patrimonioInvestivel;
 
           return (
@@ -61,21 +60,10 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                   </div>
                   <span className="text-sm font-medium">{item.label}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs md:text-sm tabular-nums">
-                    <span className="font-semibold">{formatBRL(item.value)}</span>
-                    <span className="text-[var(--color-text-muted)] hidden md:inline"> / {formatBRL(targetValue)}</span>
-                  </span>
-                  <span
-                    className={`text-xs font-medium tabular-nums px-1.5 py-0.5 rounded ${
-                      onTarget
-                        ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                        : "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
-                    }`}
-                  >
-                    {pct.toFixed(1)}%
-                  </span>
-                </div>
+                <span className="text-xs md:text-sm tabular-nums">
+                  <span className="font-semibold">{formatBRL(item.value)}</span>
+                  <span className="text-[var(--color-text-muted)]"> / {formatBRL(targetValue)}</span>
+                </span>
               </div>
 
               <div className="relative h-1.5 rounded-full bg-[var(--color-border)]/40">
@@ -100,14 +88,6 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                 )}
               </div>
 
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-[var(--color-text-muted)]">
-                  {pct > 0 ? `${pct.toFixed(1)}% atual` : "sem posicao"}
-                </span>
-                <span className="text-[10px] text-[var(--color-text-muted)]">
-                  meta {targetPct.toFixed(0)}%
-                </span>
-              </div>
             </div>
           );
         })}
@@ -121,8 +101,6 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
               const target = reservaTarget ? Number(reservaTarget) : null;
               const reserveColor = "#06b6d4";
               const barW = target ? Math.min((reserva / target) * 100, 100) : 100;
-              const onTarget = target ? reserva >= target : true;
-
               return (
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -135,25 +113,12 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                       </div>
                       <span className="text-sm font-medium">Reserva Financeira</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm tabular-nums">
-                        <span className="font-semibold">{formatBRL(reserva)}</span>
-                        {target && (
-                          <span className="text-[var(--color-text-muted)]"> / {formatBRL(target)}</span>
-                        )}
-                      </span>
+                    <span className="text-sm tabular-nums">
+                      <span className="font-semibold">{formatBRL(reserva)}</span>
                       {target && (
-                        <span
-                          className={`text-xs font-medium tabular-nums px-1.5 py-0.5 rounded ${
-                            onTarget
-                              ? "bg-[var(--color-positive)]/15 text-[var(--color-positive)]"
-                              : "bg-[var(--color-negative)]/15 text-[var(--color-negative)]"
-                          }`}
-                        >
-                          {((reserva / target) * 100).toFixed(1)}%
-                        </span>
+                        <span className="text-[var(--color-text-muted)]"> / {formatBRL(target)}</span>
                       )}
-                    </div>
+                    </span>
                   </div>
 
                   <div className="relative h-1.5 rounded-full bg-[var(--color-border)]/40">
@@ -176,16 +141,6 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-[10px] text-[var(--color-text-muted)]">
-                      valor fixo
-                    </span>
-                    {target && (
-                      <span className="text-[10px] text-[var(--color-text-muted)]">
-                        meta {formatBRL(target)}
-                      </span>
-                    )}
-                  </div>
                 </div>
               );
             })()}
