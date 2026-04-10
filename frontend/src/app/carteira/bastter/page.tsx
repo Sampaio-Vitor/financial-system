@@ -31,13 +31,13 @@ import type {
 
 const SUPPORTED_TYPES: AssetType[] = ["ACAO", "FII", "STOCK"];
 const TYPE_LABELS: Record<AssetType, string> = {
-  ACAO: "Acoes",
+  ACAO: "Ações",
   FII: "FIIs",
   STOCK: "Stocks",
   RF: "Renda Fixa",
 };
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
-  STOCK: "Acoes",
+  STOCK: "Ações",
   ETF: "ETFs",
   FII: "FIIs",
   RF: "Renda Fixa",

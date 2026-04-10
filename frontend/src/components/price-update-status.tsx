@@ -14,28 +14,6 @@ function formatCountdown(ms: number): string {
   return `${minutes}min`;
 }
 
-function getRunStatusMeta(status: string | null) {
-  switch (status) {
-    case "success":
-      return {
-        label: "sucesso",
-        className: "text-[var(--color-positive)]",
-      };
-    case "partial":
-      return {
-        label: "parcial",
-        className: "text-amber-500",
-      };
-    case "failed":
-      return {
-        label: "falhou",
-        className: "text-[var(--color-negative)]",
-      };
-    default:
-      return null;
-  }
-}
-
 export default function PriceUpdateStatus() {
   const [status, setStatus] = useState<PriceStatusResponse | null>(null);
   const [countdown, setCountdown] = useState("");
@@ -76,26 +54,15 @@ export default function PriceUpdateStatus() {
         minute: "2-digit",
       })
     : null;
-  const runStatusMeta = getRunStatusMeta(status?.last_run_status ?? null);
-
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-        <Clock size={14} />
-        <span>
-          Proxima atualizacao em <span className="font-semibold text-[var(--color-text-secondary)]">{countdown || "..."}</span>
-        </span>
-      </div>
+    <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+      <Clock size={14} />
       {lastUpdateFormatted && (
-        <span className="text-xs text-[var(--color-text-muted)] hidden sm:inline">
-          · Ultima: {lastUpdateFormatted}
-        </span>
+        <span>Última: {lastUpdateFormatted}</span>
       )}
-      {runStatusMeta && (
-        <span className={`text-xs hidden sm:inline ${runStatusMeta.className}`}>
-          · Status: {runStatusMeta.label}
-        </span>
-      )}
+      <span>
+        · Próxima em <span className="font-semibold text-[var(--color-text-secondary)]">{countdown || "..."}</span>
+      </span>
     </div>
   );
 }

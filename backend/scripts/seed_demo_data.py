@@ -574,7 +574,7 @@ def build_snapshot_rows(user_id: int) -> list[MonthlySnapshot]:
                     "asset_class": asset_class.value,
                     "label": {
                         AssetType.STOCK: "Stocks (EUA)",
-                        AssetType.ACAO: "Acoes (Brasil)",
+                        AssetType.ACAO: "Ações (Brasil)",
                         AssetType.FII: "FIIs",
                         AssetType.RF: "Renda Fixa",
                     }[asset_class],

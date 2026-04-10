@@ -304,7 +304,7 @@ export default function RendaFixaPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rendimento</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rend. (%)</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Vencimento</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Acoes</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Ações</th>
                 </tr>
               </thead>
               <tbody>

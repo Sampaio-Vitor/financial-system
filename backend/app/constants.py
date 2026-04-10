@@ -2,13 +2,13 @@ from app.models.asset import AllocationBucket, AssetClass, AssetType, CurrencyCo
 
 CLASS_LABELS = {
     AssetType.STOCK: "Stocks (EUA)",
-    AssetType.ACAO: "Acoes (Brasil)",
+    AssetType.ACAO: "Ações (Brasil)",
     AssetType.FII: "FIIs",
     AssetType.RF: "Renda Fixa",
 }
 
 ASSET_CLASS_LABELS = {
-    AssetClass.STOCK: "Acoes",
+    AssetClass.STOCK: "Ações",
     AssetClass.ETF: "ETFs",
     AssetClass.FII: "FIIs",
     AssetClass.RF: "Renda Fixa",
@@ -29,7 +29,7 @@ CURRENCY_LABELS = {
 }
 
 ALLOCATION_BUCKET_LABELS = {
-    AllocationBucket.STOCK_BR: "Acoes (Brasil)",
+    AllocationBucket.STOCK_BR: "Ações (Brasil)",
     AllocationBucket.STOCK_US: "Stocks",
     AllocationBucket.ETF_INTL: "ETFs (Exterior)",
     AllocationBucket.FII: "FIIs",
