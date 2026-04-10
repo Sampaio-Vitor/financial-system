@@ -8,7 +8,6 @@ import {
   AllocationTarget,
   Asset,
   AssetRebalancingInfo,
-  AssetClass,
   CurrencyCode,
   Market,
 } from "@/types";
@@ -23,13 +22,6 @@ const ALLOCATION_BUCKET_LABELS: Record<AllocationBucket, string> = {
   STOCK_US: "Stocks",
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
-  RF: "Renda Fixa",
-};
-
-const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
-  STOCK: "Ação",
-  ETF: "ETF",
-  FII: "FII",
   RF: "Renda Fixa",
 };
 
@@ -62,16 +54,9 @@ function getBucket(asset: Asset): AllocationBucket {
   return "RF";
 }
 
-function getAssetLabel(asset: Asset): string {
-  if (!asset.asset_class || !asset.market || !asset.quote_currency) {
-    return asset.type;
-  }
-  return `${ASSET_CLASS_LABELS[asset.asset_class]} • ${MARKET_LABELS[asset.market]} • ${CURRENCY_LABELS[asset.quote_currency]}`;
-}
-
 type Tab = "ativos" | "metas";
 type FilterType = "ALL" | "PAUSED" | AllocationBucket;
-type SortKey = "ticker" | "bucket" | "description" | "current_value" | "target_value" | "gap";
+type SortKey = "ticker" | "bucket" | "current_value" | "target_value" | "gap";
 type SortDir = "asc" | "desc";
 
 export default function CatalogoPage() {
@@ -221,8 +206,6 @@ function CatalogoContent() {
         return dir * a.ticker.localeCompare(b.ticker);
       case "bucket":
         return dir * ALLOCATION_BUCKET_LABELS[getBucket(a)].localeCompare(ALLOCATION_BUCKET_LABELS[getBucket(b)]);
-      case "description":
-        return dir * (a.description || "").localeCompare(b.description || "");
       case "current_value":
         return dir * ((infoA?.current_value ?? 0) - (infoB?.current_value ?? 0));
       case "target_value":
@@ -328,7 +311,7 @@ function CatalogoContent() {
           </div>
 
           {/* Mobile card view */}
-          <div className="md:hidden p-4 space-y-2">
+          <div className="md:hidden p-4 space-y-2 max-h-[540px] overflow-y-auto">
             {sortedAssets.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)] text-center py-8">
                 Nenhum ativo encontrado
@@ -414,14 +397,13 @@ function CatalogoContent() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto max-h-[540px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)]">
+                <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-card)] sticky top-0 z-10">
                   {([
                     { key: "ticker" as SortKey, label: "Ticker", align: "left", title: undefined as string | undefined },
                     { key: "bucket" as SortKey, label: "Bucket", align: "left", title: undefined },
-                    { key: "description" as SortKey, label: "Descrição", align: "left", title: undefined },
                     { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." as string | undefined },
                     { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." as string | undefined },
                     { key: "gap" as SortKey, label: "Gap", align: "right", title: undefined },
@@ -460,7 +442,7 @@ function CatalogoContent() {
                 {sortedAssets.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]"
                     >
                       Nenhum ativo encontrado
@@ -492,17 +474,9 @@ function CatalogoContent() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="space-y-1">
-                          <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
-                            {ALLOCATION_BUCKET_LABELS[getBucket(a)]}
-                          </span>
-                          <div className="text-[11px] text-[var(--color-text-muted)]">
-                            {getAssetLabel(a)}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
-                        {a.description || "—"}
+                        <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-main)] text-[var(--color-text-secondary)]">
+                          {ALLOCATION_BUCKET_LABELS[getBucket(a)]}
+                        </span>
                       </td>
                       <td
                         className="px-4 py-2.5 text-right text-[var(--color-text-secondary)] cursor-help"
