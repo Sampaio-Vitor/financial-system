@@ -216,7 +216,7 @@ export default function RendaFixaPage() {
       {/* Positions table */}
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
         {positions.length === 0 ? (
-          <p className="text-[var(--color-text-muted)] text-center py-8">Nenhuma posicao em Renda Fixa.</p>
+          <p className="text-[var(--color-text-muted)] text-center py-8">Nenhuma posição em Renda Fixa.</p>
         ) : (
           <>
           {/* Mobile card view */}
@@ -272,7 +272,7 @@ export default function RendaFixaPage() {
             <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:hidden">
               <div className="fixed inset-0 bg-black/50" onClick={cancelEdit} />
               <div className="relative w-full bg-[var(--color-bg-card)] rounded-t-2xl border-t border-[var(--color-border)] p-6 space-y-4">
-                <h3 className="text-base font-bold">Editar Posicao</h3>
+                <h3 className="text-base font-bold">Editar Posição</h3>
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Valor Aplicado</label>
@@ -297,8 +297,8 @@ export default function RendaFixaPage() {
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data Aplicacao</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descrição</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data Aplicação</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor Aplicado</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rendimento</th>
@@ -389,8 +389,8 @@ export default function RendaFixaPage() {
                 <thead className="sticky top-0 bg-[var(--color-bg-card)]">
                   <tr className="border-b border-[var(--color-border)]">
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Operacao</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descricao</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Operação</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descrição</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]" />
                   </tr>
@@ -420,7 +420,7 @@ export default function RendaFixaPage() {
                                 const label = e.type === "RESGATE" ? "resgate" : "juros";
                                 const ok = await new Promise<boolean>((resolve) => {
                                   pendingConfirm.current = resolve;
-                                  setConfirmState({ open: true, title: "Confirmar Remocao", message: `Remover este ${label} do historico?` });
+                                  setConfirmState({ open: true, title: "Confirmar Remoção", message: `Remover este ${label} do histórico?` });
                                 });
                                 if (!ok) return;
                                 const entryId = e.id.replace(/^(resgate|juros)-/, "");
@@ -450,7 +450,7 @@ export default function RendaFixaPage() {
           </div>
 
           <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">Evolucao Mensal</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">Evolução Mensal</h2>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>

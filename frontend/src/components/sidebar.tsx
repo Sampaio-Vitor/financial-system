@@ -5,8 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Calendar,
-  TrendingUp,
+TrendingUp,
   Building2,
   Landmark,
   PiggyBank,
@@ -46,28 +45,12 @@ export const navItems: NavItem[] = [
     icon: LayoutDashboard,
     exact: true,
   },
-  {
-    label: "Mensal",
-    href: "/carteira/mensal",
-    icon: Calendar,
-    exact: true,
-  },
-  {
+{
     label: "Histórico",
     href: "/carteira/historico",
     icon: LineChart,
   },
-  {
-    label: "Conexões",
-    href: "/carteira/conexoes",
-    icon: Plug,
-  },
-  {
-    label: "Sync Bastter",
-    href: "/carteira/bastter",
-    icon: Dog,
-  },
-  {
+{
     label: "Proventos",
     href: "/carteira/proventos",
     icon: Coins,
@@ -99,6 +82,11 @@ export const navItems: NavItem[] = [
     label: "Planejador de Aporte",
     href: "/desejados",
     icon: Calculator,
+  },
+  {
+    label: "Sync Bastter",
+    href: "/carteira/bastter",
+    icon: Dog,
   },
 ];
 
@@ -242,6 +230,27 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
       </nav>
 
       <div className="p-4 border-t border-[var(--color-border)] space-y-1.5">
+        {[
+          { label: "Conexões", href: "/carteira/conexoes", icon: Plug },
+        ].map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              title={isCollapsed ? item.label : ""}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 w-full ${
+                isActive
+                  ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] shadow-sm"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
+              } ${isCollapsed ? "justify-center px-2" : ""}`}
+            >
+              <Icon size={18} className={isActive ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"} />
+              {!isCollapsed && <span className="truncate">{item.label}</span>}
+            </Link>
+          );
+        })}
         {isAdmin && (
           <Link
             href="/admin"

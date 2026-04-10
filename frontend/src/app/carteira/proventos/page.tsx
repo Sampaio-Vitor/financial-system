@@ -256,7 +256,7 @@ export default function ProventosPage() {
             {/* Monthly bar chart */}
             <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mb-4">
-                Proventos por Mes
+                Proventos por Mês
               </h3>
               <ResponsiveContainer width="100%" height={250}>
                 <ComposedChart data={monthlyData}>
@@ -309,7 +309,7 @@ export default function ProventosPage() {
             {/* Donut by ticker */}
             <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mb-4">
-                Distribuicao por Ativo
+                Distribuição por Ativo
               </h3>
               <div className="flex items-center gap-4">
                 <div className="relative flex-1" style={{ minHeight: 220 }}>
@@ -373,7 +373,7 @@ export default function ProventosPage() {
             </div>
 
             {/* Mobile cards */}
-            <div className="md:hidden divide-y divide-[var(--color-border)]">
+            <div className="md:hidden divide-y divide-[var(--color-border)] max-h-[312px] overflow-y-auto">
               {filteredEvents.map((e) => (
                 <div key={e.id} className="p-4 space-y-1">
                   <div className="flex items-center justify-between">
@@ -392,15 +392,13 @@ export default function ProventosPage() {
             </div>
 
             {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto max-h-[312px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-[var(--color-bg-main)]/30">
+                  <tr className="bg-[var(--color-bg-card)] sticky top-0 z-10">
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Ticker</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Bruto</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">IR Retido</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Liquido</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -410,12 +408,6 @@ export default function ProventosPage() {
                         {new Date(e.payment_date + "T00:00:00").toLocaleDateString("pt-BR")}
                       </td>
                       <td className="px-4 py-2.5 font-medium">{e.ticker || "—"}</td>
-                      <td className="px-4 py-2.5 text-right text-[var(--color-text-secondary)]">
-                        {e.gross_amount ? formatBRL(Number(e.gross_amount)) : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-[var(--color-negative)]">
-                        {e.withholding_tax ? formatBRL(Number(e.withholding_tax)) : "—"}
-                      </td>
                       <td className="px-4 py-2.5 text-right font-medium text-[var(--color-positive)]">
                         {formatBRL(Number(e.credited_amount))}
                       </td>
