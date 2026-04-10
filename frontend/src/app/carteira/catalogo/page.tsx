@@ -598,51 +598,54 @@ function CatalogoContent() {
       {/* Tab: Metas */}
       {activeTab === "metas" && (
         <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-5">
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] mb-4">
-            Metas de Alocação
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
+              Metas de Alocação
+            </h2>
+            <div className="flex items-center gap-3">
+              <span
+                className={`text-xs font-medium ${
+                  Math.abs(targetTotal - 100) < 0.1
+                    ? "text-[var(--color-positive)]"
+                    : "text-[var(--color-negative)]"
+                }`}
+              >
+                Total: {targetTotal.toFixed(1)}%
+              </span>
+              <button
+                onClick={handleSaveTargets}
+                disabled={saving}
+                className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {saving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {Object.keys(ALLOCATION_BUCKET_LABELS).map((cls) => (
               <div key={cls}>
-                <label className="block text-xs text-[var(--color-text-muted)] mb-1">
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1.5">
                   {ALLOCATION_BUCKET_LABELS[cls as AllocationBucket]}
                 </label>
-                <div className="flex items-center gap-1">
+                <div className="relative">
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={editTargets[cls as AllocationBucket] || "0"}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, "");
                       setEditTargets({
                         ...editTargets,
-                        [cls as AllocationBucket]: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                        [cls as AllocationBucket]: v,
+                      });
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    className="w-full px-3 py-1.5 pr-8 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm tabular-nums"
                   />
-                  <span className="text-sm text-[var(--color-text-muted)]">
-                    %
-                  </span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)] pointer-events-none">%</span>
                 </div>
               </div>
             ))}
-          </div>
-          <div className="flex items-center justify-between">
-            <span
-              className={`text-xs ${
-                Math.abs(targetTotal - 100) < 0.1
-                  ? "text-[var(--color-positive)]"
-                  : "text-[var(--color-negative)]"
-              }`}
-            >
-              Total: {targetTotal.toFixed(1)}%
-            </span>
-            <button
-              onClick={handleSaveTargets}
-              disabled={saving}
-              className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-            >
-              {saving ? "Salvando..." : "Salvar Metas"}
-            </button>
           </div>
         </div>
       )}
