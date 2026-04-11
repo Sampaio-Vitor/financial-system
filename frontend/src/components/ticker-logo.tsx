@@ -10,10 +10,12 @@ function getLogoUrl(
   market?: Market | null
 ): string | null {
   if (market === "BR" || type === "ACAO" || type === "FII") {
-    return `https://api.elbstream.com/logos/symbol/${ticker}.SA?format=png&size=128`;
+    const base = ticker.endsWith(".SA") ? ticker.slice(0, -3) : ticker;
+    return `https://api.elbstream.com/logos/symbol/${base}.SA?format=png&size=128`;
   }
   if (market === "UK") {
-    return `https://api.elbstream.com/logos/symbol/${ticker}.L?format=png&size=128`;
+    const base = ticker.endsWith(".L") ? ticker.slice(0, -2) : ticker;
+    return `https://api.elbstream.com/logos/symbol/${base}.L?format=png&size=128`;
   }
   if (market === "US" || market === "EU" || type === "STOCK" || assetClass === "ETF") {
     return `https://api.elbstream.com/logos/symbol/${ticker}?format=png&size=128`;
