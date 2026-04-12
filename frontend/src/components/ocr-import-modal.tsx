@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { X, Upload, Camera, Trash2, AlertTriangle, Check, Link, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Upload, Camera, Trash2, AlertTriangle, Check, Link, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import {
@@ -55,6 +55,10 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
   const [imageGroups, setImageGroups] = useState<ImageGroup[]>([]);
   const [currentImageIdx, setCurrentImageIdx] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+
+  // Image zoom state
+  const [imageZoom, setImageZoom] = useState(1);
+  const [showLightbox, setShowLightbox] = useState(false);
 
   // Result state
   const [createdCount, setCreatedCount] = useState(0);
@@ -252,6 +256,11 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
   }, [batchId, jobImageMap, resolveTickerMap, step]);
 
   const currentGroup = imageGroups[currentImageIdx] || null;
+
+  // Reset zoom when switching images
+  useEffect(() => {
+    setImageZoom(1);
+  }, [currentImageIdx]);
 
   const updateRow = (groupIdx: number, rowId: string, field: keyof ReviewRow, value: string | number) => {
     setImageGroups((prev) =>
@@ -492,15 +501,49 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
                 {/* Image preview */}
                 <div className="lg:w-2/5 shrink-0">
                   <div className="sticky top-0 space-y-2">
-                    <div className="text-xs text-[var(--color-text-muted)] font-medium truncate">
-                      {currentGroup.fileName}
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-[var(--color-text-muted)] font-medium truncate">
+                        {currentGroup.fileName}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setImageZoom((z) => Math.max(0.5, z - 0.25))}
+                          disabled={imageZoom <= 0.5}
+                          className="p-1 rounded-md hover:bg-[var(--color-bg-main)] text-[var(--color-text-muted)] disabled:opacity-30"
+                          title="Diminuir zoom"
+                        >
+                          <ZoomOut className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-[10px] text-[var(--color-text-muted)] font-mono w-8 text-center">
+                          {Math.round(imageZoom * 100)}%
+                        </span>
+                        <button
+                          onClick={() => setImageZoom((z) => Math.min(3, z + 0.25))}
+                          disabled={imageZoom >= 3}
+                          className="p-1 rounded-md hover:bg-[var(--color-bg-main)] text-[var(--color-text-muted)] disabled:opacity-30"
+                          title="Aumentar zoom"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setShowLightbox(true)}
+                          className="p-1 rounded-md hover:bg-[var(--color-bg-main)] text-[var(--color-text-muted)]"
+                          title="Tela cheia"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-black/20">
+                    <div
+                      className="rounded-xl border border-[var(--color-border)] overflow-auto bg-black/20 max-h-[50vh] cursor-zoom-in"
+                      onClick={() => { if (imageZoom === 1) setShowLightbox(true); }}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={currentGroup.imageUrl}
                         alt={currentGroup.fileName}
-                        className="w-full max-h-[50vh] object-contain"
+                        style={{ transform: `scale(${imageZoom})`, transformOrigin: "top left" }}
+                        className="w-full transition-transform duration-150"
                       />
                     </div>
 
@@ -748,6 +791,32 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
           </div>
         </div>
       </div>
+
+      {/* Lightbox overlay */}
+      {showLightbox && currentGroup && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setShowLightbox(false)}
+        >
+          <div className="relative max-w-[95vw] max-h-[95vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowLightbox(false)}
+              className="absolute -top-10 right-0 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={currentGroup.imageUrl}
+              alt={currentGroup.fileName}
+              className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg"
+            />
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-2 p-3 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg">
+              <span className="text-xs text-white/70">{currentGroup.fileName}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

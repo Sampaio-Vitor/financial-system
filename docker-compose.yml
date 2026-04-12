@@ -50,7 +50,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      OCR_MODEL: ${OCR_MODEL:-gemini-3.1-flash-lite-preview}
+      OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}
     entrypoint: []
     command: arq app.worker.WorkerSettings
     depends_on:

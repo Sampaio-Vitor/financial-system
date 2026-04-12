@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # OCR / Redis
     REDIS_URL: str = "redis://redis:6379"
     GEMINI_API_KEY: str = ""
-    OCR_MODEL: str = "gemini-3.1-flash-lite-preview"
+    OCR_MODEL: str = "gemini-2.5-flash-lite"
 
     model_config = {"env_file": "../.env", "extra": "ignore"}
 
