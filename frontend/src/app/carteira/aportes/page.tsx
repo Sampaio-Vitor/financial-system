@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { AssetType, CurrencyCode, Purchase, PurchasePageResponse } from "@/types";
 import { formatBRL, formatCurrency, formatEditableNumber, formatQuantity } from "@/lib/format";
 import PurchaseForm from "@/components/purchase-form";
+import OcrImportModal from "@/components/ocr-import-modal";
 import TickerLogo from "@/components/ticker-logo";
 
 type OperationFilter = "todos" | "compras" | "vendas";
@@ -30,6 +31,7 @@ export default function AportesPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showOcrImport, setShowOcrImport] = useState(false);
   const [formMode, setFormMode] = useState<"compra" | "venda">("compra");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<{
@@ -245,6 +247,12 @@ export default function AportesPage() {
         <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
         <div className="flex gap-2">
           <button
+            onClick={() => setShowOcrImport(true)}
+            className="flex-1 md:flex-none px-4 py-2 rounded-lg border border-[var(--color-accent)] text-[var(--color-accent)] text-xs md:text-sm font-medium hover:bg-[var(--color-accent)]/10 transition-colors"
+          >
+            Importar via Imagem
+          </button>
+          <button
             onClick={() => { setFormMode("compra"); setShowForm(true); }}
             className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
           >
@@ -265,6 +273,16 @@ export default function AportesPage() {
           onClose={() => setShowForm(false)}
           onSaved={() => {
             setShowForm(false);
+            refreshPurchases();
+          }}
+        />
+      )}
+
+      {showOcrImport && (
+        <OcrImportModal
+          onClose={() => setShowOcrImport(false)}
+          onSaved={() => {
+            setShowOcrImport(false);
             refreshPurchases();
           }}
         />

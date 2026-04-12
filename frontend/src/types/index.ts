@@ -469,6 +469,62 @@ export interface SavedPlan {
   items: SavedPlanItem[];
 }
 
+// --- OCR Image Import ---
+
+export interface OcrUploadResponse {
+  batch_id: string;
+  job_ids: string[];
+}
+
+export interface OcrExtractedOperation {
+  ticker: string;
+  date: string;
+  quantity: number;
+  total_value: number;
+  operation_type: "compra" | "venda";
+  currency: string;
+}
+
+export interface OcrResult {
+  operations: OcrExtractedOperation[];
+  confidence: "high" | "medium" | "low";
+  notes: string | null;
+}
+
+export interface OcrJobStatus {
+  job_id: string;
+  status: "queued" | "processing" | "completed" | "failed" | "not_found";
+  result: OcrResult | null;
+  error: string | null;
+}
+
+export interface OcrBatchStatus {
+  batch_id: string;
+  status: "processing" | "completed" | "failed";
+  jobs: OcrJobStatus[];
+}
+
+export interface TickerResolution {
+  ticker: string;
+  asset_id: number | null;
+  quote_currency: string | null;
+  fx_rate_to_brl: number | null;
+  state: "linked" | "global_unlinked" | "unknown";
+}
+
+export interface TickerResolveResponse {
+  resolutions: TickerResolution[];
+}
+
+export interface BulkPurchaseItem {
+  asset_id: number;
+  purchase_date: string;
+  quantity: number;
+  total_value: number;
+  trade_currency: string;
+  fx_rate: number | null;
+}
+
 export interface SavedPlanSummary {
   id: number;
   label: string;
