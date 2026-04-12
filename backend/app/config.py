@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     API_DOCS_ENABLED: bool = True
     CSRF_TRUSTED_ORIGINS: str = ""
 
+    # OCR / Redis
+    REDIS_URL: str = "redis://redis:6379"
+    GEMINI_API_KEY: str = ""
+    OCR_MODEL: str = "gemini-2.5-flash-lite"
+
     model_config = {"env_file": "../.env", "extra": "ignore"}
 
     @field_validator("ENCRYPTION_KEY")

@@ -10,15 +10,24 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine
 from app.config import settings
 from app.limiter import limiter
-from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends, bastter_sync, retirement
+from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends, bastter_sync, retirement, ocr
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.scheduler import setup_scheduler
+    from arq import create_pool
+    from arq.connections import RedisSettings
+
     sched = setup_scheduler()
     sched.start()
+
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    app.state.arq_pool = await create_pool(redis_settings)
+
     yield
+
+    await app.state.arq_pool.aclose()
     sched.shutdown()
     await engine.dispose()
 
@@ -124,6 +133,7 @@ app.include_router(dividends.router, prefix="/api/dividends", tags=["dividends"]
 app.include_router(saved_plans.router, prefix="/api/saved-plans", tags=["saved-plans"])
 app.include_router(bastter_sync.router, prefix="/api/bastter", tags=["bastter"])
 app.include_router(retirement.router, prefix="/api/retirement", tags=["retirement"])
+app.include_router(ocr.router, prefix="/api/ocr", tags=["ocr"])
 
 
 @app.get("/api/health")

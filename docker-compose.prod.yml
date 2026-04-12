@@ -31,6 +31,12 @@ services:
       NODE_ENV: production
     command: ["node", "server.js"]
 
+  worker:
+    user: appuser
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}
+
   caddy:
     image: caddy:2-alpine
     container_name: portfolio_caddy
