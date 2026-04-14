@@ -9,7 +9,11 @@ function getLogoUrl(
   assetClass?: AssetClass | null,
   market?: Market | null
 ): string | null {
-  if (market === "BR" || type === "ACAO" || type === "FII") {
+  if (type === "FII") {
+    const base = ticker.endsWith(".SA") ? ticker.slice(0, -3) : ticker;
+    return `https://bastter-storage.b-cdn.net/fii/${base}.gif`;
+  }
+  if (market === "BR" || type === "ACAO") {
     const base = ticker.endsWith(".SA") ? ticker.slice(0, -3) : ticker;
     return `https://api.elbstream.com/logos/symbol/${base}.SA?format=png&size=128`;
   }
