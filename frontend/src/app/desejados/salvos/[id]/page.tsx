@@ -270,9 +270,24 @@ export default function SavedPlanDetailPage() {
 
   const toggleCheck = async (itemId: number) => {
     if (!plan) return;
+    const itemIndex = plan.items.findIndex((i) => i.id === itemId);
+    const wasUnchecked = itemIndex !== -1 && !plan.items[itemIndex].checked;
     const toggled = plan.items.map((item) =>
       item.id === itemId ? { ...item, checked: !item.checked } : item
     );
+
+    // Adjust ruler indices when checking an unchecked item
+    if (wasUnchecked && topRulerIndex != null && bottomRulerIndex != null) {
+      if (itemIndex < topRulerIndex) {
+        // Item was above ruler range — both indices shift down
+        setTopRulerIndex(topRulerIndex - 1);
+        setBottomRulerIndex(bottomRulerIndex - 1);
+      } else if (itemIndex <= bottomRulerIndex) {
+        // Item was inside ruler range — shrink bottom
+        setBottomRulerIndex(Math.max(topRulerIndex, bottomRulerIndex - 1));
+      }
+    }
+
     // Show check immediately, then reorder after a short delay (Apple Notes style)
     setPlan({ ...plan, items: toggled });
     await new Promise((r) => setTimeout(r, 350));
