@@ -640,6 +640,9 @@ export default function SavedPlanDetailPage() {
                           >
                             <TickerLogo
                               ticker={item.ticker}
+                              type={item.asset_class === "FII" ? "FII" : item.asset_class === "STOCK_BR" ? "ACAO" : item.asset_class === "STOCK_US" ? "STOCK" : undefined}
+                              assetClass={item.asset_class === "ETF_INTL" ? "ETF" : undefined}
+                              market={item.asset_class === "STOCK_BR" ? "BR" : item.asset_class === "STOCK_US" ? "US" : undefined}
                               size={20}
                             />
                             {item.ticker}
