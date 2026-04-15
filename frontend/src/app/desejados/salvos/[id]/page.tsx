@@ -458,6 +458,7 @@ export default function SavedPlanDetailPage() {
           .slice(selectedStartIndex, selectedEndIndex + 1)
           .filter((item) => !item.checked);
   const rulerSumBrl = sumBrlOnly(selectedItems);
+  const rulerSumTotal = selectedItems.reduce((sum, i) => sum + Number(i.amount_to_invest), 0);
   const rulerNativeTotals = sumNativeTotals(selectedItems);
   return (
     <div className="space-y-6">
@@ -551,20 +552,11 @@ export default function SavedPlanDetailPage() {
           </div>
           <div className="text-right">
             {selectedStartIndex != null && selectedEndIndex != null && (
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
-                  {formatBRL(rulerSumBrl)}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[var(--color-text-muted)]">Total convertido em BRL</span>
+                <span className="rounded-full border border-cyan-400/40 bg-slate-950/95 px-2.5 py-1 text-xs font-medium text-cyan-100 shadow-sm">
+                  {formatBRL(rulerSumTotal)}
                 </span>
-                {Object.entries(rulerNativeTotals)
-                  .filter(([, v]) => Number(v) > 0)
-                  .map(([currency, value]) => (
-                    <span
-                      key={currency}
-                      className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]"
-                    >
-                      {formatCurrency(value, currency as CurrencyCode)}
-                    </span>
-                  ))}
               </div>
             )}
             {savingChecks && (
