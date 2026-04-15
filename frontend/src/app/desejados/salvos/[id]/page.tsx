@@ -65,7 +65,35 @@ export default function SavedPlanDetailPage() {
   const sortItems = (items: SavedPlan["items"]) => {
     const unchecked = items.filter((i) => !i.checked);
     const checked = items.filter((i) => i.checked);
-    return [...unchecked, ...checked];
+    return [...interleaveByClass(unchecked), ...checked];
+  };
+
+  const interleaveByClass = (items: SavedPlan["items"]) => {
+    if (items.length <= 1) return items;
+    // Group by asset_class, preserving original order within each group
+    const groups = new Map<string, SavedPlan["items"]>();
+    for (const item of items) {
+      const key = item.asset_class;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
+    // Sort buckets largest-first so the biggest group spreads out most
+    const buckets = [...groups.values()].sort((a, b) => b.length - a.length);
+    // Round-robin deal
+    const result: SavedPlan["items"] = [];
+    let round = 0;
+    let added = true;
+    while (added) {
+      added = false;
+      for (const bucket of buckets) {
+        if (round < bucket.length) {
+          result.push(bucket[round]);
+          added = true;
+        }
+      }
+      round++;
+    }
+    return result;
   };
 
   const fetchPlan = useCallback(async () => {
@@ -270,9 +298,24 @@ export default function SavedPlanDetailPage() {
 
   const toggleCheck = async (itemId: number) => {
     if (!plan) return;
+    const itemIndex = plan.items.findIndex((i) => i.id === itemId);
+    const wasUnchecked = itemIndex !== -1 && !plan.items[itemIndex].checked;
     const toggled = plan.items.map((item) =>
       item.id === itemId ? { ...item, checked: !item.checked } : item
     );
+
+    // Adjust ruler indices when checking an unchecked item
+    if (wasUnchecked && topRulerIndex != null && bottomRulerIndex != null) {
+      if (itemIndex < topRulerIndex) {
+        // Item was above ruler range — both indices shift down
+        setTopRulerIndex(topRulerIndex - 1);
+        setBottomRulerIndex(bottomRulerIndex - 1);
+      } else if (itemIndex <= bottomRulerIndex) {
+        // Item was inside ruler range — shrink bottom
+        setBottomRulerIndex(Math.max(topRulerIndex, bottomRulerIndex - 1));
+      }
+    }
+
     // Show check immediately, then reorder after a short delay (Apple Notes style)
     setPlan({ ...plan, items: toggled });
     await new Promise((r) => setTimeout(r, 350));
@@ -415,6 +458,7 @@ export default function SavedPlanDetailPage() {
           .slice(selectedStartIndex, selectedEndIndex + 1)
           .filter((item) => !item.checked);
   const rulerSumBrl = sumBrlOnly(selectedItems);
+  const rulerSumTotal = selectedItems.reduce((sum, i) => sum + Number(i.amount_to_invest), 0);
   const rulerNativeTotals = sumNativeTotals(selectedItems);
   return (
     <div className="space-y-6">
@@ -508,20 +552,11 @@ export default function SavedPlanDetailPage() {
           </div>
           <div className="text-right">
             {selectedStartIndex != null && selectedEndIndex != null && (
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
-                  {formatBRL(rulerSumBrl)}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[var(--color-text-muted)]">Total convertido em BRL</span>
+                <span className="rounded-full border border-cyan-400/40 bg-slate-950/95 px-2.5 py-1 text-xs font-medium text-cyan-100 shadow-sm">
+                  {formatBRL(rulerSumTotal)}
                 </span>
-                {Object.entries(rulerNativeTotals)
-                  .filter(([, v]) => Number(v) > 0)
-                  .map(([currency, value]) => (
-                    <span
-                      key={currency}
-                      className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-main)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]"
-                    >
-                      {formatCurrency(value, currency as CurrencyCode)}
-                    </span>
-                  ))}
               </div>
             )}
             {savingChecks && (
@@ -640,6 +675,9 @@ export default function SavedPlanDetailPage() {
                           >
                             <TickerLogo
                               ticker={item.ticker}
+                              type={item.asset_class === "FII" ? "FII" : item.asset_class === "STOCK_BR" ? "ACAO" : item.asset_class === "STOCK_US" ? "STOCK" : undefined}
+                              assetClass={item.asset_class === "ETF_INTL" ? "ETF" : undefined}
+                              market={item.asset_class === "STOCK_BR" ? "BR" : item.asset_class === "STOCK_US" ? "US" : undefined}
                               size={20}
                             />
                             {item.ticker}

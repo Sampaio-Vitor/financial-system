@@ -25,6 +25,13 @@ function isForeignCurrency(currency: CurrencyCode): boolean {
   return currency !== "BRL";
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  ACAO: "AÇÃO",
+  FII: "FII",
+  STOCK: "STOCK",
+  RF: "RF",
+};
+
 export default function AportesPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -544,7 +551,7 @@ export default function AportesPage() {
                             {p.ticker}
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.asset_class || p.asset_type}</td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{TYPE_LABELS[p.asset_type!] || p.asset_type || p.asset_class}</td>
                         <td className="px-3 py-1.5">
                           <input type="number" step="any" min="-999999999" value={editData.quantity} onChange={(e) => setEditData({ ...editData, quantity: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
                         </td>
@@ -599,7 +606,7 @@ export default function AportesPage() {
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
                           <div className="flex items-center gap-1.5">
-                            {p.asset_class || p.asset_type}
+                            {TYPE_LABELS[p.asset_type!] || p.asset_type || p.asset_class}
                             {isForeignCurrency(p.trade_currency) && (
                               <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">{p.trade_currency}</span>
                             )}
