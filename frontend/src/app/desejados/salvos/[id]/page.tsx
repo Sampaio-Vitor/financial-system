@@ -65,7 +65,35 @@ export default function SavedPlanDetailPage() {
   const sortItems = (items: SavedPlan["items"]) => {
     const unchecked = items.filter((i) => !i.checked);
     const checked = items.filter((i) => i.checked);
-    return [...unchecked, ...checked];
+    return [...interleaveByClass(unchecked), ...checked];
+  };
+
+  const interleaveByClass = (items: SavedPlan["items"]) => {
+    if (items.length <= 1) return items;
+    // Group by asset_class, preserving original order within each group
+    const groups = new Map<string, SavedPlan["items"]>();
+    for (const item of items) {
+      const key = item.asset_class;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
+    // Sort buckets largest-first so the biggest group spreads out most
+    const buckets = [...groups.values()].sort((a, b) => b.length - a.length);
+    // Round-robin deal
+    const result: SavedPlan["items"] = [];
+    let round = 0;
+    let added = true;
+    while (added) {
+      added = false;
+      for (const bucket of buckets) {
+        if (round < bucket.length) {
+          result.push(bucket[round]);
+          added = true;
+        }
+      }
+      round++;
+    }
+    return result;
   };
 
   const fetchPlan = useCallback(async () => {
