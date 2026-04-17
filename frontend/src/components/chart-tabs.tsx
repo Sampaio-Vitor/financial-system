@@ -6,11 +6,13 @@ import { PatrimonioEvolutionPoint, ClassSummary } from "@/types";
 import PatrimonioChart from "@/components/patrimonio-chart";
 import AporteVsPatrimonioChart from "@/components/aporte-vs-patrimonio-chart";
 import AllocationDonutChart from "@/components/allocation-donut-chart";
+import GeographyDonutChart from "@/components/geography-donut-chart";
 
 const TABS = [
   { key: "evolucao", label: "Evolução" },
   { key: "aporte-vs-patrimonio", label: "Aporte vs Patrimônio" },
   { key: "alocacao", label: "Alocação" },
+  { key: "geografia", label: "Geografia" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -90,6 +92,16 @@ export default function ChartTabs({
       );
     }
 
+    if (activeTab === "geografia") {
+      return (
+        <GeographyDonutChart
+          items={allocationItems}
+          patrimonioTotal={patrimonioTotal}
+          reservaFinanceira={reservaFinanceira}
+        />
+      );
+    }
+
     if (loading) {
       return (
         <div className="flex-1 flex items-center justify-center">
@@ -127,7 +139,7 @@ export default function ChartTabs({
             </button>
           ))}
         </div>
-        {activeTab !== "alocacao" && evolutionData.length > 0 && (
+        {activeTab !== "alocacao" && activeTab !== "geografia" && evolutionData.length > 0 && (
           <button
             onClick={handleGenerateAll}
             disabled={generating}
