@@ -70,7 +70,13 @@ export default function PositionsTable({
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
-    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    const an = typeof av === "string" ? Number(av) : av;
+    const bn = typeof bv === "string" ? Number(bv) : bv;
+    const bothNumeric =
+      typeof an === "number" && typeof bn === "number" && !Number.isNaN(an) && !Number.isNaN(bn);
+    const cmp = bothNumeric
+      ? an - bn
+      : av < bv ? -1 : av > bv ? 1 : 0;
     return sortAsc ? cmp : -cmp;
   });
 
