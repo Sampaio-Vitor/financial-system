@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -30,6 +32,7 @@ interface ChartPoint {
   patrimonio: number;
   investido: number;
   pnl: number;
+  pnlPct: number;
 }
 
 export default function HistoricoPage() {
@@ -71,12 +74,15 @@ export default function HistoricoPage() {
     // Monthly month is "YYYY-MM", daily date is "YYYY-MM-DD"
     const hasDaily = dailyData.some((d) => d.date.startsWith(m.month));
     if (!hasDaily) {
+      const invested = Number(m.total_invested);
+      const pnl = Number(m.total_pnl);
       chartData.push({
         label: m.month.slice(5) + "/" + m.month.slice(2, 4),
         date: m.month + "-15",
         patrimonio: Number(m.total_patrimonio),
-        investido: Number(m.total_invested),
-        pnl: Number(m.total_pnl),
+        investido: invested,
+        pnl,
+        pnlPct: invested > 0 ? (pnl / invested) * 100 : 0,
       });
     }
   }
@@ -84,12 +90,15 @@ export default function HistoricoPage() {
   // Add daily data points
   for (const d of dailyData) {
     const dt = new Date(d.date + "T12:00:00");
+    const invested = Number(d.total_invested);
+    const pnl = Number(d.total_pnl);
     chartData.push({
       label: dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
       date: d.date,
       patrimonio: Number(d.total_patrimonio),
-      investido: Number(d.total_invested),
-      pnl: Number(d.total_pnl),
+      investido: invested,
+      pnl,
+      pnlPct: invested > 0 ? (pnl / invested) * 100 : 0,
     });
   }
 
@@ -243,6 +252,83 @@ export default function HistoricoPage() {
           </>
         )}
       </div>
+
+      {/* Rendimento (PnL) chart */}
+      {!loading && chartData.length > 0 && (
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-4">
+            Evolução do Rendimento
+          </h2>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={{ stroke: "#2a2d3a" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `${v.toFixed(1)}%`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1e2130",
+                    border: "1px solid #2a2d3a",
+                    borderRadius: "8px",
+                    color: "#f8fafc",
+                    fontSize: "12px",
+                  }}
+                  formatter={(v: number, name: string) => {
+                    if (name === "pnlPct") return [`${v.toFixed(2)}%`, "Rendimento %"];
+                    return [formatBRL(v), "Rendimento R$"];
+                  }}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="pnl"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="pnlPct"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center gap-4 mt-3 justify-center">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-0.5 bg-emerald-500 rounded" />
+              <span className="text-xs text-[var(--color-text-muted)]">Rendimento R$</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-0.5 bg-amber-500 rounded" style={{ borderTop: "2px dashed #f59e0b", height: 0 }} />
+              <span className="text-xs text-[var(--color-text-muted)]">Rendimento %</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
