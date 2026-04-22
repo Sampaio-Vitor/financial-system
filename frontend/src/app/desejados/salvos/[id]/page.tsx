@@ -675,9 +675,27 @@ export default function SavedPlanDetailPage() {
                           >
                             <TickerLogo
                               ticker={item.ticker}
-                              type={item.asset_class === "FII" ? "FII" : item.asset_class === "STOCK_BR" ? "ACAO" : item.asset_class === "STOCK_US" ? "STOCK" : undefined}
-                              assetClass={item.asset_class === "ETF_INTL" ? "ETF" : undefined}
-                              market={item.asset_class === "STOCK_BR" ? "BR" : item.asset_class === "STOCK_US" ? "US" : undefined}
+                              type={
+                                item.asset_class === "FII"
+                                  ? "FII"
+                                  : item.asset_class === "STOCK_BR" || item.asset_class === "ACAO"
+                                    ? "ACAO"
+                                    : item.asset_class === "STOCK_US" || item.asset_class === "STOCK"
+                                      ? "STOCK"
+                                      : undefined
+                              }
+                              assetClass={
+                                item.asset_class === "ETF_INTL" || item.asset_class === "ETF"
+                                  ? "ETF"
+                                  : undefined
+                              }
+                              market={
+                                item.asset_class === "STOCK_BR" || item.asset_class === "ACAO"
+                                  ? "BR"
+                                  : item.asset_class === "STOCK_US" || item.asset_class === "STOCK"
+                                    ? "US"
+                                    : undefined
+                              }
                               size={20}
                             />
                             {item.ticker}
