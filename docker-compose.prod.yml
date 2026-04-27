@@ -2,7 +2,14 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 
 services:
+  mysql:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
   backend:
+    restart: unless-stopped
     user: appuser
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
     environment:
@@ -20,6 +27,7 @@ services:
       SESSION_COOKIE_SAMESITE: "strict"
 
   frontend:
+    restart: unless-stopped
     build:
       target: production
       args:
@@ -32,6 +40,7 @@ services:
     command: ["node", "server.js"]
 
   worker:
+    restart: unless-stopped
     user: appuser
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
@@ -40,6 +49,7 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: portfolio_caddy
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
