@@ -270,6 +270,7 @@ function CatalogoContent() {
     }
     return map;
   })();
+  const showTargetPctColumn = filter !== "ALL" && filter !== "PAUSED";
   const implicitPlaceholder = (asset: Asset): string => {
     const bucket = getBucket(asset);
     const leftover = Math.max(0, 100 - (bucketExplicitSum[bucket] ?? 0));
@@ -437,10 +438,12 @@ function CatalogoContent() {
                       { label: "Mercado", value: a.market ? MARKET_LABELS[a.market] : "\u2014" },
                       { label: "Moeda", value: a.quote_currency ? CURRENCY_LABELS[a.quote_currency] : "\u2014" },
                       { label: "Gap", value: <span className={gapColor}>{info ? formatBRL(info.gap) : "\u2014"}</span> },
-                      {
-                        label: "% Alvo",
-                        value: a.target_pct != null ? `${(a.target_pct * 100).toFixed(2)}%` : implicitPlaceholder(a),
-                      },
+                      ...(showTargetPctColumn
+                        ? [{
+                            label: "% Alvo",
+                            value: a.target_pct != null ? `${(a.target_pct * 100).toFixed(2)}%` : implicitPlaceholder(a),
+                          }]
+                        : []),
                     ]}
                     actions={
                       <div className="flex items-center gap-1">
@@ -511,12 +514,14 @@ function CatalogoContent() {
                       </span>
                     </th>
                   ))}
-                  <th
-                    className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] cursor-help"
-                    title="Fração do bucket alocada para este ativo. Em branco = peso igual com os demais 'auto' do bucket. Soma dos explícitos do bucket deve ser ≤ 100%."
-                  >
-                    % Alvo
-                  </th>
+                  {showTargetPctColumn && (
+                    <th
+                      className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] cursor-help"
+                      title="Fração do bucket alocada para este ativo. Em branco = peso igual com os demais 'auto' do bucket. Soma dos explícitos do bucket deve ser ≤ 100%."
+                    >
+                      % Alvo
+                    </th>
+                  )}
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">
                     Ações
                   </th>
@@ -526,7 +531,7 @@ function CatalogoContent() {
                 {sortedAssets.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={showTargetPctColumn ? 7 : 6}
                       className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]"
                     >
                       Nenhum ativo encontrado
@@ -588,6 +593,7 @@ function CatalogoContent() {
                           ? formatBRL(rebalancingInfo.get(a.id)!.gap)
                           : "—"}
                       </td>
+                      {showTargetPctColumn && (
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end">
                           <div className="relative w-24">
@@ -631,6 +637,7 @@ function CatalogoContent() {
                           </div>
                         </div>
                       </td>
+                      )}
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
