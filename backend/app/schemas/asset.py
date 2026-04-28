@@ -34,10 +34,20 @@ class AssetUpdate(BaseModel):
     ticker: str | None = None
     description: str | None = None
     paused: bool | None = None
+    target_pct: Decimal | None = None
     asset_class: AssetClass | None = None
     market: Market | None = None
     quote_currency: CurrencyCode | None = None
     price_symbol: str | None = None
+
+    @field_validator("target_pct")
+    @classmethod
+    def _validate_target_pct(cls, v: Decimal | None) -> Decimal | None:
+        if v is None:
+            return v
+        if v < 0 or v > 1:
+            raise ValueError("target_pct deve estar entre 0 e 1")
+        return v
 
 
 class BulkAssetItem(BaseModel):
@@ -112,6 +122,7 @@ class AssetResponse(BaseModel):
     quote_currency: CurrencyCode | None = None
     description: str
     paused: bool
+    target_pct: Decimal | None = None
     price_symbol: str | None = None
     current_price: Decimal | None
     current_price_native: Decimal | None = None

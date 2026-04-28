@@ -5,6 +5,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from typing import Optional
+
 from app.constants import ALLOCATION_BUCKET_LABELS
 from app.models.allocation_target import AllocationTarget
 from app.models.asset import (
@@ -35,6 +37,7 @@ AssetCandidate = tuple[
     CurrencyCode,
     AllocationBucket,
     Decimal,
+    Optional[Decimal],
 ]
 
 
@@ -113,16 +116,30 @@ class RebalancingService:
             if not assets_in_bucket:
                 continue
 
-            n_assets = len(assets_in_bucket)
-            target_per_asset = investable_pos_aporte * targets.get(allocation_bucket, Decimal("0")) / n_assets
+            bucket_target_value = investable_pos_aporte * targets.get(allocation_bucket, Decimal("0"))
+
+            explicit = [c for c in assets_in_bucket if c[6] is not None]
+            implicit = [c for c in assets_in_bucket if c[6] is None]
+            sum_explicit = sum((c[6] for c in explicit), Decimal("0"))
+            leftover_pct = max(Decimal("0"), Decimal("1") - sum_explicit)
+            per_implicit_value = (
+                bucket_target_value * leftover_pct / len(implicit)
+                if implicit
+                else Decimal("0")
+            )
 
             bucket_candidates: list[tuple[AssetCandidate, Decimal, Decimal, Decimal]] = []
             for candidate in assets_in_bucket:
                 current_val = candidate[5]
-                gap = target_per_asset - current_val
-                gap_pct = (gap / target_per_asset * 100) if target_per_asset else Decimal("0")
+                asset_target_pct = candidate[6]
+                if asset_target_pct is not None:
+                    target_value = bucket_target_value * asset_target_pct
+                else:
+                    target_value = per_implicit_value
+                gap = target_value - current_val
+                gap_pct = (gap / target_value * 100) if target_value else Decimal("0")
                 if gap > 0:
-                    bucket_candidates.append((candidate, current_val, target_per_asset, gap_pct))
+                    bucket_candidates.append((candidate, current_val, target_value, gap_pct))
 
             if bucket_candidates:
                 random.shuffle(bucket_candidates)
@@ -155,7 +172,7 @@ class RebalancingService:
         total_gap_top = sum(target_val - current_val for _candidate, current_val, target_val, _gap_pct in top_assets)
         if top_assets and total_gap_top > 0:
             for candidate, current_val, target_val, gap_pct in top_assets:
-                ticker, asset_class, market, quote_currency, allocation_bucket, _current_value = candidate
+                ticker, asset_class, market, quote_currency, allocation_bucket, _current_value, _target_pct = candidate
                 gap = target_val - current_val
                 amount = remaining_contribution * gap / total_gap_top
                 amount_native = None
@@ -242,7 +259,7 @@ class RebalancingService:
         allocation_bucket: AllocationBucket,
     ) -> list[AssetCandidate]:
         all_assets = await self.db.execute(
-            select(Asset)
+            select(Asset, UserAsset.target_pct)
             .join(UserAsset, UserAsset.asset_id == Asset.id)
             .where(
                 UserAsset.user_id == self.user.id,
@@ -250,7 +267,8 @@ class RebalancingService:
             )
         )
         result_map: dict[str, AssetCandidate] = {}
-        for asset in all_assets.scalars().all():
+        target_pct_by_ticker: dict[str, Optional[Decimal]] = {}
+        for asset, ua_target_pct in all_assets.all():
             asset_class, market, quote_currency = resolve_asset_metadata(
                 legacy_type=asset.type,
                 asset_class=asset.asset_class,
@@ -260,6 +278,7 @@ class RebalancingService:
             bucket = asset_bucket_for(asset_class, market)
             if bucket != allocation_bucket:
                 continue
+            target_pct_by_ticker[asset.ticker] = ua_target_pct
             result_map[asset.ticker] = (
                 asset.ticker,
                 asset_class,
@@ -267,6 +286,7 @@ class RebalancingService:
                 quote_currency,
                 bucket,
                 Decimal("0"),
+                ua_target_pct,
             )
 
         positions = await self.db.execute(
@@ -315,6 +335,7 @@ class RebalancingService:
                 resolved_currency,
                 bucket,
                 price * qty,
+                target_pct_by_ticker.get(ticker),
             )
 
         return list(result_map.values())
