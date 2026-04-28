@@ -109,7 +109,68 @@ def _resolve_payload_classification(
     return None, None, None, None
 
 
-def _to_response(asset: Asset, paused: bool) -> dict:
+_BUCKET_SUM_EPSILON = Decimal("0.0001")
+
+
+async def _validate_bucket_sum(
+    db: AsyncSession,
+    user_id: int,
+    asset: Asset,
+    proposed_target_pct: Decimal | None,
+    proposed_paused: bool,
+    self_user_asset_id: int,
+) -> None:
+    """Ensure the sum of explicit target_pct in the bucket of `asset` (considering
+    the proposed change for the asset itself) stays <= 100% across non-paused user_assets."""
+    if proposed_paused:
+        # Paused assets do not participate in the bucket sum.
+        return
+
+    asset_class, market, _qc = resolve_asset_metadata(
+        legacy_type=asset.type,
+        asset_class=asset.asset_class,
+        market=asset.market,
+        quote_currency=asset.quote_currency,
+    )
+    bucket = asset_bucket_for(asset_class, market)
+
+    # Sum target_pct of non-paused assets in the same bucket, EXCLUDING the asset
+    # being mutated (we add its proposed value below).
+    rows = await db.execute(
+        select(Asset, UserAsset.target_pct)
+        .join(UserAsset, UserAsset.asset_id == Asset.id)
+        .where(
+            UserAsset.user_id == user_id,
+            UserAsset.paused.is_(False),
+            UserAsset.id != self_user_asset_id,
+        )
+    )
+    others_sum = Decimal("0")
+    for other_asset, other_pct in rows.all():
+        if other_pct is None:
+            continue
+        other_class, other_market, _ = resolve_asset_metadata(
+            legacy_type=other_asset.type,
+            asset_class=other_asset.asset_class,
+            market=other_asset.market,
+            quote_currency=other_asset.quote_currency,
+        )
+        if asset_bucket_for(other_class, other_market) == bucket:
+            others_sum += other_pct
+
+    proposed_contribution = proposed_target_pct or Decimal("0")
+    total = others_sum + proposed_contribution
+    if total > Decimal("1") + _BUCKET_SUM_EPSILON:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Soma de target_pct no bucket excederia 100% "
+                f"(soma proposta: {round(total * 100, 2)}%)"
+            ),
+        )
+
+
+def _to_response(asset: Asset, paused: bool, target_pct: Decimal | None = None) -> dict:
     return {
         "id": asset.id,
         "ticker": asset.ticker,
@@ -119,6 +180,7 @@ def _to_response(asset: Asset, paused: bool) -> dict:
         "quote_currency": asset.quote_currency,
         "description": asset.description,
         "paused": paused,
+        "target_pct": target_pct,
         "price_symbol": asset.price_symbol,
         "current_price": asset.current_price,
         "current_price_native": asset.current_price_native,
@@ -154,7 +216,7 @@ async def list_assets(
     user: User = Depends(get_current_user),
 ):
     query = (
-        select(Asset, UserAsset.paused)
+        select(Asset, UserAsset.paused, UserAsset.target_pct)
         .join(UserAsset, UserAsset.asset_id == Asset.id)
         .where(UserAsset.user_id == user.id)
         .order_by(Asset.type, Asset.ticker)
@@ -162,7 +224,7 @@ async def list_assets(
     if type:
         query = query.where(Asset.type == type)
     result = await db.execute(query)
-    return [_to_response(asset, paused) for asset, paused in result.all()]
+    return [_to_response(asset, paused, target_pct) for asset, paused, target_pct in result.all()]
 
 
 @router.post("/bulk", response_model=BulkAssetResponse)
@@ -381,13 +443,16 @@ async def get_rebalancing_info(
 
     # Build response for all user assets
     all_assets = await db.execute(
-        select(Asset, UserAsset.paused)
+        select(Asset, UserAsset.paused, UserAsset.target_pct)
         .join(UserAsset, UserAsset.asset_id == Asset.id)
         .where(UserAsset.user_id == user.id)
     )
 
-    result = []
-    for asset, paused in all_assets.all():
+    rows = all_assets.all()
+    # First pass: compute per-bucket explicit sum and implicit count using only non-paused assets
+    bucket_explicit_sum: dict = {}
+    bucket_implicit_count: dict = {}
+    for asset, paused, ua_target_pct in rows:
         if paused:
             continue
         asset_class, market, quote_currency = resolve_asset_metadata(
@@ -397,9 +462,29 @@ async def get_rebalancing_info(
             quote_currency=asset.quote_currency,
         )
         bucket = asset_bucket_for(asset_class, market)
-        n_active = active_counts_by_bucket.get(bucket, 1)
-        target_pct = targets.get(bucket, Decimal("0"))
-        target_value = investable_total * target_pct / n_active
+        if ua_target_pct is not None:
+            bucket_explicit_sum[bucket] = bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
+        else:
+            bucket_implicit_count[bucket] = bucket_implicit_count.get(bucket, 0) + 1
+
+    result = []
+    for asset, paused, ua_target_pct in rows:
+        if paused:
+            continue
+        asset_class, market, quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        bucket = asset_bucket_for(asset_class, market)
+        bucket_target_value = investable_total * targets.get(bucket, Decimal("0"))
+        if ua_target_pct is not None:
+            target_value = bucket_target_value * ua_target_pct
+        else:
+            implicit_n = bucket_implicit_count.get(bucket, 0) or 1
+            leftover_pct = max(Decimal("0"), Decimal("1") - bucket_explicit_sum.get(bucket, Decimal("0")))
+            target_value = bucket_target_value * leftover_pct / implicit_n
         current_value = asset_values.get(asset.id, Decimal("0"))
         gap = target_value - current_value
 
@@ -423,15 +508,15 @@ async def get_asset(
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Asset, UserAsset.paused)
+        select(Asset, UserAsset.paused, UserAsset.target_pct)
         .join(UserAsset, UserAsset.asset_id == Asset.id)
         .where(Asset.id == asset_id, UserAsset.user_id == user.id)
     )
     row = result.one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Asset not found")
-    asset, paused = row
-    return _to_response(asset, paused)
+    asset, paused, target_pct = row
+    return _to_response(asset, paused, target_pct)
 
 
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
@@ -498,7 +583,7 @@ async def create_asset(
     db.add(user_asset)
     await db.commit()
     await db.refresh(asset)
-    return _to_response(asset, False)
+    return _to_response(asset, False, None)
 
 
 @router.put("/{asset_id}", response_model=AssetResponse)
@@ -554,13 +639,30 @@ async def update_asset(
     if data.price_symbol is not None:
         asset.price_symbol = data.price_symbol
 
-    # Update per-user field
+    # Update per-user fields
+    paused_changed_to_active = (
+        data.paused is not None and data.paused is False and user_asset.paused is True
+    )
     if data.paused is not None:
         user_asset.paused = data.paused
 
+    target_pct_in_payload = "target_pct" in data.model_fields_set
+    if target_pct_in_payload:
+        user_asset.target_pct = data.target_pct
+
+    if target_pct_in_payload or paused_changed_to_active:
+        await _validate_bucket_sum(
+            db,
+            user.id,
+            asset,
+            proposed_target_pct=user_asset.target_pct,
+            proposed_paused=user_asset.paused,
+            self_user_asset_id=user_asset.id,
+        )
+
     await db.commit()
     await db.refresh(asset)
-    return _to_response(asset, user_asset.paused)
+    return _to_response(asset, user_asset.paused, user_asset.target_pct)
 
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)

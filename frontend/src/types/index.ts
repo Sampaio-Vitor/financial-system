@@ -18,6 +18,7 @@ export interface Asset {
   quote_currency?: CurrencyCode | null;
   description: string;
   paused: boolean;
+  target_pct?: number | null;
   price_symbol?: string | null;
   current_price: number | null;
   current_price_native?: number | null;

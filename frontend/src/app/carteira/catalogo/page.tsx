@@ -82,6 +82,7 @@ function CatalogoContent() {
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [rebalancingInfo, setRebalancingInfo] = useState<Map<number, AssetRebalancingInfo>>(new Map());
+  const [targetPctDraft, setTargetPctDraft] = useState<Record<number, string>>({});
 
   const [editTargets, setEditTargets] = useState<Record<AllocationBucket, string>>({
     STOCK_BR: "25",
@@ -156,6 +157,36 @@ function CatalogoContent() {
     }
   };
 
+  const saveTargetPct = async (asset: Asset, raw: string) => {
+    const trimmed = raw.trim();
+    let target_pct: number | null;
+    if (trimmed === "") {
+      target_pct = null;
+    } else {
+      const parsed = parseFloat(trimmed.replace(",", "."));
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+        alert("Informe um valor entre 0 e 100, ou deixe em branco para 'auto'");
+        return;
+      }
+      target_pct = parsed / 100;
+    }
+    try {
+      const updated = await apiFetch<Asset>(`/assets/${asset.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ target_pct }),
+      });
+      setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, target_pct: updated.target_pct } : a)));
+      setTargetPctDraft((prev) => {
+        const next = { ...prev };
+        delete next[asset.id];
+        return next;
+      });
+      fetchRebalancingInfo();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao salvar % alvo");
+    }
+  };
+
   const togglePaused = async (asset: Asset) => {
     try {
       await apiFetch(`/assets/${asset.id}`, {
@@ -218,6 +249,33 @@ function CatalogoContent() {
   });
 
   const targetTotal = Object.values(editTargets).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+
+  const bucketExplicitSum = (() => {
+    const map: Record<string, number> = {};
+    for (const a of assets) {
+      if (a.paused) continue;
+      if (a.target_pct == null) continue;
+      const bucket = getBucket(a);
+      map[bucket] = (map[bucket] ?? 0) + a.target_pct * 100;
+    }
+    return map;
+  })();
+  const bucketImplicitCount = (() => {
+    const map: Record<string, number> = {};
+    for (const a of assets) {
+      if (a.paused) continue;
+      if (a.target_pct != null) continue;
+      const bucket = getBucket(a);
+      map[bucket] = (map[bucket] ?? 0) + 1;
+    }
+    return map;
+  })();
+  const implicitPlaceholder = (asset: Asset): string => {
+    const bucket = getBucket(asset);
+    const leftover = Math.max(0, 100 - (bucketExplicitSum[bucket] ?? 0));
+    const n = bucketImplicitCount[bucket] || 1;
+    return `auto (${(leftover / n).toFixed(1)}%)`;
+  };
 
   return (
     <div className="space-y-6">
@@ -310,6 +368,22 @@ function CatalogoContent() {
             </div>
           </div>
 
+          {filter !== "ALL" && filter !== "PAUSED" && (
+            <div className="px-4 py-2 border-b border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
+              Soma de % alvo explícitos no bucket:{" "}
+              <span
+                className={`font-semibold ${
+                  (bucketExplicitSum[filter] ?? 0) > 100.01
+                    ? "text-[var(--color-negative)]"
+                    : "text-[var(--color-text-secondary)]"
+                }`}
+              >
+                {(bucketExplicitSum[filter] ?? 0).toFixed(1)}%
+              </span>
+              {" "}— {bucketImplicitCount[filter] ?? 0} ativo(s) em &quot;auto&quot; dividem o restante
+            </div>
+          )}
+
           {/* Mobile card view */}
           <div className="md:hidden p-4 space-y-2 max-h-[540px] overflow-y-auto">
             {sortedAssets.length === 0 ? (
@@ -363,6 +437,10 @@ function CatalogoContent() {
                       { label: "Mercado", value: a.market ? MARKET_LABELS[a.market] : "\u2014" },
                       { label: "Moeda", value: a.quote_currency ? CURRENCY_LABELS[a.quote_currency] : "\u2014" },
                       { label: "Gap", value: <span className={gapColor}>{info ? formatBRL(info.gap) : "\u2014"}</span> },
+                      {
+                        label: "% Alvo",
+                        value: a.target_pct != null ? `${(a.target_pct * 100).toFixed(2)}%` : implicitPlaceholder(a),
+                      },
                     ]}
                     actions={
                       <div className="flex items-center gap-1">
@@ -405,7 +483,7 @@ function CatalogoContent() {
                     { key: "ticker" as SortKey, label: "Ticker", align: "left", title: undefined as string | undefined },
                     { key: "bucket" as SortKey, label: "Bucket", align: "left", title: undefined },
                     { key: "current_value" as SortKey, label: "Posição Atual", align: "right", title: "Valor de mercado da sua posição neste ativo (preço atual × quantidade). Baseado na última cotação disponível." as string | undefined },
-                    { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e peso igual entre ativos da mesma classe." as string | undefined },
+                    { key: "target_value" as SortKey, label: "Posição Alvo", align: "right", title: "Quanto você deveria ter neste ativo para atingir sua meta de alocação, baseado no patrimônio investível atual e na sua % alvo (ou peso igual quando não definida)." as string | undefined },
                     { key: "gap" as SortKey, label: "Gap", align: "right", title: undefined },
                   ]).map((col) => (
                     <th
@@ -433,6 +511,12 @@ function CatalogoContent() {
                       </span>
                     </th>
                   ))}
+                  <th
+                    className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] cursor-help"
+                    title="Fração do bucket alocada para este ativo. Em branco = peso igual com os demais 'auto' do bucket. Soma dos explícitos do bucket deve ser ≤ 100%."
+                  >
+                    % Alvo
+                  </th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">
                     Ações
                   </th>
@@ -442,7 +526,7 @@ function CatalogoContent() {
                 {sortedAssets.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]"
                     >
                       Nenhum ativo encontrado
@@ -503,6 +587,49 @@ function CatalogoContent() {
                         {rebalancingInfo.has(a.id)
                           ? formatBRL(rebalancingInfo.get(a.id)!.gap)
                           : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="flex items-center justify-end">
+                          <div className="relative w-24">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                targetPctDraft[a.id] !== undefined
+                                  ? targetPctDraft[a.id]
+                                  : a.target_pct != null
+                                    ? (a.target_pct * 100).toString()
+                                    : ""
+                              }
+                              placeholder={implicitPlaceholder(a)}
+                              onChange={(e) =>
+                                setTargetPctDraft((prev) => ({
+                                  ...prev,
+                                  [a.id]: e.target.value.replace(/[^0-9.,]/g, ""),
+                                }))
+                              }
+                              onBlur={(e) => {
+                                const draft = targetPctDraft[a.id];
+                                if (draft === undefined) return;
+                                const original = a.target_pct != null ? (a.target_pct * 100).toString() : "";
+                                if (draft === original) {
+                                  setTargetPctDraft((prev) => {
+                                    const next = { ...prev };
+                                    delete next[a.id];
+                                    return next;
+                                  });
+                                  return;
+                                }
+                                saveTargetPct(a, e.target.value);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-full px-2 py-1 pr-5 rounded-md bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-xs tabular-nums text-right"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--color-text-muted)] pointer-events-none">%</span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
