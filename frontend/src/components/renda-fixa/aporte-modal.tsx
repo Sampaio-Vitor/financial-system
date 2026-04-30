@@ -17,15 +17,27 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [value, setValue] = useState("");
+  const [puCompra, setPuCompra] = useState("");
   const [maturity, setMaturity] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (!open) return null;
 
+  const selectedAsset = rfAssets.find((a) => a.id === assetId);
+  const isTesouro = !!selectedAsset?.td_kind;
+
   const handleSubmit = async () => {
     if (!assetId || !description || !value) return;
     const parsed = parseFloat(value);
     if (isNaN(parsed) || parsed <= 0) return;
+    let pu: number | null = null;
+    if (isTesouro) {
+      pu = parseFloat(puCompra);
+      if (isNaN(pu) || pu <= 0) {
+        toast.error("Informe o PU na data da compra");
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -36,7 +48,8 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
           description,
           start_date: date,
           applied_value: parsed,
-          current_balance: parsed,
+          current_balance: isTesouro ? null : parsed,
+          purchase_unit_price: pu,
           maturity_date: maturity || null,
         }),
       });
@@ -97,6 +110,20 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
               className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
             />
           </div>
+          {isTesouro && (
+            <div>
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">PU na data da compra (R$)</label>
+              <input
+                type="number"
+                step="any"
+                value={puCompra}
+                onChange={(e) => setPuCompra(e.target.value)}
+                placeholder="Ex: 18000.00"
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+              />
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">Confira no extrato do broker. Saldo será calculado automaticamente.</p>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Vencimento (opcional)</label>
             <input
