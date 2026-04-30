@@ -20,6 +20,8 @@ class FixedIncomePosition(Base):
     current_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     yield_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     yield_pct: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False, default=0)
+    quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), nullable=True)
+    purchase_unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
     maturity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

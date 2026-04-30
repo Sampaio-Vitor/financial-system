@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Asset, AssetClass, CurrencyCode, Market } from "@/types";
+import { Asset, AssetClass, CurrencyCode, Market, TesouroKind } from "@/types";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -34,6 +34,8 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
   const [quoteCurrency, setQuoteCurrency] = useState<CurrencyCode>("BRL");
   const [priceSymbol, setPriceSymbol] = useState("");
   const [description, setDescription] = useState("");
+  const [tdKind, setTdKind] = useState<TesouroKind>("SELIC");
+  const [tdMaturityYear, setTdMaturityYear] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdAsset, setCreatedAsset] = useState<Asset | null>(null);
@@ -92,15 +94,22 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
     setError("");
 
     try {
+      const tdMaturityNum = tdMaturityYear ? Number(tdMaturityYear) : null;
+      const isTesouro = assetClass === "RF";
+      if (isTesouro && (!tdMaturityNum || tdMaturityNum < 2025)) {
+        throw new Error("Informe um ano de vencimento válido");
+      }
       const asset = await apiFetch<Asset>("/assets", {
         method: "POST",
         body: JSON.stringify({
-          ticker: ticker.toUpperCase(),
+          ticker: isTesouro ? null : ticker.toUpperCase(),
           asset_class: assetClass,
-          market,
-          quote_currency: quoteCurrency,
-          price_symbol: priceSymbol || null,
+          market: assetClass === "RF" ? "BR" : market,
+          quote_currency: assetClass === "RF" ? "BRL" : quoteCurrency,
+          price_symbol: assetClass === "RF" ? null : priceSymbol || null,
           description,
+          td_kind: isTesouro ? tdKind : null,
+          td_maturity_year: isTesouro ? tdMaturityNum : null,
         }),
       });
       setCreatedAsset(asset);
@@ -142,19 +151,21 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
               </div>
             )}
 
-            <div>
-              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ticker</label>
-              <input
-                type="text"
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
-                placeholder="Ex: BOVA11, VOO, VWCE, VUKG"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-                required
-              />
-            </div>
+            {assetClass !== "RF" && (
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ticker</label>
+                <input
+                  type="text"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value)}
+                  placeholder="Ex: BOVA11, VOO, VWCE, VUKG"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                  required
+                />
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={assetClass === "RF" ? "" : "grid grid-cols-2 gap-4"}>
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Classe</label>
                 <select
@@ -169,48 +180,83 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                 </select>
               </div>
 
+              {assetClass !== "RF" && (
+                <div>
+                  <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mercado</label>
+                  <select
+                    value={market}
+                    onChange={(e) => handleMarketChange(e.target.value as Market)}
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                  >
+                    {marketOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {assetClass !== "RF" && (
               <div>
-                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mercado</label>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Moeda</label>
                 <select
-                  value={market}
-                  onChange={(e) => handleMarketChange(e.target.value as Market)}
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                  value={quoteCurrency}
+                  onChange={(e) => setQuoteCurrency(e.target.value as CurrencyCode)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
                 >
-                  {marketOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  {currencyOptions.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
                     </option>
                   ))}
                 </select>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Moeda</label>
-              <select
-                value={quoteCurrency}
-                onChange={(e) => setQuoteCurrency(e.target.value as CurrencyCode)}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
-              >
-                {currencyOptions.map((currency) => (
-                  <option key={currency} value={currency}>
-                    {currency}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {assetClass === "RF" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Tipo Tesouro</label>
+                  <select
+                    value={tdKind}
+                    onChange={(e) => setTdKind(e.target.value as TesouroKind)}
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
+                  >
+                    <option value="SELIC">Tesouro Selic</option>
+                    <option value="IPCA+">Tesouro IPCA+</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Vencimento</label>
+                  <input
+                    type="number"
+                    min={2025}
+                    max={2100}
+                    value={tdMaturityYear}
+                    onChange={(e) => setTdMaturityYear(e.target.value)}
+                    placeholder="2029"
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
-            <div>
-              <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Price Symbol</label>
-              <input
-                type="text"
-                value={priceSymbol}
-                onChange={(e) => setPriceSymbol(e.target.value)}
-                placeholder="Opcional. Ex: BOVA11.SA, VOO, VWCE"
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-              />
-            </div>
+            {assetClass !== "RF" && (
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Price Symbol</label>
+                <input
+                  type="text"
+                  value={priceSymbol}
+                  onChange={(e) => setPriceSymbol(e.target.value)}
+                  placeholder="Opcional. Ex: BOVA11.SA, VOO, VWCE"
+                  disabled={!isAdmin}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Descricao</label>

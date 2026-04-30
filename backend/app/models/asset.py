@@ -3,10 +3,15 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 from typing import Optional
 
-from sqlalchemy import String, DateTime, Numeric, Enum
+from sqlalchemy import String, DateTime, Numeric, Integer, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+
+class TesouroKind(str, PyEnum):
+    SELIC = "SELIC"
+    IPCA = "IPCA+"
 
 
 class AssetType(str, PyEnum):
@@ -107,4 +112,9 @@ class Asset(Base):
     current_price_native: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
     fx_rate_to_brl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
     price_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    td_kind: Mapped[Optional[TesouroKind]] = mapped_column(
+        Enum(TesouroKind, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+    )
+    td_maturity_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

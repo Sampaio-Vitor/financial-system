@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset, CurrencyCode, Market, resolve_asset_metadata
 from app.models.system_setting import SystemSetting
 from app.models.user import User
+from app.services.tesouro_price_service import fetch_tesouro_price
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,39 @@ class PriceService:
             if _is_demo_asset(asset)
         )
 
-        price_results = await self._fetch_yf_prices(assets, fx_rates)
+        tesouro_assets = [a for a in assets if a.td_kind and a.td_maturity_year]
+        other_assets = [a for a in assets if not (a.td_kind and a.td_maturity_year)]
+
+        td_results = await self._fetch_tesouro_prices(tesouro_assets)
+        results["updated"].extend(td_results["updated"])
+        results["failed"].extend(td_results["failed"])
+
+        price_results = await self._fetch_yf_prices(other_assets, fx_rates)
         results["updated"].extend(price_results["updated"])
         results["failed"].extend(price_results["failed"])
 
         await self.db.commit()
+        return results
+
+    async def _fetch_tesouro_prices(self, assets: list[Asset]) -> dict:
+        results: dict = {"updated": [], "failed": []}
+        if not assets:
+            return results
+        now = datetime.now(timezone.utc)
+        for asset in assets:
+            price = await fetch_tesouro_price(asset.td_kind, asset.td_maturity_year)
+            if price is None:
+                results["failed"].append(
+                    {"ticker": asset.ticker, "error": "Tesouro price unavailable"}
+                )
+                continue
+            asset.current_price_native = price
+            asset.fx_rate_to_brl = Decimal("1")
+            asset.current_price = round(price, 4)
+            asset.price_updated_at = now
+            results["updated"].append(
+                {"ticker": asset.ticker, "price": float(asset.current_price)}
+            )
         return results
 
     async def _refresh_fx_rates(self, results: dict) -> dict[CurrencyCode, Decimal]:

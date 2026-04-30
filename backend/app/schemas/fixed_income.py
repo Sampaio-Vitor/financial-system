@@ -9,9 +9,10 @@ class FixedIncomeCreate(BaseModel):
     description: str
     start_date: date
     applied_value: Decimal
-    current_balance: Decimal
+    current_balance: Decimal | None = None
     yield_value: Decimal = Decimal("0")
     yield_pct: Decimal = Decimal("0")
+    purchase_unit_price: Decimal | None = None
     maturity_date: date | None = None
 
 
@@ -21,6 +22,7 @@ class FixedIncomeUpdate(BaseModel):
     current_balance: Decimal | None = None
     yield_value: Decimal | None = None
     yield_pct: Decimal | None = None
+    purchase_unit_price: Decimal | None = None
     maturity_date: date | None = None
 
 
@@ -73,6 +75,8 @@ class FixedIncomeResponse(BaseModel):
     current_balance: Decimal
     yield_value: Decimal
     yield_pct: Decimal
+    quantity: Decimal | None = None
+    purchase_unit_price: Decimal | None = None
     maturity_date: date | None
     created_at: datetime
     updated_at: datetime

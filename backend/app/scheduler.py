@@ -5,7 +5,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select, text
 
+from decimal import Decimal
+
 from app.database import AsyncSessionLocal, engine
+from app.models.asset import Asset
+from app.models.fixed_income import FixedIncomePosition
 from app.models.user import User
 from app.services.price_service import PriceService, _upsert_system_setting
 from app.services.snapshot_service import SnapshotService
@@ -24,6 +28,27 @@ async def _record_last_run(db, status: str) -> None:
     await db.commit()
 
 
+async def _recompute_tesouro_positions(db) -> int:
+    """Recompute current_balance for FI positions linked to Tesouro assets."""
+    rows = await db.execute(
+        select(FixedIncomePosition, Asset)
+        .join(Asset, Asset.id == FixedIncomePosition.asset_id)
+        .where(Asset.td_kind.is_not(None))
+    )
+    updated = 0
+    for fi, asset in rows.all():
+        if not fi.quantity or not asset.current_price:
+            continue
+        fi.current_balance = (fi.quantity * asset.current_price).quantize(Decimal("0.0001"))
+        if fi.applied_value:
+            fi.yield_value = fi.current_balance - fi.applied_value
+            fi.yield_pct = fi.yield_value / fi.applied_value
+        updated += 1
+    if updated:
+        logger.info("Recomputed %s Tesouro position(s)", updated)
+    return updated
+
+
 async def _execute_price_update_cycle(db) -> dict:
     """Update prices, generate daily snapshots, and persist the aggregate run status."""
     logger.info("Starting daily price update cycle")
@@ -31,6 +56,9 @@ async def _execute_price_update_cycle(db) -> dict:
     try:
         service = PriceService(db)
         results = await service.update_all_prices()
+
+        await _recompute_tesouro_positions(db)
+        await db.commit()
 
         users_result = await db.execute(select(User))
         users = users_result.scalars().all()

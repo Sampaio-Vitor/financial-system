@@ -16,6 +16,7 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import AporteModal from "@/components/renda-fixa/aporte-modal";
 import ResgateModal from "@/components/renda-fixa/resgate-modal";
 import JurosModal from "@/components/renda-fixa/juros-modal";
+import EditModal from "@/components/renda-fixa/edit-modal";
 import {
   Asset,
   FixedIncomePosition,
@@ -100,7 +101,14 @@ export default function RendaFixaPage() {
       .catch(() => {});
   }, []);
 
+  const [tesouroEditPosition, setTesouroEditPosition] = useState<FixedIncomePosition | null>(null);
+
   const startEdit = (p: FixedIncomePosition) => {
+    const asset = rfAssets.find((a) => a.id === p.asset_id);
+    if (asset?.td_kind) {
+      setTesouroEditPosition(p);
+      return;
+    }
     setEditingId(p.id);
     setEditData({
       applied_value: String(Number(p.applied_value)),
@@ -109,6 +117,24 @@ export default function RendaFixaPage() {
   };
 
   const cancelEdit = () => setEditingId(null);
+
+  const deletePosition = async (p: FixedIncomePosition) => {
+    const ok = await new Promise<boolean>((resolve) => {
+      pendingConfirm.current = resolve;
+      setConfirmState({
+        open: true,
+        title: "Excluir aporte",
+        message: `Remover ${p.ticker} (${formatBRL(p.applied_value)})? Resgates e juros vinculados serão excluídos junto.`,
+      });
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(`/fixed-income/${p.id}`, { method: "DELETE" });
+      fetchPositions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao excluir");
+    }
+  };
 
   const saveEdit = async (id: number) => {
     setSaving(true);
@@ -228,12 +254,22 @@ export default function RendaFixaPage() {
                     <span className="font-medium text-sm">{p.ticker}</span>
                     <span className="text-xs text-[var(--color-text-muted)] ml-2">{p.description}</span>
                   </div>
-                  <button
-                    onClick={() => startEdit(p)}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => startEdit(p)}
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                      title="Editar"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                    </button>
+                    <button
+                      onClick={() => deletePosition(p)}
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)]"
+                      title="Excluir"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
                   <div>
@@ -351,11 +387,18 @@ export default function RendaFixaPage() {
                             <button onClick={cancelEdit} className="text-xs text-[var(--color-text-muted)] hover:underline">Cancelar</button>
                           </div>
                         ) : (
-                          <button onClick={() => startEdit(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors" title="Editar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
-                            </svg>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => startEdit(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors" title="Editar">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+                              </svg>
+                            </button>
+                            <button onClick={() => deletePosition(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors" title="Excluir">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -478,6 +521,14 @@ export default function RendaFixaPage() {
       <AporteModal open={aporteOpen} rfAssets={rfAssets} onClose={() => setAporteOpen(false)} onSaved={fetchPositions} />
       <ResgateModal open={resgateOpen} positions={positions} onClose={() => setResgateOpen(false)} onSaved={fetchPositions} />
       <JurosModal open={jurosOpen} positions={positions} interest={interest} onClose={() => setJurosOpen(false)} onSaved={fetchPositions} />
+      {tesouroEditPosition && (
+        <EditModal
+          position={tesouroEditPosition}
+          asset={rfAssets.find((a) => a.id === tesouroEditPosition.asset_id)}
+          onClose={() => setTesouroEditPosition(null)}
+          onSaved={fetchPositions}
+        />
+      )}
     </div>
   );
 }
