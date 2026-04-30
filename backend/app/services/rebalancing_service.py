@@ -146,6 +146,24 @@ class RebalancingService:
                 bucket_candidates.sort(key=lambda item: item[2] - item[1], reverse=True)
                 candidates_by_bucket[allocation_bucket] = bucket_candidates
 
+        rf_gap = class_gaps.get(AllocationBucket.RF, Decimal("0"))
+        if rf_gap > 0:
+            rf_current_value = bucket_values[AllocationBucket.RF]
+            rf_target_value = investable_pos_aporte * targets.get(AllocationBucket.RF, Decimal("0"))
+            rf_gap_pct = (rf_gap / rf_target_value * 100) if rf_target_value else Decimal("0")
+            rf_candidate: AssetCandidate = (
+                "RENDA FIXA",
+                AssetClass.RF,
+                Market.BR,
+                CurrencyCode.BRL,
+                AllocationBucket.RF,
+                rf_current_value,
+                None,
+            )
+            candidates_by_bucket[AllocationBucket.RF] = [
+                (rf_candidate, rf_current_value, rf_target_value, rf_gap_pct)
+            ]
+
         bucket_order = sorted(
             candidates_by_bucket.keys(),
             key=lambda bucket: class_gaps.get(bucket, Decimal("0")),
