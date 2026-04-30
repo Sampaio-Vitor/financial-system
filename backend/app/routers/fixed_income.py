@@ -1,5 +1,6 @@
 import calendar
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -35,11 +36,22 @@ def _to_response(fi: FixedIncomePosition) -> FixedIncomeResponse:
         current_balance=fi.current_balance,
         yield_value=fi.yield_value,
         yield_pct=fi.yield_pct,
+        quantity=fi.quantity,
+        purchase_unit_price=fi.purchase_unit_price,
         maturity_date=fi.maturity_date,
         created_at=fi.created_at,
         updated_at=fi.updated_at,
         ticker=fi.asset.ticker if fi.asset else None,
     )
+
+
+def _recalc_yield(fi: FixedIncomePosition) -> None:
+    if fi.applied_value:
+        fi.yield_value = fi.current_balance - fi.applied_value
+        fi.yield_pct = fi.yield_value / fi.applied_value
+    else:
+        fi.yield_value = 0
+        fi.yield_pct = 0
 
 
 @router.get("", response_model=list[FixedIncomeResponse])
@@ -61,9 +73,28 @@ async def create_fixed_income(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    asset = await db.execute(select(Asset).where(Asset.id == data.asset_id))
-    if not asset.scalar_one_or_none():
+    asset_row = await db.execute(select(Asset).where(Asset.id == data.asset_id))
+    asset = asset_row.scalar_one_or_none()
+    if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
+
+    quantity = None
+    purchase_unit_price = data.purchase_unit_price
+    current_balance = data.current_balance
+    is_tesouro = bool(asset.td_kind)
+    if is_tesouro:
+        if not purchase_unit_price or purchase_unit_price <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Tesouro Direto exige PU na data da compra",
+            )
+        quantity = data.applied_value / purchase_unit_price
+        if asset.current_price:
+            current_balance = (quantity * asset.current_price).quantize(Decimal("0.0001"))
+        else:
+            current_balance = data.applied_value
+    elif current_balance is None:
+        current_balance = data.applied_value
 
     fi = FixedIncomePosition(
         asset_id=data.asset_id,
@@ -71,11 +102,15 @@ async def create_fixed_income(
         description=data.description,
         start_date=data.start_date,
         applied_value=data.applied_value,
-        current_balance=data.current_balance,
+        current_balance=current_balance,
         yield_value=data.yield_value,
         yield_pct=data.yield_pct,
+        quantity=quantity,
+        purchase_unit_price=purchase_unit_price if is_tesouro else None,
         maturity_date=data.maturity_date,
     )
+    if is_tesouro:
+        _recalc_yield(fi)
     db.add(fi)
     await db.commit()
 
@@ -97,20 +132,30 @@ async def update_fixed_income(
     if not fi:
         raise HTTPException(status_code=404, detail="Fixed income position not found")
 
+    asset_row = await db.execute(select(Asset).where(Asset.id == fi.asset_id))
+    asset = asset_row.scalar_one_or_none()
+    is_tesouro = bool(asset and asset.td_kind)
+
     if data.description is not None:
         fi.description = data.description
     if data.applied_value is not None:
         fi.applied_value = data.applied_value
-    if data.current_balance is not None:
+    if data.current_balance is not None and not is_tesouro:
         fi.current_balance = data.current_balance
     if data.yield_value is not None:
         fi.yield_value = data.yield_value
     if data.yield_pct is not None:
         fi.yield_pct = data.yield_pct
+    if data.purchase_unit_price is not None:
+        fi.purchase_unit_price = data.purchase_unit_price
     if data.maturity_date is not None:
         fi.maturity_date = data.maturity_date
 
-    # Recalculate yield from applied_value and current_balance
+    if is_tesouro and fi.purchase_unit_price and fi.purchase_unit_price > 0:
+        fi.quantity = fi.applied_value / fi.purchase_unit_price
+        if asset.current_price:
+            fi.current_balance = (fi.quantity * asset.current_price).quantize(Decimal("0.0001"))
+
     if fi.applied_value and fi.current_balance:
         fi.yield_value = fi.current_balance - fi.applied_value
         fi.yield_pct = fi.yield_value / fi.applied_value if fi.applied_value else 0
@@ -429,12 +474,17 @@ async def delete_fixed_income(
     if not fi:
         raise HTTPException(status_code=404, detail="Fixed income position not found")
 
-    # Orphan interest entries for this position
     interest_entries = await db.execute(
         select(FixedIncomeInterest).where(FixedIncomeInterest.fixed_income_id == fi.id)
     )
     for ie in interest_entries.scalars().all():
-        ie.fixed_income_id = None
+        await db.delete(ie)
+
+    redemption_entries = await db.execute(
+        select(FixedIncomeRedemption).where(FixedIncomeRedemption.fixed_income_id == fi.id)
+    )
+    for re in redemption_entries.scalars().all():
+        await db.delete(re)
 
     await db.delete(fi)
     await db.commit()
