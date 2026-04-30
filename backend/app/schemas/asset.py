@@ -3,17 +3,19 @@ from decimal import Decimal
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
+from app.models.asset import AssetClass, AssetType, CurrencyCode, Market, TesouroKind
 
 
 class AssetCreate(BaseModel):
-    ticker: str
+    ticker: str | None = None
     type: AssetType | None = None
     asset_class: AssetClass | None = None
     market: Market | None = None
     quote_currency: CurrencyCode | None = None
     price_symbol: str | None = None
     description: str = ""
+    td_kind: TesouroKind | None = None
+    td_maturity_year: int | None = None
 
     @model_validator(mode="after")
     def validate_classification(self) -> "AssetCreate":
@@ -27,6 +29,12 @@ class AssetCreate(BaseModel):
             raise ValueError(
                 "Informe o tipo legado ou asset_class + market + quote_currency"
             )
+        if (self.td_kind is None) != (self.td_maturity_year is None):
+            raise ValueError("td_kind e td_maturity_year devem ser informados juntos")
+        if self.td_maturity_year is not None and not (2025 <= self.td_maturity_year <= 2100):
+            raise ValueError("td_maturity_year fora do intervalo plausível")
+        if self.td_kind is None and not self.ticker:
+            raise ValueError("Ticker obrigatório")
         return self
 
 
@@ -128,6 +136,8 @@ class AssetResponse(BaseModel):
     current_price_native: Decimal | None = None
     fx_rate_to_brl: Decimal | None = None
     price_updated_at: datetime | None
+    td_kind: TesouroKind | None = None
+    td_maturity_year: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -186,6 +186,8 @@ def _to_response(asset: Asset, paused: bool, target_pct: Decimal | None = None) 
         "current_price_native": asset.current_price_native,
         "fx_rate_to_brl": asset.fx_rate_to_brl,
         "price_updated_at": asset.price_updated_at,
+        "td_kind": asset.td_kind,
+        "td_maturity_year": asset.td_maturity_year,
         "created_at": asset.created_at,
     }
 
@@ -525,10 +527,14 @@ async def create_asset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ticker = data.ticker.strip().upper()
     asset_type, asset_class, market, quote_currency = _resolve_payload_classification(
         data
     )
+    if data.td_kind and data.td_maturity_year:
+        slug = "IPCA" if data.td_kind.value == "IPCA+" else data.td_kind.value
+        ticker = f"TD-{slug}-{data.td_maturity_year}"
+    else:
+        ticker = (data.ticker or "").strip().upper()
 
     # Check if global asset exists
     result = await db.execute(select(Asset).where(Asset.ticker == ticker))
@@ -559,6 +565,11 @@ async def create_asset(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Apenas administradores podem cadastrar novos ativos globais",
             )
+        if data.td_kind is not None and asset_class != AssetClass.RF:
+            raise HTTPException(
+                status_code=400,
+                detail="Tesouro Direto exige asset_class=RF",
+            )
         # Create new global asset
         asset = Asset(
             ticker=ticker,
@@ -568,6 +579,8 @@ async def create_asset(
             quote_currency=quote_currency,
             price_symbol=data.price_symbol,
             description=data.description,
+            td_kind=data.td_kind,
+            td_maturity_year=data.td_maturity_year,
         )
         db.add(asset)
         try:

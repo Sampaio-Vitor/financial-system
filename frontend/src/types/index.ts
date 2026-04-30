@@ -9,6 +9,8 @@ export type AllocationBucket =
   | "FII"
   | "RF";
 
+export type TesouroKind = "SELIC" | "IPCA+";
+
 export interface Asset {
   id: number;
   ticker: string;
@@ -24,6 +26,8 @@ export interface Asset {
   current_price_native?: number | null;
   fx_rate_to_brl?: number | null;
   price_updated_at: string | null;
+  td_kind?: TesouroKind | null;
+  td_maturity_year?: number | null;
   created_at: string;
 }
 
@@ -72,6 +76,8 @@ export interface FixedIncomePosition {
   current_balance: number;
   yield_value: number;
   yield_pct: number;
+  quantity?: number | null;
+  purchase_unit_price?: number | null;
   maturity_date: string | null;
   created_at: string;
   updated_at: string;
