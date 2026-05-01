@@ -20,6 +20,9 @@ FX_TICKERS: dict[CurrencyCode, str] = {
     CurrencyCode.EUR: "EURBRL=X",
     CurrencyCode.GBP: "GBPBRL=X",
 }
+YF_BATCH_SIZE = 10
+YF_BATCH_SLEEP_SECONDS = 3
+YF_RETRY_DELAYS_SECONDS = (2, 5, 10)
 
 
 def _is_demo_asset(asset: Asset) -> bool:
@@ -28,7 +31,12 @@ def _is_demo_asset(asset: Asset) -> bool:
 
 def _extract_close(data, yf_ticker: str) -> float | None:
     try:
-        val = data["Close"][yf_ticker].iloc[-1]
+        close_data = data["Close"]
+        val = (
+            close_data[yf_ticker].iloc[-1]
+            if hasattr(close_data, "columns")
+            else close_data.iloc[-1]
+        )
         close = float(val)
         return close if close and close > 0 else None
     except Exception:
@@ -55,6 +63,32 @@ class PriceService:
     def __init__(self, db: AsyncSession, user: Optional[User] = None):
         self.db = db
         self.user = user
+
+    async def _download_yf(self, tickers: str | list[str], **kwargs):
+        loop = asyncio.get_running_loop()
+        last_data = None
+        for attempt, delay in enumerate((0, *YF_RETRY_DELAYS_SECONDS)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                call_kwargs = dict(kwargs)
+                data = await loop.run_in_executor(
+                    None,
+                    lambda t=tickers, kw=call_kwargs: yf.download(
+                        t, progress=False, threads=False, **kw
+                    ),
+                )
+                last_data = data
+                if not data.empty:
+                    return data
+            except Exception:
+                logger.warning(
+                    "Yahoo Finance download failed for %s on attempt %s",
+                    tickers,
+                    attempt + 1,
+                    exc_info=True,
+                )
+        return last_data
 
     async def update_all_prices(self) -> dict:
         results = {"updated": [], "failed": [], "skipped": [], "fx_rates": {}}
@@ -122,11 +156,8 @@ class PriceService:
         return fx_rates
 
     async def _fetch_fx_to_brl(self, yf_ticker: str) -> Decimal | None:
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(
-            None, lambda: yf.download(yf_ticker, period="1d", progress=False)
-        )
-        if not data.empty:
+        data = await self._download_yf(yf_ticker, period="1d")
+        if data is not None and not data.empty:
             close = _extract_close(data, yf_ticker)
             if close:
                 return Decimal(str(close))
@@ -147,7 +178,9 @@ class PriceService:
         val = await _get_system_setting(self.db, f"{currency.value.lower()}_brl_rate")
         return Decimal(val) if val else None
 
-    async def _fetch_yf_prices(self, assets: list[Asset], fx_rates: dict[CurrencyCode, Decimal]) -> dict:
+    async def _fetch_yf_prices(
+        self, assets: list[Asset], fx_rates: dict[CurrencyCode, Decimal]
+    ) -> dict:
         results = {"updated": [], "failed": []}
         ticker_map: dict[str, Asset] = {}
         for asset in assets:
@@ -155,27 +188,26 @@ class PriceService:
             ticker_map[yf_ticker] = asset
 
         yf_tickers = list(ticker_map.keys())
-        loop = asyncio.get_running_loop()
         now = datetime.now(timezone.utc)
 
-        for i in range(0, len(yf_tickers), 10):
-            batch = yf_tickers[i : i + 10]
+        for i in range(0, len(yf_tickers), YF_BATCH_SIZE):
+            batch = yf_tickers[i : i + YF_BATCH_SIZE]
             try:
-                data = await loop.run_in_executor(
-                    None,
-                    lambda b=batch: yf.download(b, period="1d", progress=False),
-                )
-                if data.empty:
+                data = await self._download_yf(batch, period="1d")
+                if data is None or data.empty:
                     for t in batch:
                         asset = ticker_map[t]
-                        results["failed"].append({"ticker": asset.ticker, "error": "No data returned"})
+                        results["failed"].append(
+                            {"ticker": asset.ticker, "error": "No data returned"}
+                        )
                     continue
 
+                missing_tickers: list[str] = []
                 for yf_ticker in batch:
                     asset = ticker_map[yf_ticker]
                     close_val = _extract_close(data, yf_ticker)
                     if not close_val:
-                        results["failed"].append({"ticker": asset.ticker, "error": "No close price"})
+                        missing_tickers.append(yf_ticker)
                         continue
                     _asset_class, _market, quote_currency = resolve_asset_metadata(
                         legacy_type=asset.type,
@@ -185,24 +217,67 @@ class PriceService:
                     )
                     fx_rate = fx_rates.get(quote_currency)
                     if fx_rate is None:
-                        results["failed"].append({
-                            "ticker": asset.ticker,
-                            "error": f"No FX rate available for {quote_currency.value}/BRL",
-                        })
+                        results["failed"].append(
+                            {
+                                "ticker": asset.ticker,
+                                "error": f"No FX rate available for {quote_currency.value}/BRL",
+                            }
+                        )
                         continue
                     native_price = Decimal(str(round(close_val, 6)))
                     asset.current_price_native = native_price
                     asset.fx_rate_to_brl = fx_rate
                     asset.current_price = round(native_price * fx_rate, 4)
                     asset.price_updated_at = now
-                    results["updated"].append({"ticker": asset.ticker, "price": float(asset.current_price)})
+                    results["updated"].append(
+                        {"ticker": asset.ticker, "price": float(asset.current_price)}
+                    )
+
+                for yf_ticker in missing_tickers:
+                    asset = ticker_map[yf_ticker]
+                    retry_data = await self._download_yf(yf_ticker, period="1d")
+                    close_val = (
+                        _extract_close(retry_data, yf_ticker)
+                        if retry_data is not None and not retry_data.empty
+                        else None
+                    )
+                    if not close_val:
+                        results["failed"].append(
+                            {"ticker": asset.ticker, "error": "No close price"}
+                        )
+                        continue
+                    _asset_class, _market, quote_currency = resolve_asset_metadata(
+                        legacy_type=asset.type,
+                        asset_class=asset.asset_class,
+                        market=asset.market,
+                        quote_currency=asset.quote_currency,
+                    )
+                    fx_rate = fx_rates.get(quote_currency)
+                    if fx_rate is None:
+                        results["failed"].append(
+                            {
+                                "ticker": asset.ticker,
+                                "error": f"No FX rate available for {quote_currency.value}/BRL",
+                            }
+                        )
+                        continue
+                    native_price = Decimal(str(round(close_val, 6)))
+                    asset.current_price_native = native_price
+                    asset.fx_rate_to_brl = fx_rate
+                    asset.current_price = round(native_price * fx_rate, 4)
+                    asset.price_updated_at = now
+                    results["updated"].append(
+                        {"ticker": asset.ticker, "price": float(asset.current_price)}
+                    )
             except Exception as exc:
                 for t in batch:
                     asset = ticker_map[t]
-                    results["failed"].append({"ticker": asset.ticker, "error": str(exc)})
+                    results["failed"].append(
+                        {"ticker": asset.ticker, "error": str(exc)}
+                    )
 
-            if i + 10 < len(yf_tickers):
-                await asyncio.sleep(2)
+            if i + YF_BATCH_SIZE < len(yf_tickers):
+                await asyncio.sleep(YF_BATCH_SLEEP_SECONDS)
 
         return results
 
@@ -219,18 +294,18 @@ class PriceService:
             return f"{asset.ticker}.SA"
         return asset.ticker
 
-    async def _fetch_historical_fx(self, currency: CurrencyCode, target_date: date) -> Decimal | None:
+    async def _fetch_historical_fx(
+        self, currency: CurrencyCode, target_date: date
+    ) -> Decimal | None:
         if currency == CurrencyCode.BRL:
             return Decimal("1")
         yf_ticker = FX_TICKERS[currency]
-        loop = asyncio.get_running_loop()
         start = target_date - timedelta(days=7)
         end = target_date + timedelta(days=1)
-        data = await loop.run_in_executor(
-            None,
-            lambda: yf.download(yf_ticker, start=start.isoformat(), end=end.isoformat(), progress=False),
+        data = await self._download_yf(
+            yf_ticker, start=start.isoformat(), end=end.isoformat()
         )
-        if not data.empty:
+        if data is not None and not data.empty:
             close = _extract_close(data, yf_ticker)
             if close:
                 return Decimal(str(close))
@@ -260,27 +335,52 @@ class PriceService:
             if rate:
                 fx_rates[currency] = rate
 
-        ticker_map: dict[str, Asset] = {self._price_symbol_for(asset): asset for asset in assets}
+        ticker_map: dict[str, Asset] = {
+            self._price_symbol_for(asset): asset for asset in assets
+        }
         yf_tickers = list(ticker_map.keys())
-        loop = asyncio.get_running_loop()
         start = target_date - timedelta(days=7)
         end = target_date + timedelta(days=1)
 
-        for i in range(0, len(yf_tickers), 10):
-            batch = yf_tickers[i : i + 10]
+        for i in range(0, len(yf_tickers), YF_BATCH_SIZE):
+            batch = yf_tickers[i : i + YF_BATCH_SIZE]
             try:
-                data = await loop.run_in_executor(
-                    None,
-                    lambda b=batch, s=start.isoformat(), e=end.isoformat(): yf.download(
-                        b, start=s, end=e, progress=False
-                    ),
+                data = await self._download_yf(
+                    batch, start=start.isoformat(), end=end.isoformat()
                 )
-                if data.empty:
+                if data is None or data.empty:
                     continue
 
+                missing_tickers: list[str] = []
                 for yf_ticker in batch:
                     asset = ticker_map[yf_ticker]
                     close_val = _extract_close(data, yf_ticker)
+                    if not close_val:
+                        missing_tickers.append(yf_ticker)
+                        continue
+                    _asset_class, _market, quote_currency = resolve_asset_metadata(
+                        legacy_type=asset.type,
+                        asset_class=asset.asset_class,
+                        market=asset.market,
+                        quote_currency=asset.quote_currency,
+                    )
+                    fx_rate = fx_rates.get(quote_currency)
+                    if not fx_rate:
+                        continue
+                    native_price = Decimal(str(round(close_val, 6)))
+                    brl_price = round(native_price * fx_rate, 4)
+                    prices[asset.id] = (native_price, fx_rate, brl_price)
+
+                for yf_ticker in missing_tickers:
+                    asset = ticker_map[yf_ticker]
+                    retry_data = await self._download_yf(
+                        yf_ticker, start=start.isoformat(), end=end.isoformat()
+                    )
+                    close_val = (
+                        _extract_close(retry_data, yf_ticker)
+                        if retry_data is not None and not retry_data.empty
+                        else None
+                    )
                     if not close_val:
                         continue
                     _asset_class, _market, quote_currency = resolve_asset_metadata(
@@ -296,13 +396,17 @@ class PriceService:
                     brl_price = round(native_price * fx_rate, 4)
                     prices[asset.id] = (native_price, fx_rate, brl_price)
             except Exception:
-                logger.warning("Failed to fetch historical prices for batch", exc_info=True)
+                logger.warning(
+                    "Failed to fetch historical prices for batch", exc_info=True
+                )
 
-            if i + 10 < len(yf_tickers):
-                await asyncio.sleep(2)
+            if i + YF_BATCH_SIZE < len(yf_tickers):
+                await asyncio.sleep(YF_BATCH_SLEEP_SECONDS)
 
         return prices
 
-    async def fetch_historical_prices(self, assets: list[Asset], target_date: date) -> dict[int, Decimal]:
+    async def fetch_historical_prices(
+        self, assets: list[Asset], target_date: date
+    ) -> dict[int, Decimal]:
         details = await self.fetch_historical_price_details(assets, target_date)
         return {asset_id: item[2] for asset_id, item in details.items()}
