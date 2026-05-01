@@ -394,13 +394,6 @@ function CatalogoContent() {
             ) : (
               sortedAssets.map((a) => {
                 const info = rebalancingInfo.get(a.id);
-                const gapColor = info
-                  ? info.gap > 0
-                    ? "text-[var(--color-positive)]"
-                    : info.gap < 0
-                      ? "text-[var(--color-negative)]"
-                      : "text-[var(--color-text-muted)]"
-                  : "text-[var(--color-text-muted)]";
 
                 return (
                   <MobileCard
@@ -437,7 +430,7 @@ function CatalogoContent() {
                       { label: "Descricao", value: a.description || "\u2014" },
                       { label: "Mercado", value: a.market ? MARKET_LABELS[a.market] : "\u2014" },
                       { label: "Moeda", value: a.quote_currency ? CURRENCY_LABELS[a.quote_currency] : "\u2014" },
-                      { label: "Gap", value: <span className={gapColor}>{info ? formatBRL(info.gap) : "\u2014"}</span> },
+                      { label: "Gap", value: <span className="text-[var(--color-text-secondary)]">{info ? formatBRL(info.gap) : "\u2014"}</span> },
                       ...(showTargetPctColumn
                         ? [{
                             label: "% Alvo",
@@ -582,13 +575,7 @@ function CatalogoContent() {
                           ? formatBRL(rebalancingInfo.get(a.id)!.target_value)
                           : "—"}
                       </td>
-                      <td className={`px-4 py-2.5 text-right font-medium ${
-                        rebalancingInfo.has(a.id) && rebalancingInfo.get(a.id)!.gap > 0
-                          ? "text-[var(--color-positive)]"
-                          : rebalancingInfo.has(a.id) && rebalancingInfo.get(a.id)!.gap < 0
-                            ? "text-[var(--color-negative)]"
-                            : "text-[var(--color-text-muted)]"
-                      }`}>
+                      <td className="px-4 py-2.5 text-right font-medium text-[var(--color-text-secondary)]">
                         {rebalancingInfo.has(a.id)
                           ? formatBRL(rebalancingInfo.get(a.id)!.gap)
                           : "—"}
