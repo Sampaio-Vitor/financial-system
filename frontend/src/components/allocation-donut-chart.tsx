@@ -15,14 +15,13 @@ const CLASS_COLORS: Record<string, string> = {
 interface AllocationDonutChartProps {
   items: ClassSummary[];
   patrimonioTotal: number;
-  reservaFinanceira?: number | null;
 }
 
 export default function AllocationDonutChart({
   items,
   patrimonioTotal,
-  reservaFinanceira,
 }: AllocationDonutChartProps) {
+  const patrimonioInvestivel = items.reduce((sum, item) => sum + Number(item.value), 0);
   const chartData = items
     .filter((item) => Number(item.value) > 0)
     .map((item) => ({
@@ -31,18 +30,6 @@ export default function AllocationDonutChart({
       pct: Number(item.pct),
       color: CLASS_COLORS[item.allocation_bucket || item.asset_class || "RF"] || "#64748b",
     }));
-
-  if (reservaFinanceira && Number(reservaFinanceira) > 0) {
-    const reservaPct = patrimonioTotal > 0
-      ? (Number(reservaFinanceira) / patrimonioTotal) * 100
-      : 0;
-    chartData.push({
-      name: "Reserva",
-      value: Number(reservaFinanceira),
-      pct: reservaPct,
-      color: "#06b6d4",
-    });
-  }
 
   if (chartData.length === 0) return null;
 
@@ -79,9 +66,9 @@ export default function AllocationDonutChart({
         </PieChart>
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-        <span className="text-xs text-[var(--color-text-muted)]">Patrimônio</span>
+        <span className="text-xs text-[var(--color-text-muted)]">Investível</span>
         <span className="text-sm font-bold text-[var(--color-text-primary)]">
-          {formatBRL(patrimonioTotal)}
+          {formatBRL(patrimonioInvestivel || patrimonioTotal)}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 justify-center shrink-0">

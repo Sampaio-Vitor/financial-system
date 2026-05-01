@@ -31,7 +31,10 @@ async def list_snapshots(
         .where(MonthlySnapshot.user_id == user.id)
         .order_by(MonthlySnapshot.month.desc())
     )
-    return [SnapshotResponse.model_validate(s, from_attributes=True) for s in result.scalars().all()]
+    return [
+        SnapshotResponse.model_validate(s, from_attributes=True)
+        for s in result.scalars().all()
+    ]
 
 
 @router.post("/generate", response_model=SnapshotResponse)
@@ -77,6 +80,7 @@ async def get_evolution(
             total_invested=s.total_invested,
             total_pnl=s.total_pnl,
             pnl_pct=s.pnl_pct,
+            aportes_do_mes=s.aportes_do_mes,
         )
         for s in result.scalars().all()
     ]
