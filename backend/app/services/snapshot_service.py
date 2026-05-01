@@ -5,15 +5,24 @@ from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import AllocationBucket, Asset, AssetType, asset_bucket_for, resolve_asset_metadata
+from app.models.asset import (
+    AllocationBucket,
+    Asset,
+    AssetType,
+    asset_bucket_for,
+    resolve_asset_metadata,
+)
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
-from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.daily_snapshot import DailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.constants import ALLOCATION_BUCKET_LABELS
-from app.services.portfolio_service import get_bucket_values, get_reserve_for_date, get_reserve_for_month
+from app.services.portfolio_service import (
+    get_bucket_values,
+    get_reserve_for_date,
+    get_reserve_for_month,
+)
 from app.services.price_service import PriceService
 
 
@@ -58,9 +67,11 @@ class SnapshotService:
 
         # Collect assets that need historical prices
         asset_ids = [row.id for row in rv_rows]
-        assets_result = await self.db.execute(
-            select(Asset).where(Asset.id.in_(asset_ids))
-        ) if asset_ids else None
+        assets_result = (
+            await self.db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+            if asset_ids
+            else None
+        )
         assets_list = list(assets_result.scalars().all()) if assets_result else []
         asset_map = {asset.id: asset for asset in assets_list}
 
@@ -89,9 +100,11 @@ class SnapshotService:
             )
             bucket = asset_bucket_for(resolved_class, resolved_market)
             price_detail = historical_prices.get(asset_id)
-            native_price = price_detail[0] if price_detail else None
-            fx_rate_to_brl = price_detail[1] if price_detail else None
-            price = price_detail[2] if price_detail else None
+            native_price = (
+                price_detail[0] if price_detail else asset.current_price_native
+            )
+            fx_rate_to_brl = price_detail[1] if price_detail else asset.fx_rate_to_brl
+            price = price_detail[2] if price_detail else asset.current_price
             market_value = price * qty if price and qty else None
             if market_value:
                 class_values[bucket] += market_value
@@ -107,29 +120,40 @@ class SnapshotService:
                 else avg_price
             )
 
-            asset_items.append({
-                "ticker": ticker,
-                "type": asset_type.value,
-                "asset_class": resolved_class.value,
-                "market": resolved_market.value,
-                "quote_currency": resolved_currency.value,
-                "allocation_bucket": bucket.value,
-                "quantity": float(qty) if qty else 0,
-                "avg_price": float(round(avg_price, 4)),
-                "avg_price_native": float(round(avg_price_native, 6)) if avg_price_native is not None else None,
-                "closing_price": float(round(price, 4)) if price else None,
-                "closing_price_native": float(round(native_price, 6)) if native_price else None,
-                "fx_rate_to_brl": float(round(fx_rate_to_brl, 6)) if fx_rate_to_brl else None,
-                "market_value": float(round(market_value, 4)) if market_value else None,
-                "total_cost": float(round(cost_val, 4)),
-                "pnl": float(round(pnl, 4)) if pnl else None,
-                "pnl_pct": float(round(pnl_pct_asset, 2)) if pnl_pct_asset else None,
-            })
+            asset_items.append(
+                {
+                    "ticker": ticker,
+                    "type": asset_type.value,
+                    "asset_class": resolved_class.value,
+                    "market": resolved_market.value,
+                    "quote_currency": resolved_currency.value,
+                    "allocation_bucket": bucket.value,
+                    "quantity": float(qty) if qty else 0,
+                    "avg_price": float(round(avg_price, 4)),
+                    "avg_price_native": float(round(avg_price_native, 6))
+                    if avg_price_native is not None
+                    else None,
+                    "closing_price": float(round(price, 4)) if price else None,
+                    "closing_price_native": float(round(native_price, 6))
+                    if native_price
+                    else None,
+                    "fx_rate_to_brl": float(round(fx_rate_to_brl, 6))
+                    if fx_rate_to_brl
+                    else None,
+                    "market_value": float(round(market_value, 4))
+                    if market_value
+                    else None,
+                    "total_cost": float(round(cost_val, 4)),
+                    "pnl": float(round(pnl, 4)) if pnl else None,
+                    "pnl_pct": float(round(pnl_pct_asset, 2))
+                    if pnl_pct_asset
+                    else None,
+                }
+            )
 
         # ── 4. Fixed income: per-position + totals ──
         fi_positions_result = await self.db.execute(
-            select(FixedIncomePosition)
-            .where(
+            select(FixedIncomePosition).where(
                 FixedIncomePosition.user_id == self.user.id,
                 FixedIncomePosition.start_date < next_month_start,
             )
@@ -137,54 +161,44 @@ class SnapshotService:
         fi_positions = fi_positions_result.scalars().all()
         fi_applied = sum(p.applied_value for p in fi_positions)
 
-        # Batch query for per-position redemptions (fixes N+1)
-        fi_pos_ids = [p.id for p in fi_positions]
-        redemption_by_position: dict[int, Decimal] = {}
-        if fi_pos_ids:
-            batch_redemptions = await self.db.execute(
-                select(
-                    FixedIncomeRedemption.fixed_income_id,
-                    func.sum(FixedIncomeRedemption.amount).label("total"),
-                ).where(
-                    FixedIncomeRedemption.user_id == self.user.id,
-                    FixedIncomeRedemption.fixed_income_id.in_(fi_pos_ids),
-                    FixedIncomeRedemption.redemption_date < next_month_start,
-                ).group_by(FixedIncomeRedemption.fixed_income_id)
-            )
-            for row in batch_redemptions.all():
-                redemption_by_position[row.fixed_income_id] = row.total
-
         for fi_pos in fi_positions:
-            pos_redeemed = redemption_by_position.get(fi_pos.id, Decimal("0"))
-            net_value = fi_pos.applied_value - pos_redeemed
+            net_value = fi_pos.current_balance
             if net_value > 0:
-                asset_items.append({
-                    "ticker": fi_pos.asset.ticker if fi_pos.asset else "RF",
-                    "type": "RF",
-                    "asset_class": "RF",
-                    "market": "BR",
-                    "quote_currency": "BRL",
-                    "allocation_bucket": "RF",
-                    "quantity": 1,
-                    "avg_price": float(round(fi_pos.applied_value, 4)),
-                    "avg_price_native": float(round(fi_pos.applied_value, 4)),
-                    "closing_price": float(round(net_value, 4)),
-                    "closing_price_native": float(round(net_value, 4)),
-                    "fx_rate_to_brl": 1.0,
-                    "market_value": float(round(net_value, 4)),
-                    "total_cost": float(round(fi_pos.applied_value, 4)),
-                    "pnl": float(round(net_value - fi_pos.applied_value, 4)),
-                    "pnl_pct": float(round((net_value - fi_pos.applied_value) / fi_pos.applied_value * 100, 2)) if fi_pos.applied_value else None,
-                })
+                asset_items.append(
+                    {
+                        "ticker": fi_pos.asset.ticker if fi_pos.asset else "RF",
+                        "type": "RF",
+                        "asset_class": "RF",
+                        "market": "BR",
+                        "quote_currency": "BRL",
+                        "allocation_bucket": "RF",
+                        "quantity": 1,
+                        "avg_price": float(round(fi_pos.applied_value, 4)),
+                        "avg_price_native": float(round(fi_pos.applied_value, 4)),
+                        "closing_price": float(round(net_value, 4)),
+                        "closing_price_native": float(round(net_value, 4)),
+                        "fx_rate_to_brl": 1.0,
+                        "market_value": float(round(net_value, 4)),
+                        "total_cost": float(round(fi_pos.applied_value, 4)),
+                        "pnl": float(round(net_value - fi_pos.applied_value, 4)),
+                        "pnl_pct": float(
+                            round(
+                                (net_value - fi_pos.applied_value)
+                                / fi_pos.applied_value
+                                * 100,
+                                2,
+                            )
+                        )
+                        if fi_pos.applied_value
+                        else None,
+                    }
+                )
 
-        redemption_query = select(func.sum(FixedIncomeRedemption.amount)).where(
-            FixedIncomeRedemption.user_id == self.user.id,
-            FixedIncomeRedemption.redemption_date < next_month_start,
+        rf_value = sum(
+            Decimal(str(item["market_value"]))
+            for item in asset_items
+            if item["allocation_bucket"] == "RF"
         )
-        redemption_result = await self.db.execute(redemption_query)
-        fi_redeemed = redemption_result.scalar() or Decimal("0")
-
-        rf_value = fi_applied - fi_redeemed
         class_values[AllocationBucket.RF] = rf_value
 
         # ── 5. Reserve ──
@@ -217,8 +231,12 @@ class SnapshotService:
             prev_year, prev_m = year - 1, 12
         else:
             prev_year, prev_m = year, month - 1
-        prev_reserve = await get_reserve_for_month(self.db, self.user.id, prev_year, prev_m)
-        reserva_aporte = reserva - (prev_reserve.amount if prev_reserve else Decimal("0"))
+        prev_reserve = await get_reserve_for_month(
+            self.db, self.user.id, prev_year, prev_m
+        )
+        reserva_aporte = reserva - (
+            prev_reserve.amount if prev_reserve else Decimal("0")
+        )
         if reserva_aporte > 0:
             aportes_do_mes += reserva_aporte
 
@@ -237,15 +255,21 @@ class SnapshotService:
         allocation = []
         for bucket in AllocationBucket:
             value = class_values[bucket]
-            pct = (value / patrimonio_investivel * 100) if patrimonio_investivel else Decimal("0")
-            allocation.append({
-                "allocation_bucket": bucket.value,
-                "label": ALLOCATION_BUCKET_LABELS[bucket],
-                "value": float(round(value, 4)),
-                "pct": float(round(pct, 2)),
-                "target_pct": 0,
-                "gap": 0,
-            })
+            pct = (
+                (value / patrimonio_investivel * 100)
+                if patrimonio_investivel
+                else Decimal("0")
+            )
+            allocation.append(
+                {
+                    "allocation_bucket": bucket.value,
+                    "label": ALLOCATION_BUCKET_LABELS[bucket],
+                    "value": float(round(value, 4)),
+                    "pct": float(round(pct, 2)),
+                    "target_pct": 0,
+                    "gap": 0,
+                }
+            )
 
         # ── 8. Upsert snapshot ──
         existing = await self.db.execute(
@@ -328,7 +352,16 @@ class SnapshotService:
         total_rv_cost = Decimal("0")
 
         for row in rv_rows:
-            _asset_id, asset_type, asset_class, market, quote_currency, current_price, qty, cost = row
+            (
+                _asset_id,
+                asset_type,
+                asset_class,
+                market,
+                quote_currency,
+                current_price,
+                qty,
+                cost,
+            ) = row
             asset_class, market, quote_currency = resolve_asset_metadata(
                 legacy_type=asset_type,
                 asset_class=asset_class,
@@ -351,7 +384,9 @@ class SnapshotService:
         )
         fi_positions = fi_positions_result.scalars().all()
         fi_applied = sum(p.applied_value for p in fi_positions)
-        current_bucket_values = await get_bucket_values(self.db, self.user, cutoff=tomorrow)
+        current_bucket_values = await get_bucket_values(
+            self.db, self.user, cutoff=tomorrow
+        )
         class_values[AllocationBucket.RF] = current_bucket_values[AllocationBucket.RF]
 
         # ── 3. Reserve ──
@@ -399,7 +434,9 @@ class SnapshotService:
         """Generate/regenerate snapshots for all months from earliest data to last month."""
         # Find earliest date
         min_purchase = await self.db.execute(
-            select(func.min(Purchase.purchase_date)).where(Purchase.user_id == self.user.id)
+            select(func.min(Purchase.purchase_date)).where(
+                Purchase.user_id == self.user.id
+            )
         )
         min_fi = await self.db.execute(
             select(func.min(FixedIncomePosition.start_date)).where(
