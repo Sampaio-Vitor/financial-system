@@ -20,15 +20,17 @@ export default function AporteVsPatrimonioChart({ data }: AporteVsPatrimonioChar
 
   const chartData = data.map((p, i) => {
     const patrimonio = Number(p.total_patrimonio);
-    const invested = Number(p.total_invested);
+    const fallbackInvested = Number(p.total_invested);
     const prevInvested = i > 0 ? Number(data[i - 1].total_invested) : 0;
-    const aportes = Math.max(0, invested - prevInvested);
+    const netAportes = Number(p.aportes_do_mes ?? fallbackInvested - prevInvested);
+    const aportes = Math.max(0, netAportes);
     const jaExistente = patrimonio - aportes;
 
     return {
       month: p.month,
       label: p.month.slice(5) + "/" + p.month.slice(2, 4),
       aportes,
+      netAportes,
       jaExistente: Math.max(0, jaExistente),
       patrimonio,
     };
@@ -61,13 +63,13 @@ export default function AporteVsPatrimonioChart({ data }: AporteVsPatrimonioChar
               }}
               formatter={(v: number, name: string) => [
                 formatBRL(v),
-                name === "aportes" ? "Aportes do Mês" : "Patrimônio Existente",
+                name === "aportes" ? "Aporte Líquido do Mês" : "Patrimônio Existente",
               ]}
               labelFormatter={(_label: string, payload: unknown) => {
-                const items = payload as Array<{ payload: { month: string; patrimonio: number } }>;
+                const items = payload as Array<{ payload: { month: string; patrimonio: number; netAportes: number } }>;
                 if (items && items.length > 0) {
                   const p = items[0].payload;
-                  return `${getMonthLabel(p.month)} — Total: ${formatBRL(p.patrimonio)}`;
+                  return `${getMonthLabel(p.month)} — Total: ${formatBRL(p.patrimonio)} — Aporte líquido: ${formatBRL(p.netAportes)}`;
                 }
                 return _label;
               }}
@@ -94,7 +96,7 @@ export default function AporteVsPatrimonioChart({ data }: AporteVsPatrimonioChar
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 bg-violet-500 rounded-sm" />
-          <span className="text-xs text-[var(--color-text-muted)]">Aportes do Mês</span>
+          <span className="text-xs text-[var(--color-text-muted)]">Aporte Líquido do Mês</span>
         </div>
       </div>
     </div>

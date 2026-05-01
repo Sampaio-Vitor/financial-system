@@ -48,6 +48,7 @@ class PatrimonioEvolutionPoint(BaseModel):
     total_invested: Decimal
     total_pnl: Decimal
     pnl_pct: Decimal
+    aportes_do_mes: Decimal
 
 
 class DailyEvolutionPoint(BaseModel):

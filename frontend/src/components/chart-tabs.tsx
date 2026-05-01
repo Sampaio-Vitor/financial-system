@@ -87,7 +87,6 @@ export default function ChartTabs({
         <AllocationDonutChart
           items={allocationItems}
           patrimonioTotal={patrimonioTotal}
-          reservaFinanceira={reservaFinanceira}
         />
       );
     }

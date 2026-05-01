@@ -14,6 +14,7 @@ from app.models.asset import (
 )
 from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
+from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.daily_snapshot import DailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
@@ -205,8 +206,8 @@ class SnapshotService:
         reserve_entry = await get_reserve_for_month(self.db, self.user.id, year, month)
         reserva = reserve_entry.amount if reserve_entry else Decimal("0")
 
-        # ── 6. Aportes do mes ──
-        # RV purchases in this month
+        # ── 6. Aportes liquidos do mes ──
+        # Variable income purchases include sells as negative total_value.
         rv_aportes_result = await self.db.execute(
             select(func.sum(Purchase.total_value)).where(
                 Purchase.user_id == self.user.id,
@@ -216,7 +217,7 @@ class SnapshotService:
         )
         aportes_do_mes = rv_aportes_result.scalar() or Decimal("0")
 
-        # FI positions started this month
+        # Fixed income positions started this month, net of redemptions.
         fi_aportes_result = await self.db.execute(
             select(func.sum(FixedIncomePosition.applied_value)).where(
                 FixedIncomePosition.user_id == self.user.id,
@@ -226,7 +227,16 @@ class SnapshotService:
         )
         aportes_do_mes += fi_aportes_result.scalar() or Decimal("0")
 
-        # Reserve increase
+        fi_resgates_result = await self.db.execute(
+            select(func.sum(FixedIncomeRedemption.amount)).where(
+                FixedIncomeRedemption.user_id == self.user.id,
+                FixedIncomeRedemption.redemption_date >= month_start,
+                FixedIncomeRedemption.redemption_date < next_month_start,
+            )
+        )
+        aportes_do_mes -= fi_resgates_result.scalar() or Decimal("0")
+
+        # Reserve delta: deposits increase net contribution, withdrawals reduce it.
         if month == 1:
             prev_year, prev_m = year - 1, 12
         else:
@@ -237,8 +247,7 @@ class SnapshotService:
         reserva_aporte = reserva - (
             prev_reserve.amount if prev_reserve else Decimal("0")
         )
-        if reserva_aporte > 0:
-            aportes_do_mes += reserva_aporte
+        aportes_do_mes += reserva_aporte
 
         # ── 7. Totals ──
         patrimonio_investivel = sum(class_values.values())

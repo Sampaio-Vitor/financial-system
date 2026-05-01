@@ -281,6 +281,7 @@ export interface PatrimonioEvolutionPoint {
   total_invested: number;
   total_pnl: number;
   pnl_pct: number;
+  aportes_do_mes: number;
 }
 
 export interface DailyEvolutionPoint {
