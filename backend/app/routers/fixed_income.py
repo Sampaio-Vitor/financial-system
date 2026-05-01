@@ -54,6 +54,55 @@ def _recalc_yield(fi: FixedIncomePosition) -> None:
         fi.yield_pct = 0
 
 
+async def _subtract_redemptions_between(
+    db: AsyncSession,
+    position_id: int,
+    balance: Decimal,
+    start_date: date,
+    end_date: date,
+) -> Decimal:
+    redemptions_result = await db.execute(
+        select(FixedIncomeRedemption).where(
+            FixedIncomeRedemption.fixed_income_id == position_id,
+            FixedIncomeRedemption.redemption_date > start_date,
+            FixedIncomeRedemption.redemption_date <= end_date,
+        )
+    )
+    for redemption in redemptions_result.scalars().all():
+        balance -= redemption.amount
+
+    return balance
+
+
+async def _balance_before_interest(
+    db: AsyncSession,
+    fi: FixedIncomePosition,
+    ref_date: date,
+    existing: FixedIncomeInterest | None,
+    next_entry: FixedIncomeInterest | None,
+) -> Decimal:
+    if existing and not next_entry:
+        return existing.previous_balance
+
+    if not next_entry:
+        return fi.current_balance
+
+    prev_result = await db.execute(
+        select(FixedIncomeInterest)
+        .where(
+            FixedIncomeInterest.fixed_income_id == fi.id,
+            FixedIncomeInterest.reference_month < ref_date,
+        )
+        .order_by(FixedIncomeInterest.reference_month.desc())
+        .limit(1)
+    )
+    prev_entry = prev_result.scalar_one_or_none()
+    previous_balance = prev_entry.new_balance if prev_entry else fi.applied_value
+    previous_date = prev_entry.reference_month if prev_entry else fi.start_date
+
+    return await _subtract_redemptions_between(db, fi.id, previous_balance, previous_date, ref_date)
+
+
 @router.get("", response_model=list[FixedIncomeResponse])
 async def list_fixed_income(
     db: AsyncSession = Depends(get_db),
@@ -301,25 +350,6 @@ async def bulk_register_interest(
                 detail=f"Posicao {entry.fixed_income_id} nao encontrada",
             )
 
-        # Compute previous_balance from the most recent interest entry before ref_date
-        prev_result = await db.execute(
-            select(FixedIncomeInterest)
-            .where(
-                FixedIncomeInterest.fixed_income_id == fi.id,
-                FixedIncomeInterest.reference_month < ref_date,
-            )
-            .order_by(FixedIncomeInterest.reference_month.desc())
-            .limit(1)
-        )
-        prev_entry = prev_result.scalar_one_or_none()
-        previous_balance = prev_entry.new_balance if prev_entry else fi.applied_value
-
-        interest_amount = entry.new_balance - previous_balance
-
-        # Skip zero-change entries
-        if interest_amount == 0:
-            continue
-
         # Check for existing entry (upsert)
         existing_result = await db.execute(
             select(FixedIncomeInterest).where(
@@ -328,6 +358,24 @@ async def bulk_register_interest(
             )
         )
         existing = existing_result.scalar_one_or_none()
+
+        next_result = await db.execute(
+            select(FixedIncomeInterest)
+            .where(
+                FixedIncomeInterest.fixed_income_id == fi.id,
+                FixedIncomeInterest.reference_month > ref_date,
+            )
+            .order_by(FixedIncomeInterest.reference_month.asc())
+            .limit(1)
+        )
+        next_entry = next_result.scalar_one_or_none()
+
+        previous_balance = await _balance_before_interest(db, fi, ref_date, existing, next_entry)
+        interest_amount = entry.new_balance - previous_balance
+
+        # Skip zero-change entries
+        if interest_amount == 0:
+            continue
 
         if existing:
             # Update existing entry
@@ -350,19 +398,15 @@ async def bulk_register_interest(
             db.add(interest_record)
 
         # Forward cascade: update the next entry's previous_balance if it exists
-        next_result = await db.execute(
-            select(FixedIncomeInterest)
-            .where(
-                FixedIncomeInterest.fixed_income_id == fi.id,
-                FixedIncomeInterest.reference_month > ref_date,
-            )
-            .order_by(FixedIncomeInterest.reference_month.asc())
-            .limit(1)
-        )
-        next_entry = next_result.scalar_one_or_none()
         if next_entry:
-            next_entry.previous_balance = entry.new_balance
-            next_entry.interest_amount = next_entry.new_balance - entry.new_balance
+            next_entry.previous_balance = await _subtract_redemptions_between(
+                db,
+                fi.id,
+                entry.new_balance,
+                ref_date,
+                next_entry.reference_month,
+            )
+            next_entry.interest_amount = next_entry.new_balance - next_entry.previous_balance
 
         # Only update position balance if no later interest entry exists
         if not next_entry:

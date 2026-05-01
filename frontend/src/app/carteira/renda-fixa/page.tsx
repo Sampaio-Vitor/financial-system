@@ -181,20 +181,21 @@ export default function RendaFixaPage() {
   }, [positions, redemptions, interest]);
 
   const chartData = useMemo(() => {
-    const capitalEvents = timeline.filter((e) => e.type !== "JUROS");
-    if (capitalEvents.length === 0) return [];
-    const byMonth = new Map<string, number>();
-    for (const e of capitalEvents) {
-      const m = e.date.slice(0, 7);
-      byMonth.set(m, (byMonth.get(m) || 0) + (e.type === "APORTE" ? e.amount : -e.amount));
-    }
-    const months = Array.from(byMonth.keys()).sort();
-    let cumulative = 0;
+    if (positions.length === 0) return [];
+    const months = Array.from(
+      new Set([
+        ...positions.map((p) => p.start_date.slice(0, 7)),
+        ...timeline.map((e) => e.date.slice(0, 7)),
+      ]),
+    ).sort();
+
     return months.map((m) => {
-      cumulative += byMonth.get(m)!;
-      return { month: m.slice(5) + "/" + m.slice(2, 4), value: cumulative };
+      const value = positions.reduce((sum, p) => (
+        p.start_date.slice(0, 7) <= m ? sum + Number(p.applied_value) : sum
+      ), 0);
+      return { month: m.slice(5) + "/" + m.slice(2, 4), value };
     });
-  }, [timeline]);
+  }, [positions, timeline]);
 
   if (loading) {
     return (
@@ -208,6 +209,8 @@ export default function RendaFixaPage() {
   const totalApplied = positions.reduce((s, p) => s + Number(p.applied_value), 0);
   const totalBalance = positions.reduce((s, p) => s + Number(p.current_balance), 0);
   const totalYield = positions.reduce((s, p) => s + Number(p.yield_value), 0);
+  const totalYieldPct = totalApplied > 0 ? (totalYield / totalApplied) * 100 : 0;
+  const totalYieldClass = totalYield >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]";
 
   return (
     <div>
@@ -278,7 +281,7 @@ export default function RendaFixaPage() {
                   </div>
                   <div>
                     <span className="text-xs text-[var(--color-text-muted)]">Rendimento</span>
-                    <div className="text-sm text-[var(--color-positive)]">{formatBRL(p.yield_value)} ({formatPercent(p.yield_pct * 100)})</div>
+                    <div className={`text-sm ${Number(p.yield_value) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(p.yield_value)} ({formatPercent(p.yield_pct * 100)})</div>
                   </div>
                   <div>
                     <span className="text-xs text-[var(--color-text-muted)]">Valor Aplicado</span>
@@ -297,8 +300,8 @@ export default function RendaFixaPage() {
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 <div><span className="text-xs text-[var(--color-text-muted)]">Aplicado</span><div className="text-sm">{formatBRL(totalApplied)}</div></div>
                 <div><span className="text-xs text-[var(--color-text-muted)]">Saldo</span><div className="text-sm">{formatBRL(totalBalance)}</div></div>
-                <div><span className="text-xs text-[var(--color-text-muted)]">Rendimento</span><div className="text-sm text-[var(--color-positive)]">{formatBRL(totalYield)}</div></div>
-                <div><span className="text-xs text-[var(--color-text-muted)]">Rend. %</span><div className="text-sm text-[var(--color-positive)]">{formatPercent(totalApplied > 0 ? (totalYield / totalApplied) * 100 : 0)}</div></div>
+                <div><span className="text-xs text-[var(--color-text-muted)]">Rendimento</span><div className={`text-sm ${totalYieldClass}`}>{formatBRL(totalYield)}</div></div>
+                <div><span className="text-xs text-[var(--color-text-muted)]">Rend. %</span><div className={`text-sm ${totalYieldClass}`}>{formatPercent(totalYieldPct)}</div></div>
               </div>
             </div>
           </div>
@@ -373,8 +376,8 @@ export default function RendaFixaPage() {
                         <>
                           <td className="px-3 py-2.5">{formatBRL(p.applied_value)}</td>
                           <td className="px-3 py-2.5">{formatBRL(p.current_balance)}</td>
-                          <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatBRL(p.yield_value)}</td>
-                          <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatPercent(p.yield_pct * 100)}</td>
+                          <td className={`px-3 py-2.5 ${Number(p.yield_value) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(p.yield_value)}</td>
+                          <td className={`px-3 py-2.5 ${Number(p.yield_pct) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatPercent(p.yield_pct * 100)}</td>
                         </>
                       )}
                       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
@@ -410,8 +413,8 @@ export default function RendaFixaPage() {
                   <td className="px-3 py-2.5" colSpan={3}>TOTAL</td>
                   <td className="px-3 py-2.5">{formatBRL(totalApplied)}</td>
                   <td className="px-3 py-2.5">{formatBRL(totalBalance)}</td>
-                  <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatBRL(totalYield)}</td>
-                  <td className="px-3 py-2.5 text-[var(--color-positive)]">{formatPercent(totalApplied > 0 ? (totalYield / totalApplied) * 100 : 0)}</td>
+                  <td className={`px-3 py-2.5 ${totalYieldClass}`}>{formatBRL(totalYield)}</td>
+                  <td className={`px-3 py-2.5 ${totalYieldClass}`}>{formatPercent(totalYieldPct)}</td>
                   <td className="px-3 py-2.5" />
                   <td className="px-3 py-2.5" />
                 </tr>
