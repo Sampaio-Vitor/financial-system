@@ -181,21 +181,21 @@ export default function RendaFixaPage() {
   }, [positions, redemptions, interest]);
 
   const chartData = useMemo(() => {
-    if (positions.length === 0) return [];
-    const months = Array.from(
-      new Set([
-        ...positions.map((p) => p.start_date.slice(0, 7)),
-        ...timeline.map((e) => e.date.slice(0, 7)),
-      ]),
-    ).sort();
+    if (timeline.length === 0) return [];
+    const byMonth = new Map<string, number>();
+    for (const e of timeline) {
+      const month = e.date.slice(0, 7);
+      const signedAmount = e.type === "RESGATE" ? -e.amount : e.amount;
+      byMonth.set(month, (byMonth.get(month) || 0) + signedAmount);
+    }
 
+    const months = Array.from(byMonth.keys()).sort();
+    let cumulative = 0;
     return months.map((m) => {
-      const value = positions.reduce((sum, p) => (
-        p.start_date.slice(0, 7) <= m ? sum + Number(p.applied_value) : sum
-      ), 0);
-      return { month: m.slice(5) + "/" + m.slice(2, 4), value };
+      cumulative += byMonth.get(m)!;
+      return { month: m.slice(5) + "/" + m.slice(2, 4), value: cumulative };
     });
-  }, [positions, timeline]);
+  }, [timeline]);
 
   if (loading) {
     return (
@@ -502,7 +502,7 @@ export default function RendaFixaPage() {
                 <LineChart data={chartData}>
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#2a2d3a" }} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e2130", border: "1px solid #2a2d3a", borderRadius: "8px", color: "#f8fafc", fontSize: "12px" }} formatter={(v: number) => [formatBRL(v), "Capital Investido"]} />
+                  <Tooltip contentStyle={{ backgroundColor: "#1e2130", border: "1px solid #2a2d3a", borderRadius: "8px", color: "#f8fafc", fontSize: "12px" }} formatter={(v: number) => [formatBRL(v), "Saldo Atual"]} />
                   {rfTargetValue != null && (
                     <ReferenceLine y={rfTargetValue} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={2} label={{ value: `Meta: ${formatBRL(rfTargetValue)}`, position: "insideTopRight", fill: "#f59e0b", fontSize: 11 }} />
                   )}
