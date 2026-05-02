@@ -112,6 +112,8 @@ class RebalancingService:
             AllocationBucket.FII,
         )
         for allocation_bucket in candidate_buckets:
+            if class_gaps.get(allocation_bucket, Decimal("0")) <= 0:
+                continue
             assets_in_bucket = await self._get_assets_with_values(allocation_bucket)
             if not assets_in_bucket:
                 continue
