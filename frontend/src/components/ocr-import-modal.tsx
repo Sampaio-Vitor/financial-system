@@ -92,9 +92,9 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
       return;
     }
     setFiles((prev) => {
-      const combined = [...prev, ...arr].slice(0, 5);
-      if (prev.length + arr.length > 5) {
-        toast.error("Maximo de 5 imagens por upload");
+      const combined = [...prev, ...arr].slice(0, 20);
+      if (prev.length + arr.length > 20) {
+        toast.error("Maximo de 20 imagens por upload");
       }
       return combined;
     });

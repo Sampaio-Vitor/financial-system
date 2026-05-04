@@ -11,16 +11,34 @@ from app.schemas.ocr import OcrResult
 logger = logging.getLogger(__name__)
 
 EXTRACTION_PROMPT = """Analise esta imagem de um app de corretora de investimentos.
-Extraia todas as operações de compra e venda visíveis.
+Extraia as ORDENS consolidadas (não fills/execuções individuais).
+
+REGRA CRÍTICA — CONSOLIDAÇÃO DE ORDENS:
+Uma única ordem pode ser executada pela bolsa em múltiplos fills (execuções parciais)
+por questão de liquidez. Esses fills aparecem como linhas separadas (ex: "Confirmada
+20 unidades por R$ X", "Confirmada 12 unidades por R$ X", "Confirmada 1 unidade por
+R$ X"), mas representam UMA ÚNICA ordem.
+
+Sempre que possível, extraia a ORDEM CONSOLIDADA (totais finais), NÃO os fills.
+Indicadores de que linhas pertencem à mesma ordem:
+- Mesmo número de ordem ("Ordem 109464724")
+- Mesmo ticker, mesma data/hora próxima, mesmo preço unitário
+- Existência de uma linha de resumo (ex: "Processando: Quantidade: 33, Preço: R$ X"
+  ou "Enviada: 33 unidades por R$ X") — PREFIRA essa linha de resumo
+- Soma dos fills bate com a quantidade total da ordem
+
+Se houver linha de resumo da ordem (Enviada/Processando/total), use-a.
+Caso contrário, SOME os fills da mesma ordem em uma única operação.
+NUNCA emita múltiplas operações para a mesma ordem.
 
 Retorne APENAS um JSON válido no formato:
 {
   "operations": [
     {
-      "ticker": "PETR4",
-      "date": "2026-04-10",
-      "quantity": 100,
-      "total_value": 3250.00,
+      "ticker": "VRTA11",
+      "date": "2026-05-04",
+      "quantity": 33,
+      "total_value": 84255.93,
       "operation_type": "compra",
       "currency": "BRL"
     }
@@ -29,15 +47,19 @@ Retorne APENAS um JSON válido no formato:
   "notes": null
 }
 
-Regras:
-- ticker deve ser o código do ativo (ex: PETR4, VALE3, ITUB4, IVVB11, AAPL, MSFT)
-- date no formato YYYY-MM-DD
-- quantity sempre positivo
-- total_value sempre positivo (valor total da operação na moeda original)
+Regras de campos:
+- ticker: código do ativo (ex: PETR4, VALE3, VRTA11, AAPL, MSFT)
+- date: YYYY-MM-DD (data da ordem; se houver múltiplos fills, use a data da ordem)
+- quantity: quantidade TOTAL da ordem consolidada (soma dos fills), sempre positivo
+- total_value: VALOR TOTAL da ordem (quantidade × preço unitário). Atenção:
+  * Se a tela mostra "X unidades por R$ Y" e Y é o PREÇO UNITÁRIO, então
+    total_value = X × Y (não use Y direto)
+  * Se Y já é o valor total pago, use Y
+  * Em caso de dúvida, multiplique quantidade × preço unitário
 - operation_type: "compra" ou "venda"
-- currency: "BRL" ou "USD" ou "EUR" ou "GBP" (a moeda em que o valor está)
+- currency: "BRL", "USD", "EUR" ou "GBP"
 - confidence: "high", "medium" ou "low"
-- Se não conseguir extrair algum campo com confiança, omita a operação e mencione em notes
+- Se não conseguir extrair com confiança, omita e explique em notes
 """
 
 
