@@ -33,7 +33,7 @@ router = APIRouter()
 
 ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
-MAX_IMAGES = 5
+MAX_IMAGES = 20
 
 # Magic bytes for MIME validation
 MAGIC_BYTES = {
