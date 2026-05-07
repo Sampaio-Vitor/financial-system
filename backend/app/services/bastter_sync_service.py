@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.models.asset import AssetType, Market, resolve_asset_metadata
+from app.models.asset import AssetClass, AssetType, Market, resolve_asset_metadata
 from app.models.purchase import Purchase
 
 BASTTER_BASE_URL = "https://bastter.com"
@@ -31,6 +31,7 @@ SUPPORTED_TYPES: dict[AssetType, str] = {
 
 BASTTER_REFERERS: dict[str, str] = {
     "europa": f"{BASTTER_BASE_URL}/bs2/ativos/europa",
+    "etf": f"{BASTTER_BASE_URL}/bs2/ativos/etf",
 }
 
 
@@ -316,6 +317,8 @@ class BastterSyncService:
             quote_currency=purchase.asset.quote_currency,
         )
 
+        if asset_class == AssetClass.ETF:
+            return "etf"
         if purchase.asset.type == AssetType.ACAO:
             return "acao"
         if purchase.asset.type == AssetType.FII:
@@ -330,7 +333,7 @@ class BastterSyncService:
         )
 
     def uses_stock_movement_endpoint(self, bastter_tipo: str) -> bool:
-        return bastter_tipo in {"stock", "europa"}
+        return bastter_tipo in {"stock", "europa", "etf"}
 
     def _format_bastter_date(self, value: date) -> str:
         return value.strftime("%m/%d/%Y")
