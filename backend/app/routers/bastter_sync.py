@@ -11,6 +11,9 @@ from app.models.asset import Asset, AssetType
 from app.models.purchase import Purchase
 from app.models.user import User
 from app.schemas.bastter_sync import (
+    BastterIncludeAssetResult,
+    BastterIncludeAssetsRequest,
+    BastterIncludeAssetsResponse,
     BastterSyncBatchResponse,
     BastterSyncItemResult,
     BastterSyncPreviewItem,
@@ -18,6 +21,7 @@ from app.schemas.bastter_sync import (
     BastterSyncRequest,
 )
 from app.services.bastter_sync_service import (
+    BastterAssetNotInCatalogError,
     BastterAuthenticationError,
     BastterSyncError,
     BastterSyncService,
@@ -178,6 +182,7 @@ async def sync_bastter_purchases(
         bastter_response = None
         error = None
         success = False
+        missing_in_catalog = False
 
         try:
             if purchase.bastter_synced_at is not None:
@@ -205,6 +210,10 @@ async def sync_bastter_purchases(
                 success_count += 1
             else:
                 error = "Bastter retornou falha ao gravar a movimentacao"
+        except BastterAssetNotInCatalogError as exc:
+            missing_in_catalog = True
+            bastter_tipo = exc.bastter_tipo
+            error = str(exc)
         except BastterSyncError as exc:
             error = str(exc)
         except Exception as exc:
@@ -225,15 +234,106 @@ async def sync_bastter_purchases(
                 bastter_response=bastter_response,
                 error=error,
                 bastter_synced_at=purchase.bastter_synced_at,
+                missing_in_catalog=missing_in_catalog,
             )
         )
 
     await db.commit()
     failure_count = len(results) - success_count
+    missing_in_catalog_count = sum(1 for item in results if item.missing_in_catalog)
     return BastterSyncBatchResponse(
         catalog_items_count=len(catalog_items),
         selected_count=len(results),
         success_count=success_count,
         failure_count=failure_count,
+        missing_in_catalog_count=missing_in_catalog_count,
+        results=results,
+    )
+
+
+@router.post("/include-assets", response_model=BastterIncludeAssetsResponse, status_code=status.HTTP_200_OK)
+async def include_bastter_assets(
+    body: BastterIncludeAssetsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    purchase_ids = list(dict.fromkeys(body.purchase_ids))
+    result = await db.execute(
+        select(Purchase)
+        .join(Asset)
+        .where(Purchase.user_id == user.id, Purchase.id.in_(purchase_ids))
+    )
+    purchases = result.scalars().all()
+    purchases_by_id = {purchase.id: purchase for purchase in purchases}
+
+    missing_ids = [purchase_id for purchase_id in purchase_ids if purchase_id not in purchases_by_id]
+    if missing_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Movimentacoes nao encontradas: {', '.join(str(item) for item in missing_ids)}",
+        )
+
+    service = BastterSyncService()
+
+    unique: dict[tuple[str, str], str] = {}
+    for purchase in purchases_by_id.values():
+        if purchase.asset is None or purchase.asset.type not in SUPPORTED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Movimentacao {purchase.id} possui tipo de ativo nao suportado",
+            )
+        try:
+            bastter_tipo = service.resolve_bastter_tipo(purchase)
+        except BastterSyncError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        ticker = purchase.asset.ticker.strip().upper()
+        unique.setdefault((bastter_tipo, ticker), ticker)
+
+    try:
+        carteira_id = await service.fetch_carteira_id(body.cookie)
+    except BastterAuthenticationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except BastterSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    results: list[BastterIncludeAssetResult] = []
+    success_count = 0
+    for (bastter_tipo, ticker) in unique:
+        item_success = False
+        item_error: str | None = None
+        item_response: dict | None = None
+        try:
+            item_response = await service.include_asset(
+                body.cookie,
+                tipo=bastter_tipo,
+                descricao=ticker,
+                carteira_id=carteira_id,
+            )
+            item_success = bool(item_response.get("Return"))
+            if not item_success:
+                item_error = "Bastter retornou falha ao incluir o ativo"
+        except BastterAuthenticationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except BastterSyncError as exc:
+            item_error = str(exc)
+        except Exception as exc:
+            item_error = f"Erro inesperado: {exc}"
+
+        if item_success:
+            success_count += 1
+        results.append(
+            BastterIncludeAssetResult(
+                ticker=ticker,
+                bastter_tipo=bastter_tipo,
+                success=item_success,
+                bastter_response=item_response,
+                error=item_error,
+            )
+        )
+
+    return BastterIncludeAssetsResponse(
+        carteira_id=carteira_id,
+        success_count=success_count,
+        failure_count=len(results) - success_count,
         results=results,
     )

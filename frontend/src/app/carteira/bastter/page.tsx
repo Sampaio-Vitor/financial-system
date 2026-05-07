@@ -23,6 +23,7 @@ import type {
   AssetClass,
   Market,
   AssetType,
+  BastterIncludeAssetsResponse,
   BastterSyncBatchResponse,
   BastterSyncItemResult,
   BastterSyncPreviewItem,
@@ -74,6 +75,10 @@ export default function BastterSyncPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [summary, setSummary] = useState<BastterSyncBatchResponse | null>(null);
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
+  const [missingItems, setMissingItems] = useState<BastterSyncItemResult[]>([]);
+  const [flowStage, setFlowStage] = useState<"idle" | "including" | "resyncing" | "done" | "error">("idle");
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [flowResult, setFlowResult] = useState<{ included: number; resynced: number } | null>(null);
   const lastFiltersKey = useRef("");
   const dateFromRef = useRef<HTMLInputElement>(null);
   const dateToRef = useRef<HTMLInputElement>(null);
@@ -165,23 +170,16 @@ export default function BastterSyncPage() {
     setPage(1);
   };
 
-  const handleSync = async () => {
-    if (!selectedIds.length) {
-      toast.error("Selecione ao menos uma movimentacao");
-      return;
-    }
-    if (!cookie.trim()) {
-      toast.error("Cole o cookie da sessao do Bastter");
-      setShowCookie(true);
-      return;
-    }
-
+  const runSync = async (
+    purchaseIds: number[],
+    options: { silent?: boolean } = {}
+  ): Promise<BastterSyncBatchResponse | null> => {
     setSyncing(true);
     try {
       const response = await apiFetch<BastterSyncBatchResponse>("/bastter/sync", {
         method: "POST",
         body: JSON.stringify({
-          purchase_ids: selectedIds,
+          purchase_ids: purchaseIds,
           cookie,
         }),
       });
@@ -200,18 +198,117 @@ export default function BastterSyncPage() {
           };
         })
       );
-      setCookie("");
-      setSelectedIds([]);
-      toast.success(
-        response.failure_count === 0
-          ? `${response.success_count} movimentacao(oes) sincronizada(s)`
-          : `${response.success_count} sincronizada(s), ${response.failure_count} com erro`
-      );
+
+      if (options.silent) {
+        return response;
+      }
+
+      const missing = response.results.filter((result) => result.missing_in_catalog);
+      setMissingItems(missing);
+
+      if (missing.length === 0) {
+        setCookie("");
+        setSelectedIds([]);
+        toast.success(
+          response.failure_count === 0
+            ? `${response.success_count} movimentacao(oes) sincronizada(s)`
+            : `${response.success_count} sincronizada(s), ${response.failure_count} com erro`
+        );
+      } else {
+        toast.message(
+          `${missing.length} ativo(s) nao cadastrado(s) no Bastter — adicionar?`
+        );
+      }
+      return response;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Erro ao sincronizar com Bastter");
+      if (!options.silent) {
+        toast.error(error instanceof Error ? error.message : "Erro ao sincronizar com Bastter");
+      }
+      return null;
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleSync = async () => {
+    if (!selectedIds.length) {
+      toast.error("Selecione ao menos uma movimentacao");
+      return;
+    }
+    if (!cookie.trim()) {
+      toast.error("Cole o cookie da sessao do Bastter");
+      setShowCookie(true);
+      return;
+    }
+    await runSync(selectedIds);
+  };
+
+  const handleIncludeMissing = async () => {
+    if (!missingItems.length) return;
+    if (!cookie.trim()) {
+      toast.error("Cookie expirou — cole de novo");
+      setShowCookie(true);
+      return;
+    }
+
+    const snapshot = missingItems;
+    const purchaseIds = snapshot.map((item) => item.purchase_id);
+
+    setFlowError(null);
+    setFlowResult(null);
+    setFlowStage("including");
+
+    try {
+      const response = await apiFetch<BastterIncludeAssetsResponse>("/bastter/include-assets", {
+        method: "POST",
+        body: JSON.stringify({ purchase_ids: purchaseIds, cookie }),
+      });
+
+      const successfulTickers = new Set(
+        response.results.filter((item) => item.success).map((item) => `${item.bastter_tipo}|${item.ticker}`)
+      );
+      const idsToResync = snapshot
+        .filter((item) => successfulTickers.has(`${item.bastter_tipo}|${item.ticker}`))
+        .map((item) => item.purchase_id);
+
+      if (idsToResync.length === 0) {
+        setFlowStage("error");
+        setFlowError(
+          response.results.find((item) => item.error)?.error || "Nenhum ativo pode ser adicionado ao Bastter"
+        );
+        return;
+      }
+
+      setFlowStage("resyncing");
+      const syncResponse = await runSync(idsToResync, { silent: true });
+      if (!syncResponse) {
+        setFlowStage("error");
+        setFlowError("Falha ao re-sincronizar movimentacoes");
+        return;
+      }
+
+      setFlowResult({
+        included: response.success_count,
+        resynced: syncResponse.success_count,
+      });
+      setFlowStage("done");
+    } catch (error) {
+      setFlowStage("error");
+      setFlowError(error instanceof Error ? error.message : "Erro ao incluir ativos no Bastter");
+    }
+  };
+
+  const closeFlowModal = () => {
+    setMissingItems([]);
+    setFlowStage("idle");
+    setFlowError(null);
+    setFlowResult(null);
+    setCookie("");
+    setSelectedIds([]);
+  };
+
+  const handleSkipMissing = () => {
+    closeFlowModal();
   };
 
   const toggleSort = (key: SortKey) => {
@@ -775,6 +872,146 @@ export default function BastterSyncPage() {
           </div>
         </div>
       )}
+
+      {missingItems.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-lg">
+            {flowStage === "idle" && (
+              <>
+                <div className="p-4 border-b border-[var(--color-border)]">
+                  <h2 className="text-base font-bold text-[var(--color-text-primary)]">
+                    Ativos nao cadastrados no Bastter
+                  </h2>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    Os ativos abaixo nao existem na sua carteira do Bastter. Adicionar agora e re-sincronizar?
+                  </p>
+                </div>
+                <div className="p-4 max-h-72 overflow-y-auto space-y-2">
+                  {Array.from(
+                    new Map(
+                      missingItems.map((item) => [`${item.bastter_tipo}|${item.ticker}`, item])
+                    ).values()
+                  ).map((item) => (
+                    <div
+                      key={`${item.bastter_tipo}|${item.ticker}`}
+                      className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <TickerLogo
+                          ticker={item.ticker}
+                          type={item.local_type as AssetType}
+                          assetClass={item.asset_class}
+                          market={item.market}
+                          size={20}
+                        />
+                        <span className="font-medium text-sm">{item.ticker}</span>
+                      </div>
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-bg-card)] border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                        {item.bastter_tipo}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-4 border-t border-[var(--color-border)] flex justify-end gap-2">
+                  <button
+                    onClick={handleSkipMissing}
+                    className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-xs md:text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-main)] transition-colors"
+                  >
+                    Pular
+                  </button>
+                  <button
+                    onClick={handleIncludeMissing}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    <Send size={16} />
+                    Adicionar e re-sincronizar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(flowStage === "including" || flowStage === "resyncing" || flowStage === "done" || flowStage === "error") && (
+              <>
+                <div className="p-4 border-b border-[var(--color-border)]">
+                  <h2 className="text-base font-bold text-[var(--color-text-primary)]">
+                    {flowStage === "done" ? "Pronto" : flowStage === "error" ? "Algo deu errado" : "Sincronizando com Bastter"}
+                  </h2>
+                </div>
+                <div className="p-4 space-y-3">
+                  <FlowStep
+                    label="Adicionando ativos ao Bastter System"
+                    state={
+                      flowStage === "including"
+                        ? "active"
+                        : flowStage === "error" && !flowResult
+                        ? "error"
+                        : "done"
+                    }
+                  />
+                  <FlowStep
+                    label="Sincronizando movimentacao"
+                    state={
+                      flowStage === "resyncing"
+                        ? "active"
+                        : flowStage === "done"
+                        ? "done"
+                        : flowStage === "error" && flowResult
+                        ? "error"
+                        : "pending"
+                    }
+                  />
+                  <FlowStep
+                    label="Concluido"
+                    state={flowStage === "done" ? "done" : "pending"}
+                  />
+                  {flowStage === "done" && flowResult && (
+                    <p className="text-xs text-[var(--color-text-muted)] pt-2">
+                      {flowResult.included} ativo(s) adicionado(s), {flowResult.resynced} movimentacao(oes) sincronizada(s).
+                    </p>
+                  )}
+                  {flowStage === "error" && flowError && (
+                    <p className="text-xs text-rose-500 pt-2">{flowError}</p>
+                  )}
+                </div>
+                {(flowStage === "done" || flowStage === "error") && (
+                  <div className="p-4 border-t border-[var(--color-border)] flex justify-end">
+                    <button
+                      onClick={closeFlowModal}
+                      className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlowStep({ label, state }: { label: string; state: "pending" | "active" | "done" | "error" }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-5 h-5 flex items-center justify-center shrink-0">
+        {state === "active" && <RefreshCcw size={16} className="animate-spin text-[var(--color-accent)]" />}
+        {state === "done" && <CheckCircle2 size={18} className="text-emerald-500" />}
+        {state === "error" && <XCircle size={18} className="text-rose-500" />}
+        {state === "pending" && <div className="w-2 h-2 rounded-full bg-[var(--color-border)]" />}
+      </div>
+      <span
+        className={`text-sm ${
+          state === "pending"
+            ? "text-[var(--color-text-muted)]"
+            : state === "error"
+            ? "text-rose-500"
+            : "text-[var(--color-text-primary)]"
+        }`}
+      >
+        {label}
+      </span>
     </div>
   );
 }

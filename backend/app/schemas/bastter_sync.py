@@ -42,6 +42,7 @@ class BastterSyncItemResult(BaseModel):
     bastter_response: dict[str, Any] | None = None
     error: str | None = None
     bastter_synced_at: datetime | None = None
+    missing_in_catalog: bool = False
 
 
 class BastterSyncBatchResponse(BaseModel):
@@ -49,7 +50,44 @@ class BastterSyncBatchResponse(BaseModel):
     selected_count: int
     success_count: int
     failure_count: int
+    missing_in_catalog_count: int = 0
     results: list[BastterSyncItemResult]
+
+
+class BastterIncludeAssetsRequest(BaseModel):
+    purchase_ids: list[int]
+    cookie: str
+
+    @field_validator("purchase_ids")
+    @classmethod
+    def validate_purchase_ids(cls, value: list[int]) -> list[int]:
+        normalized = [purchase_id for purchase_id in value if purchase_id > 0]
+        if not normalized:
+            raise ValueError("Selecione ao menos uma movimentacao")
+        return normalized
+
+    @field_validator("cookie")
+    @classmethod
+    def validate_cookie(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Informe o cookie da sessao do Bastter")
+        return normalized
+
+
+class BastterIncludeAssetResult(BaseModel):
+    ticker: str
+    bastter_tipo: str
+    success: bool
+    bastter_response: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class BastterIncludeAssetsResponse(BaseModel):
+    carteira_id: int
+    success_count: int
+    failure_count: int
+    results: list[BastterIncludeAssetResult]
 
 
 class BastterSyncPreviewItem(BaseModel):
