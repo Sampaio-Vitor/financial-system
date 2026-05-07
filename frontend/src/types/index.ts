@@ -347,6 +347,7 @@ export interface BastterSyncItemResult {
   bastter_response: Record<string, unknown> | null;
   error: string | null;
   bastter_synced_at: string | null;
+  missing_in_catalog?: boolean;
 }
 
 export interface BastterSyncBatchResponse {
@@ -354,7 +355,23 @@ export interface BastterSyncBatchResponse {
   selected_count: number;
   success_count: number;
   failure_count: number;
+  missing_in_catalog_count?: number;
   results: BastterSyncItemResult[];
+}
+
+export interface BastterIncludeAssetResult {
+  ticker: string;
+  bastter_tipo: string;
+  success: boolean;
+  bastter_response: Record<string, unknown> | null;
+  error: string | null;
+}
+
+export interface BastterIncludeAssetsResponse {
+  carteira_id: number;
+  success_count: number;
+  failure_count: number;
+  results: BastterIncludeAssetResult[];
 }
 
 export interface BulkAssetSkipped {

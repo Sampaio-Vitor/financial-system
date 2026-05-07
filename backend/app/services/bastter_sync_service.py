@@ -12,6 +12,8 @@ BASTTER_BASE_URL = "https://bastter.com"
 BASTTER_CATALOG_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/BS2ListAtivos"
 BASTTER_MOVEMENT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/SalvarMovimentacao"
 BASTTER_STOCK_MOVEMENT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/SaveMovement"
+BASTTER_INIT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/BS2Init"
+BASTTER_INCLUIR_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/webservices/WS_Carteira.asmx/Incluir"
 
 BASTTER_CATALOG_PAYLOAD = {
     "classes": None,
@@ -38,6 +40,13 @@ class BastterSyncError(Exception):
 
 class BastterAuthenticationError(BastterSyncError):
     pass
+
+
+class BastterAssetNotInCatalogError(BastterSyncError):
+    def __init__(self, ticker: str, bastter_tipo: str) -> None:
+        super().__init__(f"Ativo {ticker} ({bastter_tipo}) nao encontrado no catalogo do Bastter")
+        self.ticker = ticker
+        self.bastter_tipo = bastter_tipo
 
 
 def _response_excerpt(response: httpx.Response) -> str:
@@ -128,13 +137,106 @@ class BastterSyncService:
             and str(item.get("Descricao", "")).strip().upper() == normalized_ticker
         ]
         if not matches:
-            raise BastterSyncError(f"Ativo {ticker} ({bastter_tipo}) nao encontrado no catalogo do Bastter")
+            raise BastterAssetNotInCatalogError(normalized_ticker, bastter_tipo)
         if len(matches) > 1:
             raise BastterSyncError(f"Mais de um ativo {ticker} ({bastter_tipo}) encontrado no Bastter")
         ativo_id = matches[0].get("AtivoID")
         if not isinstance(ativo_id, int):
             raise BastterSyncError(f"AtivoID invalido para {ticker} no catalogo do Bastter")
         return ativo_id
+
+    async def fetch_carteira_id(self, cookie: str) -> int:
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    BASTTER_INIT_ENDPOINT,
+                    headers=self._headers(
+                        cookie,
+                        referer=f"{BASTTER_BASE_URL}/mercado/bs2/?home",
+                    ),
+                )
+        except httpx.HTTPError as exc:
+            raise BastterSyncError("Falha ao iniciar sessao com o Bastter") from exc
+
+        if response.status_code in {401, 403}:
+            raise BastterAuthenticationError(
+                f"Sessao Bastter invalida ou expirada (HTTP {response.status_code})"
+            )
+        if response.status_code >= 400:
+            raise BastterSyncError(
+                f"Bastter rejeitou BS2Init (HTTP {response.status_code})"
+            )
+
+        parsed = self._parse_wrapped_json(response.json())
+        carteira_id = parsed.get("CarteiraID")
+        if not isinstance(carteira_id, int) or carteira_id <= 0:
+            carteiras = parsed.get("Carteiras")
+            if isinstance(carteiras, list) and carteiras:
+                first = carteiras[0]
+                if isinstance(first, dict):
+                    candidate = first.get("CarteiraID")
+                    if isinstance(candidate, int) and candidate > 0:
+                        return candidate
+            raise BastterSyncError("Nao foi possivel determinar a CarteiraID do Bastter")
+        return carteira_id
+
+    async def include_asset(
+        self,
+        cookie: str,
+        *,
+        tipo: str,
+        descricao: str,
+        carteira_id: int,
+        classificacao_id: int = 2,
+        anotacoes: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "tipo": tipo,
+            "carteiraID": carteira_id,
+            "descricao": descricao,
+            "anotacoes": anotacoes,
+            "classificacaoID": classificacao_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    BASTTER_INCLUIR_ENDPOINT,
+                    headers=self._headers(
+                        cookie,
+                        referer=BASTTER_REFERERS.get(tipo, None),
+                    ),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise BastterSyncError("Falha ao incluir ativo no Bastter") from exc
+
+        if response.status_code in {401, 403}:
+            raise BastterAuthenticationError(
+                f"Sessao Bastter invalida ou expirada (HTTP {response.status_code})"
+            )
+        if response.status_code >= 400:
+            raise BastterSyncError(
+                f"Bastter rejeitou inclusao do ativo (HTTP {response.status_code})"
+            )
+
+        return self._parse_incluir_response(response.json())
+
+    def _parse_incluir_response(self, body: dict[str, Any]) -> dict[str, Any]:
+        raw = body.get("d")
+        if not isinstance(raw, str) or not raw.strip():
+            raise BastterSyncError("Resposta invalida do Bastter")
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        text = raw.strip().lower()
+        if "salvo com sucesso" in text or "item salvo" in text:
+            return {"Return": True, "raw": raw}
+        if "duplic" in text or "ja existe" in text or "já existe" in text:
+            return {"Return": True, "raw": raw, "duplicated": True}
+        raise BastterSyncError(f"Bastter retornou erro ao incluir ativo: {raw[:200]}")
 
     async def submit_purchase(
         self,
