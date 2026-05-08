@@ -100,6 +100,8 @@ jobs:
           pip install -r requirements.txt
       - name: Run migrations
         working-directory: backend
+        env:
+          PYTHONPATH: .
         run: alembic upgrade head
       - name: Start backend
         working-directory: backend
