@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset, AssetClass, AssetType, Market
+from app.models.asset import Asset, AssetClass, AssetType
 from app.models.asset_daily_snapshot import AssetDailySnapshot
 from app.models.dividend_event import DividendEvent
 from app.models.fixed_income import FixedIncomePosition
@@ -87,62 +87,105 @@ class MoversService:
             )
         ).all()
         start_rows = (
-            await self.db.execute(
-                select(AssetDailySnapshot).where(
-                    AssetDailySnapshot.user_id == self.user.id,
-                    AssetDailySnapshot.date == start_date,
+            (
+                await self.db.execute(
+                    select(AssetDailySnapshot).where(
+                        AssetDailySnapshot.user_id == self.user.id,
+                        AssetDailySnapshot.date == start_date,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         start_by_asset = {s.asset_id: s for s in start_rows}
+
+        period_days = max((end_date - start_date).days, 1)
+
+        def flow_weight(flow_date: date) -> Decimal:
+            return Decimal((end_date - flow_date).days) / Decimal(period_days)
+
+        contributions: dict[int, Decimal] = {}
+        weighted_contributions: dict[int, Decimal] = {}
+
+        def add_flow(asset_id: int, amount: Decimal, flow_date: date) -> None:
+            contributions[asset_id] = contributions.get(asset_id, Decimal("0")) + amount
+            weighted_contributions[asset_id] = weighted_contributions.get(
+                asset_id, Decimal("0")
+            ) + (amount * flow_weight(flow_date))
 
         # Net contributions per asset in (start_date, end_date]
         contrib_rows = (
             await self.db.execute(
                 select(
-                    Purchase.asset_id, func.sum(Purchase.total_value)
-                )
-                .where(
+                    Purchase.asset_id, Purchase.total_value, Purchase.purchase_date
+                ).where(
                     Purchase.user_id == self.user.id,
                     Purchase.purchase_date > start_date,
                     Purchase.purchase_date <= end_date,
                 )
-                .group_by(Purchase.asset_id)
             )
         ).all()
-        contributions: dict[int, Decimal] = {
-            aid: (val or Decimal("0")) for aid, val in contrib_rows
-        }
+        for aid, val, flow_date in contrib_rows:
+            add_flow(aid, val or Decimal("0"), flow_date)
 
         # FI applied within range
         fi_applied_rows = (
             await self.db.execute(
-                select(FixedIncomePosition.asset_id, func.sum(FixedIncomePosition.applied_value))
-                .where(
+                select(
+                    FixedIncomePosition.asset_id,
+                    FixedIncomePosition.applied_value,
+                    FixedIncomePosition.start_date,
+                ).where(
                     FixedIncomePosition.user_id == self.user.id,
                     FixedIncomePosition.start_date > start_date,
                     FixedIncomePosition.start_date <= end_date,
                 )
-                .group_by(FixedIncomePosition.asset_id)
             )
         ).all()
-        for aid, val in fi_applied_rows:
-            contributions[aid] = contributions.get(aid, Decimal("0")) + (val or Decimal("0"))
+        for aid, val, flow_date in fi_applied_rows:
+            add_flow(aid, val or Decimal("0"), flow_date)
 
         fi_redeem_rows = (
             await self.db.execute(
-                select(FixedIncomePosition.asset_id, func.sum(FixedIncomeRedemption.amount))
-                .join(FixedIncomePosition, FixedIncomePosition.id == FixedIncomeRedemption.position_id)
+                select(
+                    FixedIncomePosition.asset_id,
+                    FixedIncomeRedemption.amount,
+                    FixedIncomeRedemption.redemption_date,
+                )
+                .join(
+                    FixedIncomePosition,
+                    FixedIncomePosition.id == FixedIncomeRedemption.fixed_income_id,
+                )
                 .where(
                     FixedIncomeRedemption.user_id == self.user.id,
                     FixedIncomeRedemption.redemption_date > start_date,
                     FixedIncomeRedemption.redemption_date <= end_date,
                 )
-                .group_by(FixedIncomePosition.asset_id)
             )
         ).all()
-        for aid, val in fi_redeem_rows:
-            contributions[aid] = contributions.get(aid, Decimal("0")) - (val or Decimal("0"))
+        for aid, val, flow_date in fi_redeem_rows:
+            add_flow(aid, -(val or Decimal("0")), flow_date)
+
+        orphan_fi_redeem_rows = (
+            await self.db.execute(
+                select(
+                    Asset.id,
+                    FixedIncomeRedemption.amount,
+                    FixedIncomeRedemption.redemption_date,
+                )
+                .join(Asset, Asset.ticker == FixedIncomeRedemption.ticker)
+                .where(
+                    FixedIncomeRedemption.user_id == self.user.id,
+                    FixedIncomeRedemption.fixed_income_id.is_(None),
+                    FixedIncomeRedemption.redemption_date > start_date,
+                    FixedIncomeRedemption.redemption_date <= end_date,
+                    Asset.type == AssetType.RF,
+                )
+            )
+        ).all()
+        for aid, val, flow_date in orphan_fi_redeem_rows:
+            add_flow(aid, -(val or Decimal("0")), flow_date)
 
         # Dividends per asset in range
         div_rows = (
@@ -182,10 +225,13 @@ class MoversService:
             start_val = start_snap.position_value if start_snap else Decimal("0")
             end_val = end_snap.position_value or Decimal("0")
             net_contrib = contributions.get(end_snap.asset_id, Decimal("0"))
+            weighted_contrib = weighted_contributions.get(
+                end_snap.asset_id, Decimal("0")
+            )
             divs = dividends.get(end_snap.asset_id, Decimal("0"))
 
             pnl = end_val - start_val - net_contrib + divs
-            denom = start_val + (Decimal("0.5") * net_contrib)
+            denom = start_val + weighted_contrib
             pnl_pct = float(pnl / denom * 100) if denom > 0 else 0.0
             total_period_pnl += pnl
 

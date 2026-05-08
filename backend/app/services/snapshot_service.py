@@ -12,6 +12,7 @@ from app.models.asset import (
     Asset,
     AssetClass,
     AssetType,
+    CurrencyCode,
     Market,
     asset_bucket_for,
     resolve_asset_metadata,
@@ -524,9 +525,7 @@ class SnapshotService:
                 )
             )
 
-    async def backfill_asset_snapshots(
-        self, start_date: date, end_date: date
-    ) -> int:
+    async def backfill_asset_snapshots(self, start_date: date, end_date: date) -> int:
         """Reconstruct per-asset daily snapshots between start_date and end_date.
 
         Pulls a single yfinance range per asset, then walks each day reconstructing
@@ -688,9 +687,7 @@ class SnapshotService:
                 )
                 native = native_price_on(asset_id, day)
                 fx = fx_on(currency, day)
-                price_brl = (
-                    round(native * fx, 4) if native and fx else None
-                )
+                price_brl = round(native * fx, 4) if native and fx else None
                 position_value = (
                     round(price_brl * qty, 4) if price_brl else Decimal("0")
                 )
@@ -719,11 +716,7 @@ class SnapshotService:
                 aid = fi_pos.asset_id
                 asset = fi_pos.asset
                 ticker = asset.ticker if asset else "RF"
-                qty = (
-                    fi_pos.quantity
-                    if fi_pos.quantity is not None
-                    else Decimal("1")
-                )
+                qty = fi_pos.quantity if fi_pos.quantity is not None else Decimal("1")
                 entry = fi_by_asset_day.setdefault(
                     aid,
                     {
