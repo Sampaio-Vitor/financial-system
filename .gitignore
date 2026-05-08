@@ -37,4 +37,9 @@ Thumbs.db
 *.xlsx
 !frontend/public/modelo-importacao.xlsx
 
-agents.md
+agents.md.venv-test/
+backend/.coverage
+backend/coverage.xml
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
