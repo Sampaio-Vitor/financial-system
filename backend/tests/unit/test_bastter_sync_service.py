@@ -79,3 +79,8 @@ def test_build_payload_tesouro_uses_movement_endpoint():
     assert payload["totalOperacaoBruto"] == float(Decimal("16484.34"))
     assert payload["totalOperacaoLiq"] is None
     assert payload["data"] == "05/08/2026"
+    assert payload["gasto"] is False
+    assert payload["ignorair"] is False
+    assert payload["ignoraIsencao"] is False
+    assert payload["observacao"] is None
+    assert payload["subscricaoID"] == 0
