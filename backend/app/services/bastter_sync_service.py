@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.models.asset import AssetClass, AssetType, Market, resolve_asset_metadata
+from app.models.asset import AssetClass, AssetType, Market, TesouroKind, resolve_asset_metadata
 from app.models.purchase import Purchase
 
 BASTTER_BASE_URL = "https://bastter.com"
@@ -14,6 +14,8 @@ BASTTER_MOVEMENT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira
 BASTTER_STOCK_MOVEMENT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/SaveMovement"
 BASTTER_INIT_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/BS2Init"
 BASTTER_INCLUIR_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/webservices/WS_Carteira.asmx/Incluir"
+BASTTER_SALVAR_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/Salvar"
+BASTTER_PESQUISAR_ENDPOINT = f"{BASTTER_BASE_URL}/mercado/WebServices/WS_Carteira.asmx/Pesquisar"
 
 BASTTER_CATALOG_PAYLOAD = {
     "classes": None,
@@ -27,12 +29,19 @@ SUPPORTED_TYPES: dict[AssetType, str] = {
     AssetType.ACAO: "acao",
     AssetType.FII: "fii",
     AssetType.STOCK: "stock",
+    AssetType.RF: "rendafixa",
 }
 
 BASTTER_REFERERS: dict[str, str] = {
     "europa": f"{BASTTER_BASE_URL}/bs2/ativos/europa",
     "etf": f"{BASTTER_BASE_URL}/bs2/ativos/etf",
+    "rendafixa": f"{BASTTER_BASE_URL}/bs2/ativos/renda-fixa",
 }
+
+
+def tesouro_descricao_for(ticker: str, td_kind: TesouroKind, td_maturity_year: int) -> str:
+    label = "Selic" if td_kind == TesouroKind.SELIC else "IPCA+"
+    return f"Tesouro {label} {td_maturity_year}"
 
 
 class BastterSyncError(Exception):
@@ -239,6 +248,108 @@ class BastterSyncService:
             return {"Return": True, "raw": raw, "duplicated": True}
         raise BastterSyncError(f"Bastter retornou erro ao incluir ativo: {raw[:200]}")
 
+    async def save_tesouro_asset(
+        self,
+        cookie: str,
+        *,
+        descricao: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "tipo": "rendafixa",
+            "ativoID": 0,
+            "classificacaoID": "",
+            "cnpj": "",
+            "codIRPF": None,
+            "compraImovel": False,
+            "controleSaldo": False,
+            "dataAux": None,
+            "dataDividendos": None,
+            "descricao": descricao,
+            "descricaoIRPF": None,
+            "descricaoImovel": "",
+            "destinoID": None,
+            "instituicao": "",
+            "moedaAtivoID": 0,
+            "naoPatrimonio": False,
+            "origemID": None,
+            "paisID": 0,
+            "percentualCDI": 0,
+            "quantidade": 0,
+            "tipoAtualizacaoCDI": 0,
+            "tipoImovelID": 12,
+            "valor": "0",
+            "valorAux": 0,
+            "vencimento": "",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    BASTTER_SALVAR_ENDPOINT,
+                    headers=self._headers(
+                        cookie,
+                        referer=BASTTER_REFERERS["rendafixa"],
+                    ),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise BastterSyncError("Falha ao salvar ativo de Tesouro Direto no Bastter") from exc
+
+        if response.status_code in {401, 403}:
+            raise BastterAuthenticationError(
+                f"Sessao Bastter invalida ou expirada (HTTP {response.status_code})"
+            )
+        if response.status_code >= 400:
+            raise BastterSyncError(
+                f"Bastter rejeitou Salvar de Tesouro (HTTP {response.status_code})"
+            )
+
+        parsed = self._parse_wrapped_json(response.json())
+        ativo_id = parsed.get("AtivoID")
+        if not isinstance(ativo_id, int) or ativo_id <= 0:
+            raise BastterSyncError(
+                f"Bastter nao retornou AtivoID valido para '{descricao}'"
+            )
+        return parsed
+
+    async def search_tesouro(self, cookie: str, *, query: str) -> list[str]:
+        payload = {"tipo": "rendafixa", "ativo": query}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    BASTTER_PESQUISAR_ENDPOINT,
+                    headers=self._headers(
+                        cookie,
+                        referer=BASTTER_REFERERS["rendafixa"],
+                    ),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise BastterSyncError("Falha ao pesquisar Tesouro no Bastter") from exc
+
+        if response.status_code in {401, 403}:
+            raise BastterAuthenticationError(
+                f"Sessao Bastter invalida ou expirada (HTTP {response.status_code})"
+            )
+        if response.status_code >= 400:
+            raise BastterSyncError(
+                f"Bastter rejeitou Pesquisar (HTTP {response.status_code})"
+            )
+
+        raw = response.json().get("d")
+        if not isinstance(raw, str) or not raw.strip():
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise BastterSyncError("Resposta de Pesquisar invalida") from exc
+        if not isinstance(parsed, list):
+            return []
+        return [
+            str(item.get("Codigo"))
+            for item in parsed
+            if isinstance(item, dict) and item.get("Codigo")
+        ]
+
     async def submit_purchase(
         self,
         cookie: str,
@@ -323,6 +434,12 @@ class BastterSyncService:
             return "acao"
         if purchase.asset.type == AssetType.FII:
             return "fii"
+        if purchase.asset.type == AssetType.RF:
+            if purchase.asset.td_kind is None or purchase.asset.td_maturity_year is None:
+                raise BastterSyncError(
+                    "Apenas Tesouro Direto (com td_kind e td_maturity_year) e suportado em RF"
+                )
+            return "rendafixa"
         if purchase.asset.type == AssetType.STOCK and market == Market.EU:
             return "europa"
         if purchase.asset.type == AssetType.STOCK:
