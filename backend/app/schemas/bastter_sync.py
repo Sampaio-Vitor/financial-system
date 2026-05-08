@@ -1,23 +1,23 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
 from app.models.asset import AssetClass, Market
 
+ItemSource = Literal["purchase", "fixed_income"]
+
 
 class BastterSyncRequest(BaseModel):
-    purchase_ids: list[int]
+    purchase_ids: list[int] = []
+    fixed_income_position_ids: list[int] = []
     cookie: str
 
-    @field_validator("purchase_ids")
+    @field_validator("purchase_ids", "fixed_income_position_ids")
     @classmethod
-    def validate_purchase_ids(cls, value: list[int]) -> list[int]:
-        normalized = [purchase_id for purchase_id in value if purchase_id > 0]
-        if not normalized:
-            raise ValueError("Selecione ao menos uma movimentacao")
-        return normalized
+    def validate_ids(cls, value: list[int]) -> list[int]:
+        return [item_id for item_id in value if item_id > 0]
 
     @field_validator("cookie")
     @classmethod
@@ -27,9 +27,13 @@ class BastterSyncRequest(BaseModel):
             raise ValueError("Informe o cookie da sessao do Bastter")
         return normalized
 
+    def has_any(self) -> bool:
+        return bool(self.purchase_ids or self.fixed_income_position_ids)
+
 
 class BastterSyncItemResult(BaseModel):
     purchase_id: int
+    source: ItemSource = "purchase"
     ticker: str
     local_type: str
     asset_class: AssetClass | None = None
@@ -55,16 +59,14 @@ class BastterSyncBatchResponse(BaseModel):
 
 
 class BastterIncludeAssetsRequest(BaseModel):
-    purchase_ids: list[int]
+    purchase_ids: list[int] = []
+    fixed_income_position_ids: list[int] = []
     cookie: str
 
-    @field_validator("purchase_ids")
+    @field_validator("purchase_ids", "fixed_income_position_ids")
     @classmethod
-    def validate_purchase_ids(cls, value: list[int]) -> list[int]:
-        normalized = [purchase_id for purchase_id in value if purchase_id > 0]
-        if not normalized:
-            raise ValueError("Selecione ao menos uma movimentacao")
-        return normalized
+    def validate_ids(cls, value: list[int]) -> list[int]:
+        return [item_id for item_id in value if item_id > 0]
 
     @field_validator("cookie")
     @classmethod
@@ -92,6 +94,7 @@ class BastterIncludeAssetsResponse(BaseModel):
 
 class BastterSyncPreviewItem(BaseModel):
     id: int
+    source: ItemSource = "purchase"
     ticker: str
     asset_type: str
     asset_class: AssetClass | None = None

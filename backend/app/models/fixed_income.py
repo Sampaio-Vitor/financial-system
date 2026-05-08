@@ -23,6 +23,7 @@ class FixedIncomePosition(Base):
     quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), nullable=True)
     purchase_unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
     maturity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    bastter_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

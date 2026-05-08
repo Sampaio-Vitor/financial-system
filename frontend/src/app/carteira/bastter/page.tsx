@@ -24,19 +24,25 @@ import type {
   Market,
   AssetType,
   BastterIncludeAssetsResponse,
+  BastterItemSource,
   BastterSyncBatchResponse,
   BastterSyncItemResult,
   BastterSyncPreviewItem,
   BastterSyncPreviewResponse,
 } from "@/types";
 
-const SUPPORTED_TYPES: AssetType[] = ["ACAO", "FII", "STOCK"];
+const SUPPORTED_TYPES: AssetType[] = ["ACAO", "FII", "STOCK", "RF"];
 const TYPE_LABELS: Record<AssetType, string> = {
   ACAO: "Ações",
   FII: "FIIs",
   STOCK: "Stocks",
-  RF: "Renda Fixa",
+  RF: "Tesouro Direto",
 };
+
+const itemKey = (item: { source: BastterItemSource; id: number }) =>
+  `${item.source}:${item.id}`;
+const resultKey = (result: { source?: BastterItemSource; purchase_id: number }) =>
+  `${result.source ?? "purchase"}:${result.purchase_id}`;
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   STOCK: "Ações",
   ETF: "ETFs",
@@ -70,7 +76,7 @@ export default function BastterSyncPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("");
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortKey | "">("");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [summary, setSummary] = useState<BastterSyncBatchResponse | null>(null);
@@ -88,7 +94,7 @@ export default function BastterSyncPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const selectableItems = items.filter((item) => !item.bastter_synced_at);
   const allCurrentPageSelected =
-    selectableItems.length > 0 && selectableItems.every((item) => selectedIds.includes(item.id));
+    selectableItems.length > 0 && selectableItems.every((item) => selectedIds.includes(itemKey(item)));
 
   useEffect(() => {
     const filtersChanged = lastFiltersKey.current !== filtersKey;
@@ -131,7 +137,9 @@ export default function BastterSyncPage() {
         setItems(normalizedItems);
         setTotalCount(response.total_count);
         setSelectedIds((current) =>
-          current.filter((id) => normalizedItems.some((item) => item.id === id && !item.bastter_synced_at))
+          current.filter((key) =>
+            normalizedItems.some((item) => itemKey(item) === key && !item.bastter_synced_at)
+          )
         );
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -147,18 +155,32 @@ export default function BastterSyncPage() {
     return () => controller.abort();
   }, [filterDateFrom, filterDateTo, filterStatus, filterTicker, filterType, filtersKey, page, pageSize, sortBy, sortDir]);
 
-  const toggleSelection = (id: number) => {
+  const toggleSelection = (key: string) => {
     setSelectedIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
     );
   };
 
   const toggleCurrentPage = () => {
+    const pageKeys = selectableItems.map(itemKey);
     if (allCurrentPageSelected) {
-      setSelectedIds((current) => current.filter((id) => !selectableItems.some((item) => item.id === id)));
+      setSelectedIds((current) => current.filter((key) => !pageKeys.includes(key)));
       return;
     }
-    setSelectedIds((current) => Array.from(new Set([...current, ...selectableItems.map((item) => item.id)])));
+    setSelectedIds((current) => Array.from(new Set([...current, ...pageKeys])));
+  };
+
+  const splitKeys = (keys: string[]) => {
+    const purchaseIds: number[] = [];
+    const fixedIncomeIds: number[] = [];
+    for (const key of keys) {
+      const [source, idStr] = key.split(":");
+      const id = Number(idStr);
+      if (!Number.isFinite(id)) continue;
+      if (source === "fixed_income") fixedIncomeIds.push(id);
+      else purchaseIds.push(id);
+    }
+    return { purchaseIds, fixedIncomeIds };
   };
 
   const clearFilters = () => {
@@ -171,15 +193,17 @@ export default function BastterSyncPage() {
   };
 
   const runSync = async (
-    purchaseIds: number[],
+    keys: string[],
     options: { silent?: boolean } = {}
   ): Promise<BastterSyncBatchResponse | null> => {
     setSyncing(true);
     try {
+      const { purchaseIds, fixedIncomeIds } = splitKeys(keys);
       const response = await apiFetch<BastterSyncBatchResponse>("/bastter/sync", {
         method: "POST",
         body: JSON.stringify({
           purchase_ids: purchaseIds,
+          fixed_income_position_ids: fixedIncomeIds,
           cookie,
         }),
       });
@@ -189,7 +213,10 @@ export default function BastterSyncPage() {
       setItems((current) =>
         current.map((item) => {
           const syncedResult = response.results.find(
-            (result) => result.purchase_id === item.id && !!result.bastter_synced_at
+            (result) =>
+              result.purchase_id === item.id &&
+              (result.source ?? "purchase") === item.source &&
+              !!result.bastter_synced_at
           );
           if (!syncedResult) return item;
           return {
@@ -252,7 +279,12 @@ export default function BastterSyncPage() {
     }
 
     const snapshot = missingItems;
-    const purchaseIds = snapshot.map((item) => item.purchase_id);
+    const purchaseIds = snapshot
+      .filter((item) => (item.source ?? "purchase") === "purchase")
+      .map((item) => item.purchase_id);
+    const fixedIncomeIds = snapshot
+      .filter((item) => item.source === "fixed_income")
+      .map((item) => item.purchase_id);
 
     setFlowError(null);
     setFlowResult(null);
@@ -261,17 +293,21 @@ export default function BastterSyncPage() {
     try {
       const response = await apiFetch<BastterIncludeAssetsResponse>("/bastter/include-assets", {
         method: "POST",
-        body: JSON.stringify({ purchase_ids: purchaseIds, cookie }),
+        body: JSON.stringify({
+          purchase_ids: purchaseIds,
+          fixed_income_position_ids: fixedIncomeIds,
+          cookie,
+        }),
       });
 
       const successfulTickers = new Set(
         response.results.filter((item) => item.success).map((item) => `${item.bastter_tipo}|${item.ticker}`)
       );
-      const idsToResync = snapshot
+      const keysToResync = snapshot
         .filter((item) => successfulTickers.has(`${item.bastter_tipo}|${item.ticker}`))
-        .map((item) => item.purchase_id);
+        .map((item) => `${item.source ?? "purchase"}:${item.purchase_id}`);
 
-      if (idsToResync.length === 0) {
+      if (keysToResync.length === 0) {
         setFlowStage("error");
         setFlowError(
           response.results.find((item) => item.error)?.error || "Nenhum ativo pode ser adicionado ao Bastter"
@@ -280,7 +316,7 @@ export default function BastterSyncPage() {
       }
 
       setFlowStage("resyncing");
-      const syncResponse = await runSync(idsToResync, { silent: true });
+      const syncResponse = await runSync(keysToResync, { silent: true });
       if (!syncResponse) {
         setFlowStage("error");
         setFlowError("Falha ao re-sincronizar movimentacoes");
@@ -563,11 +599,12 @@ export default function BastterSyncPage() {
 
               {items.map((item) => {
                 const synced = !!item.bastter_synced_at;
-                const selected = selectedIds.includes(item.id);
+                const key = itemKey(item);
+                const selected = selectedIds.includes(key);
                 return (
                   <div
-                    key={item.id}
-                    onClick={() => !synced && toggleSelection(item.id)}
+                    key={key}
+                    onClick={() => !synced && toggleSelection(key)}
                     className={`rounded-xl border p-4 transition-all cursor-pointer ${
                       synced
                         ? "border-emerald-200 bg-emerald-50/50 opacity-60 cursor-default"
@@ -677,11 +714,12 @@ export default function BastterSyncPage() {
                 <tbody>
                   {items.map((item) => {
                     const synced = !!item.bastter_synced_at;
-                    const selected = selectedIds.includes(item.id);
+                    const key = itemKey(item);
+                    const selected = selectedIds.includes(key);
                     return (
                       <tr
-                        key={item.id}
-                        onClick={() => !synced && toggleSelection(item.id)}
+                        key={key}
+                        onClick={() => !synced && toggleSelection(key)}
                         className={`border-b border-[var(--color-border)] last:border-b-0 transition-colors cursor-pointer ${
                           synced
                             ? "opacity-50 cursor-default"
@@ -695,7 +733,7 @@ export default function BastterSyncPage() {
                             type="checkbox"
                             disabled={synced}
                             checked={selected}
-                            onChange={() => toggleSelection(item.id)}
+                            onChange={() => toggleSelection(key)}
                             aria-label={`Selecionar ${item.ticker}`}
                           />
                         </td>
@@ -803,7 +841,7 @@ export default function BastterSyncPage() {
             {results.map((result, index) => {
               const isExpanded = expandedResult === index;
               return (
-                <div key={`${result.purchase_id}-${result.endpoint ?? index}`}>
+                <div key={`${resultKey(result)}-${result.endpoint ?? index}`}>
                   <button
                     onClick={() => setExpandedResult(isExpanded ? null : index)}
                     className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[var(--color-bg-main)]/50 transition-colors"

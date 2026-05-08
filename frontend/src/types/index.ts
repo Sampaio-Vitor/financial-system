@@ -314,8 +314,11 @@ export interface BulkAssetLinked {
   quote_currency?: CurrencyCode | null;
 }
 
+export type BastterItemSource = "purchase" | "fixed_income";
+
 export interface BastterSyncPreviewItem {
   id: number;
+  source: BastterItemSource;
   ticker: string;
   asset_type: AssetType;
   asset_class?: AssetClass | null;
@@ -335,6 +338,7 @@ export interface BastterSyncPreviewResponse {
 
 export interface BastterSyncItemResult {
   purchase_id: number;
+  source?: BastterItemSource;
   ticker: string;
   local_type: string;
   asset_class?: AssetClass | null;
