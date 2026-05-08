@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { MoverItem, MoverPeriod, MoversResponse } from "@/types";
 
 type SegmentKey = "ALL" | "STOCK_BR" | "STOCK_US" | "FII" | "RF";
+
+const BACKFILL_ATTEMPT_KEY = "movers-backfill-attempted-v1";
 
 const PERIODS: { key: MoverPeriod; label: string }[] = [
   { key: "day", label: "Dia" },
@@ -44,6 +46,11 @@ function segmentToParams(seg: SegmentKey): {
 function formatPct(v: number): string {
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(2)}%`;
+}
+
+function formatDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}-${month}-${year}`;
 }
 
 function MoverRow({
@@ -110,7 +117,10 @@ export default function MoversTab() {
   const [segment, setSegment] = useState<SegmentKey>("ALL");
   const [data, setData] = useState<MoversResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoBackfillStarted = useRef(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -139,6 +149,47 @@ export default function MoversTab() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const runBackfill = useCallback(async () => {
+    setBackfilling(true);
+    setBackfillError(null);
+    try {
+      await apiFetch("/snapshots/backfill-asset-snapshots?months=6", {
+        method: "POST",
+      });
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(BACKFILL_ATTEMPT_KEY, "done");
+      }
+      await fetchData();
+    } catch {
+      setBackfillError("Falha ao gerar o histórico dos ativos.");
+    } finally {
+      setBackfilling(false);
+    }
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      error ||
+      backfilling ||
+      segment !== "ALL" ||
+      !data ||
+      data.winners.length > 0 ||
+      data.losers.length > 0 ||
+      autoBackfillStarted.current
+    ) {
+      return;
+    }
+
+    const alreadyAttempted =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(BACKFILL_ATTEMPT_KEY) === "done";
+    if (alreadyAttempted) return;
+
+    autoBackfillStarted.current = true;
+    runBackfill();
+  }, [backfilling, data, error, loading, runBackfill, segment]);
 
   const maxAbsImpact = data
     ? Math.max(
@@ -207,7 +258,8 @@ export default function MoversTab() {
               Janela
             </p>
             <p className="text-sm font-bold text-[var(--color-text-primary)]">
-              {data.period_start_date} → {data.reference_date}
+              {formatDate(data.period_start_date)} →{" "}
+              {formatDate(data.reference_date)}
             </p>
           </div>
         </div>
@@ -223,6 +275,12 @@ export default function MoversTab() {
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-6">
           <p className="text-sm text-[var(--color-negative)]">{error}</p>
         </div>
+      ) : backfilling ? (
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center">
+          <p className="text-[var(--color-text-muted)] animate-pulse">
+            Gerando histórico dos ativos...
+          </p>
+        </div>
       ) : data && data.winners.length === 0 && data.losers.length === 0 ? (
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center">
           <p className="text-[var(--color-text-muted)] font-medium">
@@ -231,6 +289,18 @@ export default function MoversTab() {
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             Os snapshots por ativo são gerados todos os dias as 18h (BRT).
           </p>
+          {backfillError && (
+            <p className="text-xs text-[var(--color-negative)] mt-3">
+              {backfillError}
+            </p>
+          )}
+          <button
+            onClick={runBackfill}
+            disabled={backfilling}
+            className="mt-4 px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--color-accent)] text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Gerar histórico dos últimos 6 meses
+          </button>
         </div>
       ) : (
         data && (
