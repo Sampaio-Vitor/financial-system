@@ -100,19 +100,10 @@ class MoversService:
         )
         start_by_asset = {s.asset_id: s for s in start_rows}
 
-        period_days = max((end_date - start_date).days, 1)
-
-        def flow_weight(flow_date: date) -> Decimal:
-            return Decimal((end_date - flow_date).days) / Decimal(period_days)
-
-        contributions: dict[int, Decimal] = {}
-        weighted_contributions: dict[int, Decimal] = {}
+        cash_flows: dict[int, list[tuple[date, Decimal]]] = {}
 
         def add_flow(asset_id: int, amount: Decimal, flow_date: date) -> None:
-            contributions[asset_id] = contributions.get(asset_id, Decimal("0")) + amount
-            weighted_contributions[asset_id] = weighted_contributions.get(
-                asset_id, Decimal("0")
-            ) + (amount * flow_weight(flow_date))
+            cash_flows.setdefault(asset_id, []).append((flow_date, amount))
 
         # Net contributions per asset in (start_date, end_date]
         contrib_rows = (
@@ -190,19 +181,21 @@ class MoversService:
         # Dividends per asset in range
         div_rows = (
             await self.db.execute(
-                select(DividendEvent.asset_id, func.sum(DividendEvent.credited_amount))
-                .where(
+                select(
+                    DividendEvent.asset_id,
+                    DividendEvent.payment_date,
+                    DividendEvent.credited_amount,
+                ).where(
                     DividendEvent.user_id == self.user.id,
                     DividendEvent.payment_date > start_date,
                     DividendEvent.payment_date <= end_date,
                     DividendEvent.asset_id.is_not(None),
                 )
-                .group_by(DividendEvent.asset_id)
             )
         ).all()
-        dividends: dict[int, Decimal] = {
-            aid: (val or Decimal("0")) for aid, val in div_rows
-        }
+        dividends: dict[int, list[tuple[date, Decimal]]] = {}
+        for aid, payment_date, amount in div_rows:
+            dividends.setdefault(aid, []).append((payment_date, amount or Decimal("0")))
 
         # Compute movers
         items: list[MoverItem] = []
@@ -222,13 +215,52 @@ class MoversService:
                 continue
 
             start_snap = start_by_asset.get(end_snap.asset_id)
-            start_val = start_snap.position_value if start_snap else Decimal("0")
+            asset_flows = cash_flows.get(end_snap.asset_id, [])
+            if start_snap:
+                effective_start = start_date
+                start_val = start_snap.position_value or Decimal("0")
+                include_flow_on_start = False
+            else:
+                effective_start = min(
+                    (flow_date for flow_date, _ in asset_flows), default=start_date
+                )
+                start_val = Decimal("0")
+                include_flow_on_start = True
+
             end_val = end_snap.position_value or Decimal("0")
-            net_contrib = contributions.get(end_snap.asset_id, Decimal("0"))
-            weighted_contrib = weighted_contributions.get(
-                end_snap.asset_id, Decimal("0")
+            effective_days = max((end_date - effective_start).days, 1)
+
+            def is_effective_flow(flow_date: date) -> bool:
+                if include_flow_on_start:
+                    return effective_start <= flow_date <= end_date
+                return effective_start < flow_date <= end_date
+
+            def flow_weight(flow_date: date) -> Decimal:
+                return Decimal((end_date - flow_date).days) / Decimal(effective_days)
+
+            effective_flows = [
+                (flow_date, amount)
+                for flow_date, amount in asset_flows
+                if is_effective_flow(flow_date)
+            ]
+            net_contrib = sum(
+                (amount for _flow_date, amount in effective_flows), Decimal("0")
             )
-            divs = dividends.get(end_snap.asset_id, Decimal("0"))
+            weighted_contrib = sum(
+                (
+                    amount * flow_weight(flow_date)
+                    for flow_date, amount in effective_flows
+                ),
+                Decimal("0"),
+            )
+            divs = sum(
+                (
+                    amount
+                    for payment_date, amount in dividends.get(end_snap.asset_id, [])
+                    if is_effective_flow(payment_date)
+                ),
+                Decimal("0"),
+            )
 
             pnl = end_val - start_val - net_contrib + divs
             denom = start_val + weighted_contrib
