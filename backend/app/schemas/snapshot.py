@@ -57,3 +57,27 @@ class DailyEvolutionPoint(BaseModel):
     total_invested: Decimal
     total_pnl: Decimal
     pnl_pct: Decimal
+
+
+class MoverItem(BaseModel):
+    asset_id: int
+    ticker: str
+    description: str | None = None
+    asset_class: str | None = None
+    market: str | None = None
+    position_value: float
+    pnl_period_brl: float
+    pnl_period_pct: float
+    contribution_pct: float
+    net_contributions_brl: float
+    dividends_brl: float
+
+
+class MoversResponse(BaseModel):
+    period: str
+    reference_date: date
+    period_start_date: date
+    total_patrimonio: float
+    total_period_pnl: float
+    winners: list[MoverItem]
+    losers: list[MoverItem]

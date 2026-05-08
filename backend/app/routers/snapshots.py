@@ -11,11 +11,13 @@ from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.schemas.snapshot import (
     DailyEvolutionPoint,
+    MoversResponse,
     SnapshotGenerateRequest,
     SnapshotResponse,
     PatrimonioEvolutionPoint,
     SnapshotAssetItem,
 )
+from app.services.movers_service import MoversService
 from app.services.snapshot_service import SnapshotService
 
 router = APIRouter()
@@ -102,6 +104,40 @@ async def get_snapshot_assets(
     if not snapshot or not snapshot.asset_breakdown:
         return []
     return [SnapshotAssetItem(**item) for item in snapshot.asset_breakdown]
+
+
+@router.post("/backfill-asset-snapshots")
+async def backfill_asset_snapshots(
+    months: int = Query(default=6, ge=1, le=24),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    end = date.today()
+    start = end - timedelta(days=30 * months)
+    service = SnapshotService(db, user)
+    rows = await service.backfill_asset_snapshots(start, end)
+    await db.commit()
+    return {"rows_written": rows, "start": start.isoformat(), "end": end.isoformat()}
+
+
+@router.get("/movers", response_model=MoversResponse)
+async def get_movers(
+    period: str = Query("day", pattern=r"^(day|week|month|year)$"),
+    asset_class: str | None = Query(None),
+    market: str | None = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    include_rf: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    service = MoversService(db, user)
+    return await service.compute(
+        period=period,
+        asset_class=asset_class,
+        market=market,
+        limit=limit,
+        include_rf=include_rf,
+    )
 
 
 @router.get("/daily-evolution", response_model=list[DailyEvolutionPoint])

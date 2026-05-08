@@ -292,6 +292,32 @@ export interface DailyEvolutionPoint {
   pnl_pct: number;
 }
 
+export type MoverPeriod = "day" | "week" | "month" | "year";
+
+export interface MoverItem {
+  asset_id: number;
+  ticker: string;
+  description?: string | null;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
+  position_value: number;
+  pnl_period_brl: number;
+  pnl_period_pct: number;
+  contribution_pct: number;
+  net_contributions_brl: number;
+  dividends_brl: number;
+}
+
+export interface MoversResponse {
+  period: MoverPeriod;
+  reference_date: string;
+  period_start_date: string;
+  total_patrimonio: number;
+  total_period_pnl: number;
+  winners: MoverItem[];
+  losers: MoverItem[];
+}
+
 export interface PriceStatusResponse {
   next_run_utc: string;
   last_run_utc: string | null;

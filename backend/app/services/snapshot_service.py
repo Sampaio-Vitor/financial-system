@@ -5,10 +5,14 @@ from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import delete
+
 from app.models.asset import (
     AllocationBucket,
     Asset,
+    AssetClass,
     AssetType,
+    Market,
     asset_bucket_for,
     resolve_asset_metadata,
 )
@@ -16,6 +20,7 @@ from app.models.purchase import Purchase
 from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_redemption import FixedIncomeRedemption
 from app.models.daily_snapshot import DailySnapshot
+from app.models.asset_daily_snapshot import AssetDailySnapshot
 from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 from app.constants import ALLOCATION_BUCKET_LABELS
@@ -329,6 +334,7 @@ class SnapshotService:
         rv_query = (
             select(
                 Asset.id,
+                Asset.ticker,
                 Asset.type,
                 Asset.asset_class,
                 Asset.market,
@@ -345,6 +351,7 @@ class SnapshotService:
             )
             .group_by(
                 Asset.id,
+                Asset.ticker,
                 Asset.type,
                 Asset.asset_class,
                 Asset.market,
@@ -359,10 +366,12 @@ class SnapshotService:
             bucket: Decimal("0") for bucket in AllocationBucket
         }
         total_rv_cost = Decimal("0")
+        per_asset_rows: list[dict] = []
 
         for row in rv_rows:
             (
-                _asset_id,
+                asset_id,
+                ticker,
                 asset_type,
                 asset_class,
                 market,
@@ -378,11 +387,24 @@ class SnapshotService:
                 quote_currency=quote_currency,
             )
             bucket = asset_bucket_for(asset_class, market)
+            market_value = Decimal("0")
             if current_price and qty:
                 market_value = current_price * qty
                 class_values[bucket] += market_value
             cost_val = cost or Decimal("0")
             total_rv_cost += cost_val
+            per_asset_rows.append(
+                {
+                    "asset_id": asset_id,
+                    "ticker": ticker,
+                    "asset_class": asset_class,
+                    "market": market,
+                    "price_brl": current_price,
+                    "quantity": qty or Decimal("0"),
+                    "position_value": market_value,
+                    "invested_cost": cost_val,
+                }
+            )
 
         # ── 2. Fixed income ──
         fi_positions_result = await self.db.execute(
@@ -397,6 +419,36 @@ class SnapshotService:
             self.db, self.user, cutoff=tomorrow
         )
         class_values[AllocationBucket.RF] = current_bucket_values[AllocationBucket.RF]
+
+        # Aggregate FI per asset_id (one Tesouro asset can back multiple positions)
+        fi_by_asset: dict[int, dict] = {}
+        for fi_pos in fi_positions:
+            asset = fi_pos.asset if hasattr(fi_pos, "asset") and fi_pos.asset else None
+            asset_id = fi_pos.asset_id
+            ticker = asset.ticker if asset else "RF"
+            qty = fi_pos.quantity if fi_pos.quantity is not None else Decimal("1")
+            price = (
+                asset.current_price
+                if asset and asset.current_price and fi_pos.quantity
+                else (fi_pos.current_balance if not fi_pos.quantity else None)
+            )
+            entry = fi_by_asset.setdefault(
+                asset_id,
+                {
+                    "asset_id": asset_id,
+                    "ticker": ticker,
+                    "asset_class": AssetClass.RF,
+                    "market": Market.BR,
+                    "price_brl": price,
+                    "quantity": Decimal("0"),
+                    "position_value": Decimal("0"),
+                    "invested_cost": Decimal("0"),
+                },
+            )
+            entry["quantity"] += qty
+            entry["position_value"] += fi_pos.current_balance or Decimal("0")
+            entry["invested_cost"] += fi_pos.applied_value or Decimal("0")
+        per_asset_rows.extend(fi_by_asset.values())
 
         # ── 3. Reserve ──
         reserve_entry = await get_reserve_for_date(self.db, self.user.id, today)
@@ -437,7 +489,274 @@ class SnapshotService:
             )
             self.db.add(snapshot)
 
+        await self._persist_asset_snapshots(today, per_asset_rows)
         return snapshot
+
+    async def _persist_asset_snapshots(
+        self, target_date: date, rows: list[dict]
+    ) -> None:
+        """Replace per-asset snapshots for (user, date) with the supplied rows."""
+        await self.db.execute(
+            delete(AssetDailySnapshot).where(
+                AssetDailySnapshot.user_id == self.user.id,
+                AssetDailySnapshot.date == target_date,
+            )
+        )
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            self.db.add(
+                AssetDailySnapshot(
+                    user_id=self.user.id,
+                    asset_id=row["asset_id"],
+                    date=target_date,
+                    price_brl=(
+                        round(row["price_brl"], 4)
+                        if row.get("price_brl") is not None
+                        else None
+                    ),
+                    quantity=round(row["quantity"], 6),
+                    position_value=round(row["position_value"], 4),
+                    invested_cost=round(row["invested_cost"], 4),
+                    asset_class=row.get("asset_class"),
+                    market=row.get("market"),
+                    ticker=row.get("ticker") or "",
+                    snapshot_at=now,
+                )
+            )
+
+    async def backfill_asset_snapshots(
+        self, start_date: date, end_date: date
+    ) -> int:
+        """Reconstruct per-asset daily snapshots between start_date and end_date.
+
+        Pulls a single yfinance range per asset, then walks each day reconstructing
+        quantity/invested_cost from purchases. RF positions use current_balance as a
+        flat value (no reliable historical curve).
+
+        Returns the number of (asset, date) rows written.
+        """
+        if start_date > end_date:
+            return 0
+
+        # All purchases for user, grouped per-asset
+        purchases_result = await self.db.execute(
+            select(Purchase, Asset)
+            .join(Asset, Purchase.asset_id == Asset.id)
+            .where(
+                Purchase.user_id == self.user.id,
+                Asset.type != AssetType.RF,
+                Purchase.purchase_date <= end_date,
+            )
+        )
+        purchases_by_asset: dict[int, list[Purchase]] = {}
+        assets_by_id: dict[int, Asset] = {}
+        for purchase, asset in purchases_result.all():
+            purchases_by_asset.setdefault(asset.id, []).append(purchase)
+            assets_by_id[asset.id] = asset
+
+        import asyncio
+        from app.services.price_service import (
+            FX_TICKERS,
+            PriceService,
+            YF_BATCH_SIZE,
+            YF_BATCH_SLEEP_SECONDS,
+        )
+
+        price_service = PriceService(self.db, self.user)
+
+        def _extract_curve(data, yf_ticker: str) -> dict[date, Decimal]:
+            curve: dict[date, Decimal] = {}
+            if data is None or data.empty:
+                return curve
+            try:
+                close_series = (
+                    data["Close"][yf_ticker]
+                    if hasattr(data["Close"], "columns")
+                    else data["Close"]
+                )
+            except Exception:
+                return curve
+            for ts, val in close_series.items():
+                try:
+                    f = float(val)
+                    if f > 0:
+                        curve[ts.date()] = Decimal(str(round(f, 6)))
+                except Exception:
+                    continue
+            return curve
+
+        range_start = (start_date - timedelta(days=7)).isoformat()
+        range_end = (end_date + timedelta(days=1)).isoformat()
+
+        # FX history — batch all FX tickers in a single yfinance call
+        fx_history: dict[CurrencyCode, dict[date, Decimal]] = {}
+        fx_yf_tickers = list(FX_TICKERS.values())
+        if fx_yf_tickers:
+            data = await price_service._download_yf(
+                fx_yf_tickers, start=range_start, end=range_end
+            )
+            for currency, yf_ticker in FX_TICKERS.items():
+                fx_history[currency] = _extract_curve(data, yf_ticker)
+            await asyncio.sleep(YF_BATCH_SLEEP_SECONDS)
+
+        def fx_on(currency: CurrencyCode, day: date) -> Decimal | None:
+            if currency == CurrencyCode.BRL:
+                return Decimal("1")
+            curve = fx_history.get(currency, {})
+            for d in (day - timedelta(days=i) for i in range(8)):
+                if d in curve:
+                    return curve[d]
+            return None
+
+        # Asset price history — batch in groups of YF_BATCH_SIZE with sleeps
+        price_history: dict[int, dict[date, Decimal]] = {}
+        asset_currency: dict[int, CurrencyCode] = {}
+        ticker_to_asset: dict[str, Asset] = {}
+        for asset in assets_by_id.values():
+            _ac, _mk, currency = resolve_asset_metadata(
+                legacy_type=asset.type,
+                asset_class=asset.asset_class,
+                market=asset.market,
+                quote_currency=asset.quote_currency,
+            )
+            asset_currency[asset.id] = currency
+            ticker_to_asset[price_service._price_symbol_for(asset)] = asset
+
+        yf_tickers = list(ticker_to_asset.keys())
+        for i in range(0, len(yf_tickers), YF_BATCH_SIZE):
+            batch = yf_tickers[i : i + YF_BATCH_SIZE]
+            data = await price_service._download_yf(
+                batch, start=range_start, end=range_end
+            )
+            for yf_ticker in batch:
+                asset = ticker_to_asset[yf_ticker]
+                price_history[asset.id] = _extract_curve(data, yf_ticker)
+            if i + YF_BATCH_SIZE < len(yf_tickers):
+                await asyncio.sleep(YF_BATCH_SLEEP_SECONDS)
+
+        def native_price_on(asset_id: int, day: date) -> Decimal | None:
+            curve = price_history.get(asset_id, {})
+            for d in (day - timedelta(days=i) for i in range(8)):
+                if d in curve:
+                    return curve[d]
+            return None
+
+        # Fixed income: aggregate per asset (use current_balance flat — no historical curve)
+        fi_positions_result = await self.db.execute(
+            select(FixedIncomePosition).where(
+                FixedIncomePosition.user_id == self.user.id,
+                FixedIncomePosition.start_date <= end_date,
+            )
+        )
+        fi_positions = fi_positions_result.scalars().all()
+
+        # Wipe existing rows in range to keep idempotent
+        await self.db.execute(
+            delete(AssetDailySnapshot).where(
+                AssetDailySnapshot.user_id == self.user.id,
+                AssetDailySnapshot.date >= start_date,
+                AssetDailySnapshot.date <= end_date,
+            )
+        )
+
+        rows_written = 0
+        now = datetime.now(timezone.utc)
+        day = start_date
+        while day <= end_date:
+            # Variable income: rebuild per-asset position from purchases up to `day`
+            for asset_id, purchases in purchases_by_asset.items():
+                qty = Decimal("0")
+                cost = Decimal("0")
+                for p in purchases:
+                    if p.purchase_date <= day:
+                        qty += p.quantity or Decimal("0")
+                        cost += p.total_value or Decimal("0")
+                if qty <= 0 and cost <= 0:
+                    continue
+                asset = assets_by_id[asset_id]
+                _ac, _mk, currency = resolve_asset_metadata(
+                    legacy_type=asset.type,
+                    asset_class=asset.asset_class,
+                    market=asset.market,
+                    quote_currency=asset.quote_currency,
+                )
+                asset_class_v, market_v, _ = resolve_asset_metadata(
+                    legacy_type=asset.type,
+                    asset_class=asset.asset_class,
+                    market=asset.market,
+                    quote_currency=asset.quote_currency,
+                )
+                native = native_price_on(asset_id, day)
+                fx = fx_on(currency, day)
+                price_brl = (
+                    round(native * fx, 4) if native and fx else None
+                )
+                position_value = (
+                    round(price_brl * qty, 4) if price_brl else Decimal("0")
+                )
+                self.db.add(
+                    AssetDailySnapshot(
+                        user_id=self.user.id,
+                        asset_id=asset_id,
+                        date=day,
+                        price_brl=price_brl,
+                        quantity=round(qty, 6),
+                        position_value=position_value,
+                        invested_cost=round(cost, 4),
+                        asset_class=asset_class_v,
+                        market=market_v,
+                        ticker=asset.ticker,
+                        snapshot_at=now,
+                    )
+                )
+                rows_written += 1
+
+            # Fixed income (use current_balance and applied_value as proxy — flat across range)
+            fi_by_asset_day: dict[int, dict] = {}
+            for fi_pos in fi_positions:
+                if fi_pos.start_date > day:
+                    continue
+                aid = fi_pos.asset_id
+                asset = fi_pos.asset
+                ticker = asset.ticker if asset else "RF"
+                qty = (
+                    fi_pos.quantity
+                    if fi_pos.quantity is not None
+                    else Decimal("1")
+                )
+                entry = fi_by_asset_day.setdefault(
+                    aid,
+                    {
+                        "ticker": ticker,
+                        "quantity": Decimal("0"),
+                        "position_value": Decimal("0"),
+                        "invested_cost": Decimal("0"),
+                    },
+                )
+                entry["quantity"] += qty
+                entry["position_value"] += fi_pos.current_balance or Decimal("0")
+                entry["invested_cost"] += fi_pos.applied_value or Decimal("0")
+            for aid, entry in fi_by_asset_day.items():
+                self.db.add(
+                    AssetDailySnapshot(
+                        user_id=self.user.id,
+                        asset_id=aid,
+                        date=day,
+                        price_brl=None,
+                        quantity=round(entry["quantity"], 6),
+                        position_value=round(entry["position_value"], 4),
+                        invested_cost=round(entry["invested_cost"], 4),
+                        asset_class=AssetClass.RF,
+                        market=Market.BR,
+                        ticker=entry["ticker"],
+                        snapshot_at=now,
+                    )
+                )
+                rows_written += 1
+
+            day += timedelta(days=1)
+
+        return rows_written
 
     async def generate_all(self) -> list[MonthlySnapshot]:
         """Generate/regenerate snapshots for all months from earliest data to last month."""

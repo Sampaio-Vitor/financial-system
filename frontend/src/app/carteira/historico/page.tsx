@@ -14,6 +14,9 @@ import {
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { DailyEvolutionPoint, PatrimonioEvolutionPoint } from "@/types";
+import MoversTab from "./MoversTab";
+
+type TabKey = "evolution" | "movers";
 
 type RangeKey = "1M" | "3M" | "6M" | "1Y" | "ALL";
 
@@ -36,6 +39,7 @@ interface ChartPoint {
 }
 
 export default function HistoricoPage() {
+  const [tab, setTab] = useState<TabKey>("evolution");
   const [range, setRange] = useState<RangeKey>("3M");
   const [dailyData, setDailyData] = useState<DailyEvolutionPoint[]>([]);
   const [monthlyData, setMonthlyData] = useState<PatrimonioEvolutionPoint[]>([]);
@@ -124,6 +128,27 @@ export default function HistoricoPage() {
         <h1 className="text-2xl font-extrabold tracking-tight">Histórico do Patrimônio</h1>
       </div>
 
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)]">
+        {[
+          { key: "evolution" as TabKey, label: "Evolução" },
+          { key: "movers" as TabKey, label: "Movers" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium transition-all border-b-2 -mb-px ${
+              tab === t.key
+                ? "border-[var(--color-accent)] text-[var(--color-text-primary)]"
+                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "movers" ? <MoversTab /> : (
+      <>
       {/* Summary cards */}
       {latestPoint && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -328,6 +353,8 @@ export default function HistoricoPage() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
