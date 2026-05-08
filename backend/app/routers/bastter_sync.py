@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -26,6 +26,7 @@ from app.services.bastter_sync_service import (
     BastterSyncError,
     BastterSyncService,
     SUPPORTED_TYPES,
+    tesouro_descricao_for,
 )
 
 router = APIRouter()
@@ -60,6 +61,7 @@ async def list_syncable_purchases(
         Purchase.user_id == user.id,
         Purchase.quantity > 0,
         Asset.type.in_(supported_asset_types),
+        or_(Asset.type != AssetType.RF, Asset.td_kind.is_not(None)),
     ]
     if asset_type:
         if asset_type not in supported_asset_types:
@@ -160,14 +162,19 @@ async def sync_bastter_purchases(
             )
 
     service = BastterSyncService()
-    try:
-        catalog_items = await service.fetch_assets_catalog(body.cookie)
-    except BastterAuthenticationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except BastterSyncError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Erro inesperado ao consultar Bastter") from exc
+    needs_catalog = any(
+        p.asset is not None and p.asset.type != AssetType.RF for p in ordered_purchases
+    )
+    catalog_items: list = []
+    if needs_catalog:
+        try:
+            catalog_items = await service.fetch_assets_catalog(body.cookie)
+        except BastterAuthenticationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except BastterSyncError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Erro inesperado ao consultar Bastter") from exc
 
     results: list[BastterSyncItemResult] = []
     success_count = 0
@@ -188,11 +195,26 @@ async def sync_bastter_purchases(
             if purchase.bastter_synced_at is not None:
                 raise BastterSyncError("Movimentacao ja sincronizada anteriormente com o Bastter")
             bastter_tipo = service.resolve_bastter_tipo(purchase)
-            ativo_id = service.resolve_ativo_id(
-                catalog_items,
-                ticker=ticker,
-                bastter_tipo=bastter_tipo,
-            )
+            if bastter_tipo == "rendafixa":
+                descricao = tesouro_descricao_for(
+                    ticker,
+                    purchase.asset.td_kind,
+                    purchase.asset.td_maturity_year,
+                )
+                salvar_response = await service.save_tesouro_asset(
+                    body.cookie, descricao=descricao
+                )
+                ativo_id = salvar_response.get("AtivoID")
+                if not isinstance(ativo_id, int) or ativo_id <= 0:
+                    raise BastterSyncError(
+                        f"Bastter nao retornou AtivoID para '{descricao}'"
+                    )
+            else:
+                ativo_id = service.resolve_ativo_id(
+                    catalog_items,
+                    ticker=ticker,
+                    bastter_tipo=bastter_tipo,
+                )
             endpoint, result_payload, bastter_tipo = service.build_payload(
                 purchase,
                 ativo_id=ativo_id,
@@ -287,31 +309,51 @@ async def include_bastter_assets(
         except BastterSyncError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         ticker = purchase.asset.ticker.strip().upper()
-        unique.setdefault((bastter_tipo, ticker), ticker)
+        if bastter_tipo == "rendafixa":
+            descricao = tesouro_descricao_for(
+                ticker,
+                purchase.asset.td_kind,
+                purchase.asset.td_maturity_year,
+            )
+        else:
+            descricao = ticker
+        unique.setdefault((bastter_tipo, ticker), descricao)
 
-    try:
-        carteira_id = await service.fetch_carteira_id(body.cookie)
-    except BastterAuthenticationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except BastterSyncError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    needs_carteira = any(tipo != "rendafixa" for (tipo, _ticker) in unique)
+    carteira_id = 0
+    if needs_carteira:
+        try:
+            carteira_id = await service.fetch_carteira_id(body.cookie)
+        except BastterAuthenticationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except BastterSyncError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     results: list[BastterIncludeAssetResult] = []
     success_count = 0
-    for (bastter_tipo, ticker) in unique:
+    for (bastter_tipo, ticker), descricao in unique.items():
         item_success = False
         item_error: str | None = None
         item_response: dict | None = None
         try:
-            item_response = await service.include_asset(
-                body.cookie,
-                tipo=bastter_tipo,
-                descricao=ticker,
-                carteira_id=carteira_id,
-            )
-            item_success = bool(item_response.get("Return"))
-            if not item_success:
-                item_error = "Bastter retornou falha ao incluir o ativo"
+            if bastter_tipo == "rendafixa":
+                item_response = await service.save_tesouro_asset(
+                    body.cookie, descricao=descricao
+                )
+                ativo_id = item_response.get("AtivoID")
+                item_success = isinstance(ativo_id, int) and ativo_id > 0
+                if not item_success:
+                    item_error = "Bastter nao retornou AtivoID ao salvar Tesouro"
+            else:
+                item_response = await service.include_asset(
+                    body.cookie,
+                    tipo=bastter_tipo,
+                    descricao=descricao,
+                    carteira_id=carteira_id,
+                )
+                item_success = bool(item_response.get("Return"))
+                if not item_success:
+                    item_error = "Bastter retornou falha ao incluir o ativo"
         except BastterAuthenticationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except BastterSyncError as exc:

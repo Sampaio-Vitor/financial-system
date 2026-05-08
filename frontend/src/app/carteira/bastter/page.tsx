@@ -30,12 +30,12 @@ import type {
   BastterSyncPreviewResponse,
 } from "@/types";
 
-const SUPPORTED_TYPES: AssetType[] = ["ACAO", "FII", "STOCK"];
+const SUPPORTED_TYPES: AssetType[] = ["ACAO", "FII", "STOCK", "RF"];
 const TYPE_LABELS: Record<AssetType, string> = {
   ACAO: "Ações",
   FII: "FIIs",
   STOCK: "Stocks",
-  RF: "Renda Fixa",
+  RF: "Tesouro Direto",
 };
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   STOCK: "Ações",
