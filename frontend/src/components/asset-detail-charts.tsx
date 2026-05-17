@@ -232,31 +232,16 @@ export default function AssetDetailCharts({
 
     async function fetchData() {
       try {
-        // First fetch purchases to determine history range
-        const purchasesData = await apiFetch<Purchase[]>(`/purchases?asset_id=${assetId}`);
-        if (cancelled) return;
-        setPurchases(purchasesData);
-
-        // Calculate days to fetch based on oldest purchase
-        let days = 365; // Default 1 year
-        if (purchasesData.length > 0) {
-          const sorted = [...purchasesData].sort((a, b) =>
-            a.purchase_date.localeCompare(b.purchase_date)
-          );
-          const oldestDate = new Date(sorted[0].purchase_date + "T00:00:00");
-          const today = new Date();
-          const diffTime = today.getTime() - oldestDate.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 30; // Add buffer
-          days = Math.min(Math.max(diffDays, 365), 3650); // Min 1 year, max 10 years
-        }
-
-        // Fetch dividends and price history in parallel
-        const [dividendsData, priceHistoryData] = await Promise.all([
+        // Keep the price chart behavior exactly as before: a 90-day quote history.
+        // Purchases are fetched only to overlay markers when they fall in this visible range.
+        const [purchasesData, dividendsData, priceHistoryData] = await Promise.all([
+          apiFetch<Purchase[]>(`/purchases?asset_id=${assetId}`),
           apiFetch<DividendEventListResponse>(`/dividends?ticker=${ticker}`),
-          apiFetch<HistoricalPricePoint[]>(`/assets/${assetId}/price-history?days=${days}`),
+          apiFetch<HistoricalPricePoint[]>(`/assets/${assetId}/price-history?days=90`),
         ]);
 
         if (cancelled) return;
+        setPurchases(purchasesData);
         setDividends(dividendsData.events);
         setPriceHistory(priceHistoryData);
       } catch {
@@ -302,9 +287,13 @@ export default function AssetDetailCharts({
       })
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // If a buy happened on a weekend/holiday, attach it to the nearest available
-    // price-history point so the marker still appears without interrupting the line.
+    // If a buy happened on a weekend/holiday inside the visible 90-day window,
+    // attach it to the nearest available trading day. Ignore purchases outside the
+    // displayed quote range so old buys do not stretch or pollute the chart.
+    const firstDate = data[0]?.date;
+    const lastDate = data[data.length - 1]?.date;
     for (const [date, datePurchases] of purchasesByDate) {
+      if (!firstDate || !lastDate || date < firstDate || date > lastDate) continue;
       if (data.some((d) => d.date === date)) continue;
 
       const purchaseTime = new Date(date + "T00:00:00").getTime();
