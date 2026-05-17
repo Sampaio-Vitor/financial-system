@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-TrendingUp,
+  TrendingUp,
   Building2,
   Landmark,
   PiggyBank,
@@ -19,8 +19,6 @@ TrendingUp,
   BookOpen,
   Plug,
   Coins,
-  LineChart,
-  RefreshCcw,
   Dog,
   Target,
 } from "lucide-react";
@@ -45,12 +43,7 @@ export const navItems: NavItem[] = [
     icon: LayoutDashboard,
     exact: true,
   },
-{
-    label: "Histórico",
-    href: "/carteira/historico",
-    icon: LineChart,
-  },
-{
+  {
     label: "Proventos",
     href: "/carteira/proventos",
     icon: Coins,

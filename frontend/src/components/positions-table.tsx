@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { formatBRL, formatCurrency, formatPercent, formatQuantity } from "@/lib/format";
+import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import { CurrencyCode, Market, PositionItem } from "@/types";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
@@ -17,11 +17,21 @@ interface PositionsTableProps {
   metadataMode?: "none" | "market_currency";
   showUsdRate?: boolean;
   usdBrlRate?: number;
+  /** "focus" hides P&L and current price from default view; "full" shows everything */
+  mode?: "focus" | "full";
 }
 
 type SortKey = keyof PositionItem;
 
-const SORT_OPTIONS: { label: string; key: SortKey }[] = [
+const SORT_OPTIONS_FOCUS: { label: string; key: SortKey }[] = [
+  { label: "Ticker", key: "ticker" },
+  { label: "Valor na Carteira", key: "market_value" },
+  { label: "Qtd", key: "quantity" },
+  { label: "Custo Total", key: "total_cost" },
+  { label: "Primeira Compra", key: "first_date" },
+];
+
+const SORT_OPTIONS_FULL: { label: string; key: SortKey }[] = [
   { label: "Ticker", key: "ticker" },
   { label: "Valor Mercado", key: "market_value" },
   { label: "P&L (%)", key: "pnl_pct" },
@@ -43,14 +53,20 @@ const CURRENCY_LABELS: Record<CurrencyCode, string> = {
   GBP: "GBP",
 };
 
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 export default function PositionsTable({
   positions,
   totalCost,
   totalMarketValue,
-  totalPnl,
-  totalPnlPct,
   metadataMode = "none",
+  mode = "focus",
 }: PositionsTableProps) {
+  const sortOptions = mode === "focus" ? SORT_OPTIONS_FOCUS : SORT_OPTIONS_FULL;
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -89,9 +105,6 @@ export default function PositionsTable({
     </th>
   );
 
-  const pnlColor = (val: number | null) =>
-    (val ?? 0) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]";
-
   const metadataLabel = (position: PositionItem) => {
     if (metadataMode === "none") {
       return null;
@@ -102,16 +115,15 @@ export default function PositionsTable({
     return `${MARKET_LABELS[position.market]} • ${CURRENCY_LABELS[position.quote_currency]}`;
   };
 
-  const currentPriceLabel = (position: PositionItem) => {
-    const nativeCurrency = position.quote_currency ?? "BRL";
-    if (
-      position.current_price_native != null &&
-      position.quote_currency &&
-      position.quote_currency !== "BRL"
-    ) {
-      return `${formatCurrency(position.current_price_native, nativeCurrency)} (${formatBRL(position.current_price)})`;
+  const badgeLabel = (position: PositionItem) => {
+    // In focus mode, show market/currency or asset type instead of P&L
+    if (position.market && position.quote_currency) {
+      return `${position.market} • ${position.quote_currency}`;
     }
-    return formatBRL(position.current_price);
+    if (position.asset_class) {
+      return position.asset_class;
+    }
+    return position.type;
   };
 
   return (
@@ -129,7 +141,7 @@ export default function PositionsTable({
             }}
             className="text-xs bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-[var(--color-text-secondary)]"
           >
-            {SORT_OPTIONS.map((opt) => (
+            {sortOptions.map((opt) => (
               <option key={opt.key} value={opt.key}>
                 {opt.label}
               </option>
@@ -168,32 +180,20 @@ export default function PositionsTable({
                 </>
               }
               badge={
-                <span className={`text-sm font-semibold ${pnlColor(p.pnl_pct)}`}>
-                  {formatPercent(p.pnl_pct)}
+                <span className="text-xs font-medium text-[var(--color-text-muted)]">
+                  {badgeLabel(p)}
                 </span>
               }
               bodyItems={[
-                { label: "Valor Mercado", value: formatBRL(p.market_value) },
+                { label: "Valor na Carteira", value: formatBRL(p.market_value) },
                 { label: "Quantidade", value: formatQuantity(p.quantity) },
               ]}
               expandedItems={[
-                { label: "Preço Médio", value: formatBRL(p.avg_price) },
-                { label: "Cotação Atual", value: currentPriceLabel(p) },
-                {
-                  label: "FX para BRL",
-                  value:
-                    p.quote_currency && p.quote_currency !== "BRL"
-                      ? formatBRL(p.fx_rate_to_brl)
-                      : formatBRL(1),
-                },
-                {
-                  label: "P&L (R$)",
-                  value: (
-                    <span className={pnlColor(p.pnl)}>
-                      {formatBRL(p.pnl)}
-                    </span>
-                  ),
-                },
+                { label: "Custo Total", value: formatBRL(p.total_cost) },
+                { label: "Primeira Compra", value: formatDate(p.first_date) },
+                ...(p.quote_currency && p.quote_currency !== "BRL"
+                  ? [{ label: "Moeda / FX", value: `${CURRENCY_LABELS[p.quote_currency]} • ${formatBRL(p.fx_rate_to_brl)}` }]
+                  : []),
               ]}
               actions={
                 <button
@@ -223,21 +223,18 @@ export default function PositionsTable({
         <div className="bg-[var(--color-bg-card)] rounded-xl border-2 border-[var(--color-border)] p-4 mt-3">
           <div className="flex items-center justify-between">
             <span className="font-bold text-sm text-[var(--color-text-primary)]">TOTAL</span>
-            <span className={`text-sm font-semibold ${pnlColor(totalPnlPct)}`}>
-              {formatPercent(totalPnlPct)}
-            </span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
             <div>
-              <span className="text-xs text-[var(--color-text-muted)]">Valor Mercado</span>
+              <span className="text-xs text-[var(--color-text-muted)]">Valor na Carteira</span>
               <div className="text-sm font-medium text-[var(--color-text-secondary)]">
                 {formatBRL(totalMarketValue)}
               </div>
             </div>
             <div>
-              <span className="text-xs text-[var(--color-text-muted)]">P&L (R$)</span>
-              <div className={`text-sm font-medium ${pnlColor(totalPnl)}`}>
-                {formatBRL(totalPnl)}
+              <span className="text-xs text-[var(--color-text-muted)]">Custo Total</span>
+              <div className="text-sm font-medium text-[var(--color-text-secondary)]">
+                {formatBRL(totalCost)}
               </div>
             </div>
           </div>
@@ -248,42 +245,37 @@ export default function PositionsTable({
       <div className="hidden md:block bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
         <table className="w-full text-sm table-fixed">
           <colgroup>
+            <col className="w-[25%]" />
+            <col className="w-[15%]" />
             <col className="w-[20%]" />
-            <col className="w-[10%]" />
-            <col className="w-[14%]" />
-            <col className="w-[18%]" />
-            <col className="w-[14%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[20%]" />
+            <col className="w-[20%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-[var(--color-border)]">
-              {colHeader("Ticker", "ticker")}
-              {colHeader("Qtd", "quantity")}
-              {colHeader("Preço Médio", "avg_price")}
-              {colHeader("Cotação Atual", "current_price")}
-              {colHeader("Valor Mercado", "market_value")}
-              {colHeader("P&L (R$)", "pnl")}
-              {colHeader("P&L (%)", "pnl_pct")}
+              {colHeader("Ativo", "ticker")}
+              {colHeader("Quantidade", "quantity")}
+              {colHeader("Valor na Carteira", "market_value")}
+              {colHeader("Custo Total", "total_cost")}
+              {colHeader("Primeira Compra", "first_date")}
             </tr>
             <tr className="border-b-2 border-[var(--color-border)] font-bold text-sm">
-              <td className="px-3 py-2" colSpan={4}>TOTAL</td>
+              <td className="px-3 py-2">TOTAL</td>
+              <td className="px-3 py-2"></td>
               <td className="px-3 py-2">{formatBRL(totalMarketValue)}</td>
-              <td className={`px-3 py-2 ${pnlColor(totalPnl)}`}>{formatBRL(totalPnl)}</td>
-              <td className={`px-3 py-2 ${pnlColor(totalPnlPct)}`}>{formatPercent(totalPnlPct)}</td>
+              <td className="px-3 py-2">{formatBRL(totalCost)}</td>
+              <td className="px-3 py-2"></td>
             </tr>
           </thead>
         </table>
         <div className="overflow-x-auto max-h-[792px] overflow-y-auto">
         <table className="w-full text-sm table-fixed">
           <colgroup>
+            <col className="w-[25%]" />
+            <col className="w-[15%]" />
             <col className="w-[20%]" />
-            <col className="w-[10%]" />
-            <col className="w-[14%]" />
-            <col className="w-[18%]" />
-            <col className="w-[14%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[20%]" />
+            <col className="w-[20%]" />
           </colgroup>
           <tbody>
             {sorted.map((p) => {
@@ -318,19 +310,13 @@ export default function PositionsTable({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
-                    <td className="px-3 py-2.5">{formatBRL(p.avg_price)}</td>
-                    <td className="px-3 py-2.5">{currentPriceLabel(p)}</td>
                     <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
-                    <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl)}`}>
-                      {formatBRL(p.pnl)}
-                    </td>
-                    <td className={`px-3 py-2.5 font-medium ${pnlColor(p.pnl_pct)}`}>
-                      {formatPercent(p.pnl_pct)}
-                    </td>
+                    <td className="px-3 py-2.5">{formatBRL(p.total_cost)}</td>
+                    <td className="px-3 py-2.5">{formatDate(p.first_date)}</td>
                   </tr>
                   {isExpanded && (
                     <tr className="border-b border-[var(--color-border)]/50">
-                      <td colSpan={7} className="p-0 bg-[var(--color-bg-main)]/40">
+                      <td colSpan={5} className="p-0 bg-[var(--color-bg-main)]/40">
                         <div className="border-b border-[var(--color-border)]/50 px-4 py-3 text-xs text-[var(--color-text-muted)]">
                           <span className="mr-4">
                             Mercado: {p.market ? MARKET_LABELS[p.market] : "—"}
