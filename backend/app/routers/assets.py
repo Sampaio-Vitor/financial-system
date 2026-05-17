@@ -736,7 +736,7 @@ async def delete_asset(
 @router.get("/{asset_id}/price-history")
 async def get_asset_price_history(
     asset_id: int,
-    days: int = Query(default=90, le=365),
+    days: int = Query(default=90, le=3650),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
