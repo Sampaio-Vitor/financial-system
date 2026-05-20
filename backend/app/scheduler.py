@@ -11,6 +11,7 @@ from app.database import AsyncSessionLocal, engine
 from app.models.asset import Asset
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user import User
+from app.services.connection_sync_service import sync_user_connections
 from app.services.price_service import PriceService, _upsert_system_setting
 from app.services.snapshot_service import SnapshotService
 
@@ -64,6 +65,28 @@ async def _execute_price_update_cycle(db) -> dict:
         users = users_result.scalars().all()
         today = date.today()
 
+        connection_summaries: list[dict] = []
+        for user in users:
+            try:
+                summary = await sync_user_connections(db, user)
+            except Exception:
+                await db.rollback()
+                logger.exception("Failed to sync connections for user %s", user.id)
+                connection_summaries.append(
+                    {"user_id": user.id, "synced": 0, "new_transactions": 0,
+                     "failed": [{"reason": "exception"}]}
+                )
+                continue
+            connection_summaries.append(summary)
+
+        connections_synced = sum(s["synced"] for s in connection_summaries)
+        connections_new_txns = sum(s["new_transactions"] for s in connection_summaries)
+        connection_failures = [
+            {"user_id": s["user_id"], "failed": s["failed"]}
+            for s in connection_summaries
+            if s["failed"]
+        ]
+
         snapshot_failures: list[dict[str, int]] = []
         snapshot_success_count = 0
 
@@ -78,18 +101,30 @@ async def _execute_price_update_cycle(db) -> dict:
                 snapshot_failures.append({"user_id": user.id})
                 logger.exception("Failed daily snapshot for user %s", user.id)
 
-        status = "success" if not results["failed"] and not snapshot_failures else "partial"
+        status = (
+            "success"
+            if not results["failed"] and not snapshot_failures and not connection_failures
+            else "partial"
+        )
         results["status"] = status
         results["snapshots"] = {
             "generated": snapshot_success_count,
             "failed": snapshot_failures,
         }
+        results["connections"] = {
+            "synced": connections_synced,
+            "new_transactions": connections_new_txns,
+            "failed": connection_failures,
+        }
 
         await _record_last_run(db, status)
         logger.info(
-            "Price update cycle finished: %s prices updated, %s price failures, %s snapshots generated, %s snapshot failures",
+            "Price update cycle finished: %s prices updated, %s price failures, %s connections synced, %s new txns, %s connection failures, %s snapshots generated, %s snapshot failures",
             len(results["updated"]),
             len(results["failed"]),
+            connections_synced,
+            connections_new_txns,
+            len(connection_failures),
             snapshot_success_count,
             len(snapshot_failures),
         )
