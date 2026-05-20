@@ -10,6 +10,12 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const metadata: Metadata = {
   title: "CofrinhoGordinho",
   description: "Seu porquinho de investimentos",
+  applicationName: "CofrinhoGordinho",
+  appleWebApp: {
+    capable: true,
+    title: "Cofrinho",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
@@ -17,6 +23,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({
