@@ -1,8 +1,6 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
-from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,7 +9,6 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.bank_account import BankAccount
 from app.models.bank_connection import BankConnection
-from app.models.pluggy_credentials import PluggyCredentials
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.expenses import (
@@ -21,32 +18,28 @@ from app.schemas.expenses import (
     ConnectTokenResponse,
     SyncResponse,
 )
-from app.services.encryption_service import decrypt
 from app.services import dividend_service, pluggy_service
+from app.services.connection_sync_service import (
+    InvalidPluggyEncryptionError,
+    MissingPluggyCredentialsError,
+    get_user_pluggy_creds,
+    sync_connection as sync_connection_service,
+)
 
 router = APIRouter()
 
-TRANSACTION_SYNC_LOOKBACK_DAYS = 40
-
 
 async def _get_user_pluggy_creds(user_id: int, db: AsyncSession) -> tuple[str, str, list[str]]:
-    """Decrypt and return (client_id, client_secret, owner_names) for a user. Raises 400 if not configured."""
-    result = await db.execute(
-        select(PluggyCredentials).where(PluggyCredentials.user_id == user_id)
-    )
-    creds = result.scalar_one_or_none()
-    if not creds:
-        raise HTTPException(status_code=400, detail="Credenciais Pluggy não configuradas")
+    """Decrypt and return (client_id, client_secret, owner_names), mapping service errors to HTTPException."""
     try:
-        client_id = decrypt(creds.encrypted_client_id)
-        client_secret = decrypt(creds.encrypted_client_secret)
-    except InvalidToken as exc:
+        return await get_user_pluggy_creds(user_id, db)
+    except MissingPluggyCredentialsError:
+        raise HTTPException(status_code=400, detail="Credenciais Pluggy não configuradas")
+    except InvalidPluggyEncryptionError:
         raise HTTPException(
             status_code=500,
             detail="Não foi possível descriptografar as credenciais Pluggy. Verifique a configuração de ENCRYPTION_KEY no backend.",
-        ) from exc
-    owner_names = creds.owner_names or []
-    return client_id, client_secret, owner_names
+        )
 
 
 async def _create_transaction_with_dividend(
@@ -56,21 +49,11 @@ async def _create_transaction_with_dividend(
     user_id: int,
     parsed: dict,
 ) -> Transaction:
-    txn = Transaction(
-        account_id=account_id,
-        user_id=user_id,
-        **parsed,
-    )
+    txn = Transaction(account_id=account_id, user_id=user_id, **parsed)
     db.add(txn)
     await db.flush()
     await dividend_service.upsert_dividend_event_for_transaction(db, txn)
     return txn
-
-
-def _transaction_sync_since(last_sync_at: datetime | None) -> date | None:
-    if not last_sync_at:
-        return None
-    return last_sync_at.date() - timedelta(days=TRANSACTION_SYNC_LOOKBACK_DAYS)
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
@@ -187,7 +170,6 @@ async def sync_connection(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Get connection
     result = await db.execute(
         select(BankConnection)
         .options(selectinload(BankConnection.accounts))
@@ -200,63 +182,13 @@ async def sync_connection(
     client_id, client_secret, owner_names = await _get_user_pluggy_creds(user.id, db)
     api_key = await pluggy_service.authenticate(user.id, client_id, client_secret)
 
-    # Check item status
-    try:
-        item_data = await pluggy_service.get_item(api_key, connection.external_id)
-        item_status = item_data.get("status", "")
-        if item_status in ("LOGIN_ERROR", "OUTDATED"):
-            connection.status = "expired"
-            await db.commit()
-            return SyncResponse(new_transactions=0, connection_status="expired")
-    except httpx.HTTPStatusError:
-        connection.status = "error"
-        await db.commit()
-        return SyncResponse(new_transactions=0, connection_status="error")
-
-    new_count = 0
-    since_date = _transaction_sync_since(connection.last_sync_at)
-
-    for account in connection.accounts:
-        # Update account balance
-        raw_accounts = await pluggy_service.get_accounts(api_key, connection.external_id)
-        for raw_acc in raw_accounts:
-            if raw_acc["id"] == account.external_id:
-                account.balance = raw_acc.get("balance", account.balance)
-                break
-
-        # Fetch new transactions
-        raw_txns = await pluggy_service.get_transactions(api_key, account.external_id, since=since_date)
-        for raw_txn in raw_txns:
-            parsed = pluggy_service.parse_transaction(raw_txn, owner_names=owner_names)
-            # Check dedup
-            existing = await db.execute(
-                select(Transaction).where(
-                    Transaction.account_id == account.id,
-                    Transaction.external_id == parsed["external_id"],
-                )
-            )
-            if existing.scalar_one_or_none():
-                continue
-
-            await _create_transaction_with_dividend(
-                db,
-                account_id=account.id,
-                user_id=user.id,
-                parsed=parsed,
-            )
-            new_count += 1
-
-        await dividend_service.backfill_dividend_events_for_account(
-            db,
-            user_id=user.id,
-            account_id=account.id,
-        )
-
-    connection.status = "active"
-    connection.last_sync_at = datetime.now(timezone.utc)
-    await db.commit()
-
-    return SyncResponse(new_transactions=new_count, connection_status="active")
+    sync_result = await sync_connection_service(
+        db, connection, api_key=api_key, owner_names=owner_names
+    )
+    return SyncResponse(
+        new_transactions=sync_result.new_transactions,
+        connection_status=sync_result.connection_status,
+    )
 
 
 @router.post("/{connection_id}/reconnect-token", response_model=ConnectTokenResponse)
