@@ -26,20 +26,6 @@ import {
 } from "@/types";
 import { formatBRL, formatPercent } from "@/lib/format";
 
-// Tesouro tickers como "TD-SELIC-2031" / "TD-IPCA-2032" carregam o ano de vencimento.
-// Quando maturity_date está vazio, derivamos do ticker (assumimos 01/01 do ano).
-function inferMaturityFromTicker(ticker: string | undefined | null): string | null {
-  if (!ticker) return null;
-  const m = ticker.match(/TD-[A-Z]+-(\d{4})$/i);
-  return m ? `${m[1]}-01-01` : null;
-}
-
-function displayMaturity(maturity: string | null | undefined, ticker: string | undefined | null): string {
-  const value = maturity || inferMaturityFromTicker(ticker);
-  if (!value) return "—";
-  return new Date(value + "T00:00:00").toLocaleDateString("pt-BR");
-}
-
 interface TimelineEvent {
   id: string;
   date: string;
@@ -52,12 +38,6 @@ interface TimelineEvent {
 export default function RendaFixaPage() {
   const [positions, setPositions] = useState<FixedIncomePosition[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editData, setEditData] = useState<{
-    applied_value: string;
-    current_balance: string;
-  }>({ applied_value: "", current_balance: "" });
-  const [saving, setSaving] = useState(false);
   const [redemptions, setRedemptions] = useState<FixedIncomeRedemption[]>([]);
   const [interest, setInterest] = useState<FixedIncomeInterest[]>([]);
   const [rfAssets, setRfAssets] = useState<Asset[]>([]);
@@ -118,22 +98,7 @@ export default function RendaFixaPage() {
       .catch(() => {});
   }, []);
 
-  const [tesouroEditPosition, setTesouroEditPosition] = useState<FixedIncomePosition | null>(null);
-
-  const startEdit = (p: FixedIncomePosition) => {
-    const asset = rfAssets.find((a) => a.id === p.asset_id);
-    if (asset?.td_kind) {
-      setTesouroEditPosition(p);
-      return;
-    }
-    setEditingId(p.id);
-    setEditData({
-      applied_value: String(Number(p.applied_value)),
-      current_balance: String(Number(p.current_balance)),
-    });
-  };
-
-  const cancelEdit = () => setEditingId(null);
+  const [editingPosition, setEditingPosition] = useState<FixedIncomePosition | null>(null);
 
   const deletePosition = async (p: FixedIncomePosition) => {
     const ok = await new Promise<boolean>((resolve) => {
@@ -153,24 +118,24 @@ export default function RendaFixaPage() {
     }
   };
 
-  const saveEdit = async (id: number) => {
-    setSaving(true);
-    try {
-      await apiFetch(`/fixed-income/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          applied_value: parseFloat(editData.applied_value),
-          current_balance: parseFloat(editData.current_balance),
-        }),
-      });
-      setEditingId(null);
-      fetchPositions();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
-    } finally {
-      setSaving(false);
+  const aggregatedPositions = useMemo(() => {
+    const map = new Map<number, { asset_id: number; ticker: string; applied: number; balance: number }>();
+    for (const p of positions) {
+      const existing = map.get(p.asset_id);
+      if (existing) {
+        existing.applied += Number(p.applied_value);
+        existing.balance += Number(p.current_balance);
+      } else {
+        map.set(p.asset_id, {
+          asset_id: p.asset_id,
+          ticker: p.ticker || "",
+          applied: Number(p.applied_value),
+          balance: Number(p.current_balance),
+        });
+      }
     }
-  };
+    return Array.from(map.values()).sort((a, b) => b.balance - a.balance);
+  }, [positions]);
 
   const assetById = useMemo(() => {
     const map = new Map<number, Asset>();
@@ -292,18 +257,20 @@ export default function RendaFixaPage() {
         </div>
       </div>
 
-      {/* Positions table */}
+      {/* Positions table (aggregated by ticker) */}
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
-        {positions.length === 0 ? (
+        {aggregatedPositions.length === 0 ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">Nenhuma posição em Renda Fixa.</p>
         ) : (
           <>
           {/* Mobile card view */}
           <div className="md:hidden space-y-2 p-2">
-            {positions.map((p) => (
-              <div key={p.id} className="bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex items-center gap-1.5">
+            {aggregatedPositions.map((p) => {
+              const yieldVal = p.balance - p.applied;
+              const yieldPct = p.applied > 0 ? (yieldVal / p.applied) * 100 : 0;
+              return (
+                <div key={p.asset_id} className="bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="flex items-center gap-1.5 mb-2">
                     <span className="font-medium text-sm">{p.ticker}</span>
                     {assetById.get(p.asset_id)?.td_kind ? (
                       <span title="Saldo atualizado automaticamente pelo PU do Tesouro" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">AUTO</span>
@@ -311,44 +278,23 @@ export default function RendaFixaPage() {
                       <span title="Saldo manual: atualizado ao registrar juros" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/15 text-[var(--color-text-muted)]">MANUAL</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => startEdit(p)}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                      title="Editar"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                    </button>
-                    <button
-                      onClick={() => deletePosition(p)}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)]"
-                      title="Excluir"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                    </button>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Saldo Atual</span>
+                      <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.balance)}</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Rendimento</span>
+                      <div className={`text-sm ${yieldVal >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(yieldVal)} ({formatPercent(yieldPct)})</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-muted)]">Valor Aplicado</span>
+                      <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.applied)}</div>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-                  <div>
-                    <span className="text-xs text-[var(--color-text-muted)]">Saldo Atual</span>
-                    <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.current_balance)}</div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-[var(--color-text-muted)]">Rendimento</span>
-                    <div className={`text-sm ${Number(p.yield_value) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(p.yield_value)} ({formatPercent(p.yield_pct * 100)})</div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-[var(--color-text-muted)]">Valor Aplicado</span>
-                    <div className="text-sm text-[var(--color-text-secondary)]">{formatBRL(p.applied_value)}</div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-[var(--color-text-muted)]">Vencimento</span>
-                    <div className="text-sm text-[var(--color-text-muted)]">{displayMaturity(p.maturity_date, p.ticker)}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {/* Totals */}
+              );
+            })}
             <div className="bg-[var(--color-bg-main)] rounded-xl border-2 border-[var(--color-border)] p-4">
               <div className="font-bold text-sm mb-2">TOTAL</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -360,55 +306,25 @@ export default function RendaFixaPage() {
             </div>
           </div>
 
-          {/* Mobile bottom-sheet edit modal */}
-          {editingId !== null && (
-            <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:hidden">
-              <div className="fixed inset-0 bg-black/50" onClick={cancelEdit} />
-              <div className="relative w-full bg-[var(--color-bg-card)] rounded-t-2xl border-t border-[var(--color-border)] p-6 space-y-4">
-                <h3 className="text-base font-bold">Editar Posição</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Valor Aplicado</label>
-                    <input type="number" step="any" value={editData.applied_value} onChange={(e) => setEditData({ ...editData, applied_value: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Saldo Atual</label>
-                    <input type="number" step="any" value={editData.current_balance} onChange={(e) => setEditData({ ...editData, current_balance: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <button onClick={cancelEdit} className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm font-medium">Cancelar</button>
-                  <button onClick={() => saveEdit(editingId)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium disabled:opacity-50">{saving ? "Salvando..." : "Salvar"}</button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Desktop table view */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data Aplicação</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor Aplicado</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rendimento</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Rend. (%)</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Vencimento</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p) => {
-                  const isEditing = editingId === p.id;
-                  const editApplied = parseFloat(editData.applied_value) || 0;
-                  const editBalance = parseFloat(editData.current_balance) || 0;
-                  const editYield = editBalance - editApplied;
-                  const editYieldPct = editApplied > 0 ? (editYield / editApplied) * 100 : 0;
-
+                {aggregatedPositions.map((p) => {
+                  const yieldVal = p.balance - p.applied;
+                  const yieldPct = p.applied > 0 ? (yieldVal / p.applied) * 100 : 0;
+                  const yieldClass = yieldVal >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]";
                   return (
-                    <tr key={p.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
+                    <tr key={p.asset_id} className="border-b border-[var(--color-border)]/50">
                       <td className="px-3 py-2.5 font-medium">
                         <span className="inline-flex items-center gap-1.5">
                           {p.ticker}
@@ -419,65 +335,21 @@ export default function RendaFixaPage() {
                           )}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
-                        {new Date(p.start_date + "T00:00:00").toLocaleDateString("pt-BR")}
-                      </td>
-                      {isEditing ? (
-                        <>
-                          <td className="px-3 py-1.5">
-                            <input type="number" step="any" value={editData.applied_value} onChange={(e) => setEditData({ ...editData, applied_value: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
-                          </td>
-                          <td className="px-3 py-1.5">
-                            <input type="number" step="any" value={editData.current_balance} onChange={(e) => setEditData({ ...editData, current_balance: e.target.value })} className="w-28 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm" />
-                          </td>
-                          <td className={`px-3 py-2.5 ${editYield >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(editYield)}</td>
-                          <td className={`px-3 py-2.5 ${editYieldPct >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatPercent(editYieldPct)}</td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-3 py-2.5">{formatBRL(p.applied_value)}</td>
-                          <td className="px-3 py-2.5">{formatBRL(p.current_balance)}</td>
-                          <td className={`px-3 py-2.5 ${Number(p.yield_value) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatBRL(p.yield_value)}</td>
-                          <td className={`px-3 py-2.5 ${Number(p.yield_pct) >= 0 ? "text-[var(--color-positive)]" : "text-[var(--color-negative)]"}`}>{formatPercent(p.yield_pct * 100)}</td>
-                        </>
-                      )}
-                      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-                        {displayMaturity(p.maturity_date, p.ticker)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => saveEdit(p.id)} disabled={saving} className="text-xs text-[var(--color-positive)] hover:underline disabled:opacity-50">{saving ? "..." : "Salvar"}</button>
-                            <button onClick={cancelEdit} className="text-xs text-[var(--color-text-muted)] hover:underline">Cancelar</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => startEdit(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors" title="Editar">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
-                              </svg>
-                            </button>
-                            <button onClick={() => deletePosition(p)} className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors" title="Excluir">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                              </svg>
-                            </button>
-                          </div>
-                        )}
-                      </td>
+                      <td className="px-3 py-2.5">{formatBRL(p.applied)}</td>
+                      <td className="px-3 py-2.5">{formatBRL(p.balance)}</td>
+                      <td className={`px-3 py-2.5 ${yieldClass}`}>{formatBRL(yieldVal)}</td>
+                      <td className={`px-3 py-2.5 ${yieldClass}`}>{formatPercent(yieldPct)}</td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                  <td className="px-3 py-2.5" colSpan={2}>TOTAL</td>
+                  <td className="px-3 py-2.5">TOTAL</td>
                   <td className="px-3 py-2.5">{formatBRL(totalApplied)}</td>
                   <td className="px-3 py-2.5">{formatBRL(totalBalance)}</td>
                   <td className={`px-3 py-2.5 ${totalYieldClass}`}>{formatBRL(totalYield)}</td>
                   <td className={`px-3 py-2.5 ${totalYieldClass}`}>{formatPercent(totalYieldPct)}</td>
-                  <td className="px-3 py-2.5" />
-                  <td className="px-3 py-2.5" />
                 </tr>
               </tfoot>
             </table>
@@ -520,7 +392,11 @@ export default function RendaFixaPage() {
                     const badgeClass = e.type === "RESGATE" ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]" : e.type === "JUROS" ? "bg-amber-500/15 text-amber-500" : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]";
                     const valueClass = e.type === "RESGATE" ? "text-[var(--color-negative)]" : e.type === "JUROS" ? (e.amount >= 0 ? "text-amber-500" : "text-[var(--color-negative)]") : "text-[var(--color-positive)]";
                     const prefix = e.type === "RESGATE" ? "- " : e.amount >= 0 ? "+ " : "";
-                    const canDelete = e.type === "RESGATE" || (e.type === "JUROS" && (() => {
+                    const aportePosition = e.type === "APORTE"
+                      ? positions.find((p) => p.id === Number(e.id.replace("aporte-", "")))
+                      : null;
+                    const canEdit = e.type === "APORTE" && !!aportePosition;
+                    const canDelete = e.type === "RESGATE" || canEdit || (e.type === "JUROS" && (() => {
                       const entryId = Number(e.id.replace("juros-", ""));
                       const entry = interest.find((i) => i.id === entryId);
                       if (!entry || !entry.fixed_income_id) return entry != null;
@@ -539,32 +415,49 @@ export default function RendaFixaPage() {
                         </td>
                         <td className={`px-3 py-2.5 font-medium whitespace-nowrap ${valueClass}`}>{prefix}{formatBRL(Math.abs(e.amount))}</td>
                         <td className="px-3 py-2.5 text-right">
-                          {canDelete && (
-                            <button
-                              onClick={async () => {
-                                const label = e.type === "RESGATE" ? "resgate" : "juros";
-                                const ok = await new Promise<boolean>((resolve) => {
-                                  pendingConfirm.current = resolve;
-                                  setConfirmState({ open: true, title: "Confirmar Remoção", message: `Remover este ${label} do histórico?` });
-                                });
-                                if (!ok) return;
-                                const entryId = e.id.replace(/^(resgate|juros)-/, "");
-                                const endpoint = e.type === "RESGATE" ? `/fixed-income/redemptions/${entryId}` : `/fixed-income/interest/${entryId}`;
-                                try {
-                                  await apiFetch(endpoint, { method: "DELETE" });
-                                  fetchPositions();
-                                } catch (err) {
-                                  toast.error(err instanceof Error ? err.message : "Erro ao remover");
-                                }
-                              }}
-                              className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
-                              title="Remover"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                              </svg>
-                            </button>
-                          )}
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {canEdit && aportePosition && (
+                              <button
+                                onClick={() => setEditingPosition(aportePosition)}
+                                className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                                title="Editar"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+                                </svg>
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                onClick={async () => {
+                                  if (e.type === "APORTE" && aportePosition) {
+                                    deletePosition(aportePosition);
+                                    return;
+                                  }
+                                  const label = e.type === "RESGATE" ? "resgate" : "juros";
+                                  const ok = await new Promise<boolean>((resolve) => {
+                                    pendingConfirm.current = resolve;
+                                    setConfirmState({ open: true, title: "Confirmar Remoção", message: `Remover este ${label} do histórico?` });
+                                  });
+                                  if (!ok) return;
+                                  const entryId = e.id.replace(/^(resgate|juros)-/, "");
+                                  const endpoint = e.type === "RESGATE" ? `/fixed-income/redemptions/${entryId}` : `/fixed-income/interest/${entryId}`;
+                                  try {
+                                    await apiFetch(endpoint, { method: "DELETE" });
+                                    fetchPositions();
+                                  } catch (err) {
+                                    toast.error(err instanceof Error ? err.message : "Erro ao remover");
+                                  }
+                                }}
+                                className="text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                                title="Remover"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -609,11 +502,11 @@ export default function RendaFixaPage() {
       <AporteModal open={aporteOpen} rfAssets={rfAssets} onClose={() => setAporteOpen(false)} onSaved={fetchPositions} />
       <ResgateModal open={resgateOpen} positions={positions} onClose={() => setResgateOpen(false)} onSaved={fetchPositions} />
       <JurosModal open={jurosOpen} positions={positions} interest={interest} onClose={() => setJurosOpen(false)} onSaved={fetchPositions} />
-      {tesouroEditPosition && (
+      {editingPosition && (
         <EditModal
-          position={tesouroEditPosition}
-          asset={rfAssets.find((a) => a.id === tesouroEditPosition.asset_id)}
-          onClose={() => setTesouroEditPosition(null)}
+          position={editingPosition}
+          asset={rfAssets.find((a) => a.id === editingPosition.asset_id)}
+          onClose={() => setEditingPosition(null)}
           onSaved={fetchPositions}
         />
       )}
