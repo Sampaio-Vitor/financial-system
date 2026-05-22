@@ -20,7 +20,6 @@ export default function EditModal({ position, asset, onClose, onSaved }: EditMod
     position.purchase_unit_price ? String(Number(position.purchase_unit_price)) : ""
   );
   const [currentBalance, setCurrentBalance] = useState(String(Number(position.current_balance)));
-  const [description, setDescription] = useState(position.description);
   const [maturity, setMaturity] = useState(position.maturity_date ?? "");
   const [submitting, setSubmitting] = useState(false);
 
@@ -54,7 +53,6 @@ export default function EditModal({ position, asset, onClose, onSaved }: EditMod
       await apiFetch(`/fixed-income/${position.id}`, {
         method: "PUT",
         body: JSON.stringify({
-          description,
           applied_value: applied,
           current_balance: isTesouro ? null : parseFloat(currentBalance),
           purchase_unit_price: isTesouro ? pu : null,
@@ -75,16 +73,6 @@ export default function EditModal({ position, asset, onClose, onSaved }: EditMod
       <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-md">
         <h2 className="text-lg font-bold mb-4">Editar Posição — {position.ticker}</h2>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Descrição</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm"
-            />
-          </div>
-
           <div>
             <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Valor Aplicado (R$)</label>
             <input

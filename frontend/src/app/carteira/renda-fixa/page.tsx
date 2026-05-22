@@ -26,13 +26,27 @@ import {
 } from "@/types";
 import { formatBRL, formatPercent } from "@/lib/format";
 
+// Tesouro tickers como "TD-SELIC-2031" / "TD-IPCA-2032" carregam o ano de vencimento.
+// Quando maturity_date está vazio, derivamos do ticker (assumimos 01/01 do ano).
+function inferMaturityFromTicker(ticker: string | undefined | null): string | null {
+  if (!ticker) return null;
+  const m = ticker.match(/TD-[A-Z]+-(\d{4})$/i);
+  return m ? `${m[1]}-01-01` : null;
+}
+
+function displayMaturity(maturity: string | null | undefined, ticker: string | undefined | null): string {
+  const value = maturity || inferMaturityFromTicker(ticker);
+  if (!value) return "—";
+  return new Date(value + "T00:00:00").toLocaleDateString("pt-BR");
+}
+
 interface TimelineEvent {
   id: string;
   date: string;
   type: "APORTE" | "RESGATE" | "JUROS";
   ticker: string;
-  description: string;
   amount: number;
+  orphan: boolean;
 }
 
 export default function RendaFixaPage() {
@@ -59,6 +73,9 @@ export default function RendaFixaPage() {
 
   // Target for chart
   const [rfTargetValue, setRfTargetValue] = useState<number | null>(null);
+
+  // Toggle: mostrar eventos de posições encerradas (resgates/juros órfãos)
+  const [showOrphans, setShowOrphans] = useState(false);
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -155,6 +172,12 @@ export default function RendaFixaPage() {
     }
   };
 
+  const assetById = useMemo(() => {
+    const map = new Map<number, Asset>();
+    for (const a of rfAssets) map.set(a.id, a);
+    return map;
+  }, [rfAssets]);
+
   const mostRecentInterestByPosition = useMemo(() => {
     const map = new Map<number, number>();
     for (const entry of interest) {
@@ -168,34 +191,61 @@ export default function RendaFixaPage() {
   const timeline = useMemo<TimelineEvent[]>(() => {
     const events: TimelineEvent[] = [];
     for (const p of positions) {
-      events.push({ id: `aporte-${p.id}`, date: p.start_date, type: "APORTE", ticker: p.ticker || "", description: p.description, amount: Number(p.applied_value) });
+      events.push({ id: `aporte-${p.id}`, date: p.start_date, type: "APORTE", ticker: p.ticker || "", amount: Number(p.applied_value), orphan: false });
     }
     for (const r of redemptions) {
-      events.push({ id: `resgate-${r.id}`, date: r.redemption_date, type: "RESGATE", ticker: r.ticker, description: r.description, amount: Number(r.amount) });
+      events.push({ id: `resgate-${r.id}`, date: r.redemption_date, type: "RESGATE", ticker: r.ticker, amount: Number(r.amount), orphan: r.fixed_income_id == null });
     }
     for (const i of interest) {
-      events.push({ id: `juros-${i.id}`, date: i.reference_month, type: "JUROS", ticker: i.ticker, description: i.description, amount: Number(i.interest_amount) });
+      events.push({ id: `juros-${i.id}`, date: i.reference_month, type: "JUROS", ticker: i.ticker, amount: Number(i.interest_amount), orphan: i.fixed_income_id == null });
     }
     events.sort((a, b) => b.date.localeCompare(a.date));
     return events;
   }, [positions, redemptions, interest]);
 
   const chartData = useMemo(() => {
-    if (timeline.length === 0) return [];
-    const byMonth = new Map<string, number>();
-    for (const e of timeline) {
-      const month = e.date.slice(0, 7);
-      const signedAmount = e.type === "RESGATE" ? -e.amount : e.amount;
-      byMonth.set(month, (byMonth.get(month) || 0) + signedAmount);
+    // Reconstrói o saldo a partir do saldo atual, desfazendo eventos para trás no tempo.
+    // Resgates/juros de posições encerradas (fixed_income_id == null) são ignorados —
+    // sem o aporte original, considerá-los inflaria meses passados.
+    const currentBalance = positions.reduce((s, p) => s + Number(p.current_balance), 0);
+
+    const events: Array<{ date: string; delta: number }> = [
+      ...positions.map((p) => ({ date: p.start_date, delta: Number(p.applied_value) })),
+      ...redemptions
+        .filter((r) => r.fixed_income_id != null)
+        .map((r) => ({ date: r.redemption_date, delta: -Number(r.amount) })),
+      ...interest
+        .filter((i) => i.fixed_income_id != null)
+        .map((i) => ({ date: i.reference_month, delta: Number(i.interest_amount) })),
+    ];
+
+    if (events.length === 0) return [];
+
+    const sortedDates = events.map((e) => e.date).sort();
+    const firstMonth = sortedDates[0].slice(0, 7);
+    const today = new Date();
+    const lastMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+    const months: string[] = [];
+    let [y, m] = firstMonth.split("-").map(Number);
+    const [maxY, maxM] = lastMonth.split("-").map(Number);
+    while (y < maxY || (y === maxY && m <= maxM)) {
+      months.push(`${y}-${String(m).padStart(2, "0")}`);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
     }
 
-    const months = Array.from(byMonth.keys()).sort();
-    let cumulative = 0;
-    return months.map((m) => {
-      cumulative += byMonth.get(m)!;
-      return { month: m.slice(5) + "/" + m.slice(2, 4), value: cumulative };
+    return months.map((month) => {
+      const [yr, mo] = month.split("-").map(Number);
+      const lastDay = new Date(yr, mo, 0).getDate();
+      const eom = `${month}-${String(lastDay).padStart(2, "0")}`;
+      const futureDelta = events.filter((e) => e.date > eom).reduce((s, e) => s + e.delta, 0);
+      return { month: month.slice(5) + "/" + month.slice(2, 4), value: currentBalance - futureDelta };
     });
-  }, [timeline]);
+  }, [positions, redemptions, interest]);
 
   if (loading) {
     return (
@@ -227,13 +277,13 @@ export default function RendaFixaPage() {
             <>
               <button
                 onClick={() => setJurosOpen(true)}
-                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg bg-amber-600 text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-xs md:text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
               >
                 Registrar Juros
               </button>
               <button
                 onClick={() => setResgateOpen(true)}
-                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+                className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] text-xs md:text-sm font-medium hover:bg-[var(--color-bg-main)] transition-colors"
               >
                 Resgatar
               </button>
@@ -253,9 +303,13 @@ export default function RendaFixaPage() {
             {positions.map((p) => (
               <div key={p.id} className="bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex items-center gap-1.5">
                     <span className="font-medium text-sm">{p.ticker}</span>
-                    <span className="text-xs text-[var(--color-text-muted)] ml-2">{p.description}</span>
+                    {assetById.get(p.asset_id)?.td_kind ? (
+                      <span title="Saldo atualizado automaticamente pelo PU do Tesouro" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">AUTO</span>
+                    ) : (
+                      <span title="Saldo manual: atualizado ao registrar juros" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/15 text-[var(--color-text-muted)]">MANUAL</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -289,7 +343,7 @@ export default function RendaFixaPage() {
                   </div>
                   <div>
                     <span className="text-xs text-[var(--color-text-muted)]">Vencimento</span>
-                    <div className="text-sm text-[var(--color-text-muted)]">{p.maturity_date ? new Date(p.maturity_date + "T00:00:00").toLocaleDateString("pt-BR") : "\u2014"}</div>
+                    <div className="text-sm text-[var(--color-text-muted)]">{displayMaturity(p.maturity_date, p.ticker)}</div>
                   </div>
                 </div>
               </div>
@@ -336,7 +390,6 @@ export default function RendaFixaPage() {
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Tipo</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descrição</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data Aplicação</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor Aplicado</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Saldo Atual</th>
@@ -356,9 +409,17 @@ export default function RendaFixaPage() {
 
                   return (
                     <tr key={p.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
-                      <td className="px-3 py-2.5 font-medium">{p.ticker}</td>
-                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">{p.description}</td>
-                      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+                      <td className="px-3 py-2.5 font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          {p.ticker}
+                          {assetById.get(p.asset_id)?.td_kind ? (
+                            <span title="Saldo atualizado automaticamente pelo PU do Tesouro" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">AUTO</span>
+                          ) : (
+                            <span title="Saldo manual: atualizado ao registrar juros" className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/15 text-[var(--color-text-muted)]">MANUAL</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
                         {new Date(p.start_date + "T00:00:00").toLocaleDateString("pt-BR")}
                       </td>
                       {isEditing ? (
@@ -381,7 +442,7 @@ export default function RendaFixaPage() {
                         </>
                       )}
                       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-                        {p.maturity_date ? new Date(p.maturity_date + "T00:00:00").toLocaleDateString("pt-BR") : "\u2014"}
+                        {displayMaturity(p.maturity_date, p.ticker)}
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {isEditing ? (
@@ -410,7 +471,7 @@ export default function RendaFixaPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-[var(--color-border)] font-bold">
-                  <td className="px-3 py-2.5" colSpan={3}>TOTAL</td>
+                  <td className="px-3 py-2.5" colSpan={2}>TOTAL</td>
                   <td className="px-3 py-2.5">{formatBRL(totalApplied)}</td>
                   <td className="px-3 py-2.5">{formatBRL(totalBalance)}</td>
                   <td className={`px-3 py-2.5 ${totalYieldClass}`}>{formatBRL(totalYield)}</td>
@@ -429,20 +490,33 @@ export default function RendaFixaPage() {
       {timeline.length > 0 && (
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">Aportes, Resgates & Juros</h2>
+            <div className="flex items-center justify-between mb-3 px-2 gap-2">
+              <h2 className="text-sm font-semibold text-[var(--color-text-muted)]">Aportes, Resgates & Juros</h2>
+              {timeline.some((e) => e.orphan) && (
+                <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showOrphans}
+                    onChange={(e) => setShowOrphans(e.target.checked)}
+                    className="accent-[var(--color-accent)]"
+                  />
+                  Mostrar encerrados
+                </label>
+              )}
+            </div>
             <div className="overflow-x-auto max-h-80 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-[var(--color-bg-card)]">
                   <tr className="border-b border-[var(--color-border)]">
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Operação</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Descrição</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Ativo</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-text-muted)]">Valor</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-[var(--color-text-muted)]" />
                   </tr>
                 </thead>
                 <tbody>
-                  {timeline.map((e) => {
+                  {timeline.filter((e) => showOrphans || !e.orphan).map((e) => {
                     const badgeClass = e.type === "RESGATE" ? "bg-[var(--color-negative)]/15 text-[var(--color-negative)]" : e.type === "JUROS" ? "bg-amber-500/15 text-amber-500" : "bg-[var(--color-positive)]/15 text-[var(--color-positive)]";
                     const valueClass = e.type === "RESGATE" ? "text-[var(--color-negative)]" : e.type === "JUROS" ? (e.amount >= 0 ? "text-amber-500" : "text-[var(--color-negative)]") : "text-[var(--color-positive)]";
                     const prefix = e.type === "RESGATE" ? "- " : e.amount >= 0 ? "+ " : "";
@@ -457,7 +531,12 @@ export default function RendaFixaPage() {
                       <tr key={e.id} className="border-b border-[var(--color-border)]/50">
                         <td className="px-3 py-2.5 whitespace-nowrap">{new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}</td>
                         <td className="px-3 py-2.5"><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${badgeClass}`}>{e.type}</span></td>
-                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]"><span className="font-medium">{e.ticker}</span> {e.description}</td>
+                        <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
+                          <span className="font-medium">{e.ticker}</span>
+                          {e.orphan && (
+                            <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-text-muted)]/15 text-[var(--color-text-muted)]">ENCERRADO</span>
+                          )}
+                        </td>
                         <td className={`px-3 py-2.5 font-medium whitespace-nowrap ${valueClass}`}>{prefix}{formatBRL(Math.abs(e.amount))}</td>
                         <td className="px-3 py-2.5 text-right">
                           {canDelete && (
@@ -498,17 +577,23 @@ export default function RendaFixaPage() {
           <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-3 px-2">Evolução Mensal</h2>
             <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#2a2d3a" }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e2130", border: "1px solid #2a2d3a", borderRadius: "8px", color: "#f8fafc", fontSize: "12px" }} formatter={(v: number) => [formatBRL(v), "Saldo Atual"]} />
-                  {rfTargetValue != null && (
-                    <ReferenceLine y={rfTargetValue} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={2} label={{ value: `Meta: ${formatBRL(rfTargetValue)}`, position: "insideTopRight", fill: "#f59e0b", fontSize: 11 }} />
-                  )}
-                  <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: "#8b5cf6" }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {chartData.length < 2 ? (
+                <div className="h-full flex items-center justify-center text-xs text-[var(--color-text-muted)]">
+                  Histórico insuficiente — aguarde acumular mais de um mês de eventos.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#2a2d3a" }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e2130", border: "1px solid #2a2d3a", borderRadius: "8px", color: "#f8fafc", fontSize: "12px" }} formatter={(v: number) => [formatBRL(v), "Saldo"]} />
+                    {rfTargetValue != null && (
+                      <ReferenceLine y={rfTargetValue} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={2} label={{ value: `Meta: ${formatBRL(rfTargetValue)}`, position: "insideTopRight", fill: "#f59e0b", fontSize: 11 }} />
+                    )}
+                    <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: "#8b5cf6" }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>

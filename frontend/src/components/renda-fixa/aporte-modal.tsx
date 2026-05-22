@@ -14,7 +14,6 @@ interface AporteModalProps {
 
 export default function AporteModal({ open, rfAssets, onClose, onSaved }: AporteModalProps) {
   const [assetId, setAssetId] = useState<number | "">("");
-  const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [value, setValue] = useState("");
   const [puCompra, setPuCompra] = useState("");
@@ -27,7 +26,7 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
   const isTesouro = !!selectedAsset?.td_kind;
 
   const handleSubmit = async () => {
-    if (!assetId || !description || !value) return;
+    if (!assetId || !value) return;
     const parsed = parseFloat(value);
     if (isNaN(parsed) || parsed <= 0) return;
     let pu: number | null = null;
@@ -45,7 +44,7 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
         method: "POST",
         body: JSON.stringify({
           asset_id: assetId,
-          description,
+          description: "",
           start_date: date,
           applied_value: parsed,
           current_balance: isTesouro ? null : parsed,
@@ -79,16 +78,6 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
                 <option key={a.id} value={a.id}>{a.ticker} — {a.description}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Descricao</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Ex: LCI Banco X 12 meses"
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
-            />
           </div>
           <div>
             <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Data da Aplicacao</label>
@@ -136,7 +125,7 @@ export default function AporteModal({ open, rfAssets, onClose, onSaved }: Aporte
           <div className="flex gap-2">
             <button
               onClick={handleSubmit}
-              disabled={submitting || !assetId || !description || !value}
+              disabled={submitting || !assetId || !value}
               className="flex-1 py-2 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               {submitting ? "Registrando..." : "Confirmar Aporte"}
