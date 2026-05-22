@@ -34,6 +34,8 @@ router = APIRouter()
 ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_IMAGES = 20
+MIN_OCR_PRICE_RATIO = Decimal("0.05")
+MAX_OCR_PRICE_RATIO = Decimal("20")
 
 # Magic bytes for MIME validation
 MAGIC_BYTES = {
@@ -228,6 +230,8 @@ async def resolve_tickers(
             ticker=ticker,
             asset_id=asset.id,
             quote_currency=qc.value,
+            current_price=float(asset.current_price) if asset.current_price else None,
+            current_price_native=float(asset.current_price_native) if asset.current_price_native else None,
             fx_rate_to_brl=float(asset.fx_rate_to_brl) if asset.fx_rate_to_brl else None,
             state="linked" if linked else "global_unlinked",
         ))
@@ -262,6 +266,45 @@ async def link_asset(
     db.add(link)
     await db.commit()
     return {"detail": "Ativo adicionado ao catalogo", "asset_id": asset.id}
+
+
+def _ocr_reference_unit_price(asset: Asset, quote_currency: str) -> Decimal | None:
+    if quote_currency == "BRL":
+        return asset.current_price if asset.current_price and asset.current_price > 0 else None
+    if asset.current_price_native and asset.current_price_native > 0:
+        return asset.current_price_native
+    if asset.current_price and asset.fx_rate_to_brl and asset.fx_rate_to_brl > 0:
+        return asset.current_price / asset.fx_rate_to_brl
+    return None
+
+
+def _validate_ocr_unit_price(
+    *,
+    row_number: int,
+    ticker: str,
+    unit_price: Decimal,
+    reference_price: Decimal | None,
+    currency: str,
+) -> None:
+    if unit_price <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Linha {row_number}: preco unitario calculado para {ticker} deve ser maior que zero",
+        )
+
+    if reference_price is None or reference_price <= 0:
+        return
+
+    ratio = unit_price / reference_price
+    if ratio < MIN_OCR_PRICE_RATIO or ratio > MAX_OCR_PRICE_RATIO:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Linha {row_number}: preco unitario calculado para {ticker} "
+                f"({unit_price:.4f} {currency}) esta muito distante da cotacao atual "
+                f"({reference_price:.4f} {currency}). Confira quantidade e valor total antes de importar."
+            ),
+        )
 
 
 @router.post("/purchases/bulk", response_model=list[PurchaseResponse], status_code=status.HTTP_201_CREATED)
@@ -341,6 +384,13 @@ async def bulk_create_purchases(
 
         fx_rate = Decimal(str(item.fx_rate)) if item.fx_rate else None
         trade_currency = item.trade_currency
+        _validate_ocr_unit_price(
+            row_number=idx + 1,
+            ticker=asset.ticker,
+            unit_price=unit_price,
+            reference_price=_ocr_reference_unit_price(asset, quote_currency.value),
+            currency=quote_currency.value,
+        )
 
         if quote_currency.value != "BRL":
             # Non-BRL asset: total_value is in native currency

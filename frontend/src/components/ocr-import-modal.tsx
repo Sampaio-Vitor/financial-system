@@ -13,6 +13,7 @@ import {
   BulkPurchaseItem,
   Purchase,
 } from "@/types";
+import { formatCurrency } from "@/lib/format";
 import TickerLogo from "@/components/ticker-logo";
 
 interface OcrImportModalProps {
@@ -34,6 +35,47 @@ interface ImageGroup {
   fileName: string;
   rows: ReviewRow[];
   error: string | null;
+}
+
+const MIN_OCR_PRICE_RATIO = 0.05;
+const MAX_OCR_PRICE_RATIO = 20;
+const SUPPORTED_CURRENCIES = new Set(["BRL", "USD", "EUR", "GBP"]);
+
+function formatOcrMoney(value: number, currency: string | null | undefined) {
+  if (currency && SUPPORTED_CURRENCIES.has(currency)) {
+    return formatCurrency(value, currency as "BRL" | "USD" | "EUR" | "GBP");
+  }
+  return `${currency ?? ""} ${value.toFixed(4)}`.trim();
+}
+
+function getOcrUnitPriceWarning(row: ReviewRow): string | null {
+  const resolution = row.resolution;
+  if (!resolution || resolution.state !== "linked") return null;
+
+  const quantity = Math.abs(Number(row.quantity));
+  const totalValue = Math.abs(Number(row.total_value));
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(totalValue) || totalValue <= 0) {
+    return "Quantidade e valor total precisam ser maiores que zero.";
+  }
+
+  const currency = resolution.quote_currency || row.currency;
+  const referencePrice = currency === "BRL"
+    ? resolution.current_price
+    : resolution.current_price_native ?? (
+        resolution.current_price && resolution.fx_rate_to_brl
+          ? resolution.current_price / resolution.fx_rate_to_brl
+          : null
+      );
+
+  if (!referencePrice || referencePrice <= 0) return null;
+
+  const unitPrice = totalValue / quantity;
+  const ratio = unitPrice / referencePrice;
+  if (ratio < MIN_OCR_PRICE_RATIO || ratio > MAX_OCR_PRICE_RATIO) {
+    return `Preço unitário calculado ${formatOcrMoney(unitPrice, currency)} muito distante da cotação atual ${formatOcrMoney(referencePrice, currency)}. Confira quantidade e valor total.`;
+  }
+
+  return null;
 }
 
 export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps) {
@@ -345,11 +387,16 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
   // All rows across all groups
   const allRows = useMemo(() => imageGroups.flatMap((g) => g.rows), [imageGroups]);
   const linkedRows = useMemo(() => allRows.filter((r) => r.resolution?.state === "linked" && r.resolution.asset_id), [allRows]);
+  const rowsWithPriceWarnings = useMemo(() => linkedRows.filter((r) => getOcrUnitPriceWarning(r)), [linkedRows]);
   const skippedCount = allRows.length - linkedRows.length;
 
   const confirmAndCreate = async () => {
     if (linkedRows.length === 0) {
       toast.error("Nenhum aporte valido para criar. Vincule os ativos primeiro.");
+      return;
+    }
+    if (rowsWithPriceWarnings.length > 0) {
+      toast.error(`Corrija ${rowsWithPriceWarnings.length} linha(s) com preco unitario suspeito antes de importar.`);
       return;
     }
 
@@ -494,6 +541,13 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
                     <span className="text-xs text-yellow-400/70">pendente(s)</span>
                   </div>
                 )}
+                {rowsWithPriceWarnings.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/20">
+                    <AlertTriangle className="w-3 h-3 text-red-400" />
+                    <span className="text-sm font-semibold text-red-400">{rowsWithPriceWarnings.length}</span>
+                    <span className="text-xs text-red-400/70">preco suspeito</span>
+                  </div>
+                )}
               </div>
 
               {/* Side-by-side: image left, operations right */}
@@ -599,9 +653,12 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
                   {currentGroup.rows.map((row) => {
                     const state = row.resolution?.state;
                     const isLinked = state === "linked";
-                    const borderColor = isLinked
-                      ? "border-green-500/20"
-                      : state === "global_unlinked"
+                    const priceWarning = getOcrUnitPriceWarning(row);
+                    const borderColor = priceWarning
+                      ? "border-red-500/30"
+                      : isLinked
+                        ? "border-green-500/20"
+                        : state === "global_unlinked"
                         ? "border-blue-500/20"
                         : "border-yellow-500/20";
 
@@ -652,6 +709,13 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
+
+                        {priceWarning && (
+                          <div className="mb-2 flex gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-300">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <span>{priceWarning}</span>
+                          </div>
+                        )}
 
                         {/* Bottom: fields grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -772,7 +836,7 @@ export default function OcrImportModal({ onClose, onSaved }: OcrImportModalProps
                 </button>
                 <button
                   onClick={confirmAndCreate}
-                  disabled={submitting || linkedRows.length === 0}
+                  disabled={submitting || linkedRows.length === 0 || rowsWithPriceWarnings.length > 0}
                   className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? "Criando..." : `Confirmar ${linkedRows.length} aporte(s)`}

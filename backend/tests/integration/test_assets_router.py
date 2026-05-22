@@ -177,6 +177,19 @@ async def test_delete_asset_with_position_blocks(auth_client, db, user):
     assert r.status_code == 409
 
 
+async def test_delete_asset_with_zero_net_position_removes_link(auth_client, db, user):
+    a = await make_asset(db, ticker="VEEV")
+    await link_user_asset(db, user_id=user.id, asset_id=a.id)
+    await make_purchase(db, user_id=user.id, asset_id=a.id, quantity=Decimal("1"))
+    await make_purchase(db, user_id=user.id, asset_id=a.id, quantity=Decimal("-1"))
+
+    r = await auth_client.delete(f"/api/assets/{a.id}")
+
+    assert r.status_code == 204
+    listed = await auth_client.get("/api/assets")
+    assert listed.json() == []
+
+
 async def test_delete_asset_unknown(auth_client):
     r = await auth_client.delete("/api/assets/9999")
     assert r.status_code == 404
