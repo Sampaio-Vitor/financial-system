@@ -563,6 +563,8 @@ export interface TickerResolution {
   ticker: string;
   asset_id: number | null;
   quote_currency: string | null;
+  current_price: number | null;
+  current_price_native: number | null;
   fx_rate_to_brl: number | null;
   state: "linked" | "global_unlinked" | "unknown";
 }

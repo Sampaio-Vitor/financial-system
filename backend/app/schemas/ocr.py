@@ -38,6 +38,8 @@ class TickerResolution(BaseModel):
     ticker: str
     asset_id: int | None = None
     quote_currency: str | None = None
+    current_price: float | None = None
+    current_price_native: float | None = None
     fx_rate_to_brl: float | None = None
     state: str  # "linked" | "global_unlinked" | "unknown"
 
