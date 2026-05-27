@@ -1,9 +1,10 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import { CurrencyCode, Market, PositionItem } from "@/types";
+import { apiFetch } from "@/lib/api";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
 import AssetDetailCharts from "@/components/asset-detail-charts";
@@ -21,6 +22,7 @@ interface PositionsTableProps {
   mode?: "focus" | "full";
   /** Currency in which monetary values are displayed. Defaults to BRL. */
   displayCurrency?: CurrencyCode;
+  onRefresh?: () => void;
 }
 
 type SortKey = keyof PositionItem;
@@ -68,11 +70,15 @@ export default function PositionsTable({
   metadataMode = "none",
   mode = "focus",
   displayCurrency = "BRL",
+  onRefresh,
 }: PositionsTableProps) {
   const sortOptions = mode === "focus" ? SORT_OPTIONS_FOCUS : SORT_OPTIONS_FULL;
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [ignoredAnomalyPurchaseIds, setIgnoredAnomalyPurchaseIds] = useState<Set<number>>(
+    () => new Set()
+  );
 
   const isNative = displayCurrency !== "BRL";
   const fmt = (value: number | null | undefined) =>
@@ -81,6 +87,21 @@ export default function PositionsTable({
     isNative ? p.market_value_native ?? null : p.market_value;
   const totalCostOf = (p: PositionItem) =>
     isNative ? p.total_cost_native ?? null : p.total_cost;
+  const visibleAnomalies = (p: PositionItem) =>
+    (p.price_anomalies ?? []).filter(
+      (anomaly) => !ignoredAnomalyPurchaseIds.has(anomaly.purchase_id)
+    );
+
+  const ignoreAnomaly = async (purchaseId: number) => {
+    await apiFetch(`/purchases/${purchaseId}/price-anomaly-ignore`, {
+      method: "POST",
+    });
+    setIgnoredAnomalyPurchaseIds((current) => {
+      const next = new Set(current);
+      next.add(purchaseId);
+      return next;
+    });
+  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -137,6 +158,41 @@ export default function PositionsTable({
     return position.type;
   };
 
+  const anomalyNotice = (position: PositionItem) => {
+    const anomalies = visibleAnomalies(position);
+    if (anomalies.length === 0) return null;
+    const currency = position.quote_currency ?? displayCurrency;
+    return (
+      <div className="border-b border-red-500/20 bg-red-500/10 px-4 py-3">
+        <div className="flex items-start gap-2 text-xs text-red-300">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <div className="space-y-2">
+            {anomalies.map((anomaly) => (
+              <div key={anomaly.purchase_id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  Aporte em {formatDate(anomaly.purchase_date)} registrado a{" "}
+                  {formatCurrency(anomaly.unit_price_native, currency)}, fora da faixa do dia{" "}
+                  {formatCurrency(anomaly.low_native, currency)} -{" "}
+                  {formatCurrency(anomaly.high_native, currency)}.
+                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    ignoreAnomaly(anomaly.purchase_id).catch(() => undefined);
+                  }}
+                  className="rounded border border-red-400/40 px-2 py-0.5 text-[11px] font-medium text-red-200 hover:bg-red-500/20"
+                >
+                  Ignorar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Mobile card view */}
@@ -166,7 +222,9 @@ export default function PositionsTable({
           </button>
         </div>
 
-        {sorted.map((p) => (
+        {sorted.map((p) => {
+          const anomalies = visibleAnomalies(p);
+          return (
           <div key={p.asset_id}>
             <MobileCard
               header={
@@ -182,6 +240,11 @@ export default function PositionsTable({
                     <span className="font-medium text-sm text-[var(--color-text-primary)]">
                       {p.ticker}
                     </span>
+                    {anomalies.length > 0 && (
+                      <span className="ml-1 inline-flex align-middle text-red-400" title="Possivel erro no preco de aporte">
+                        <AlertTriangle size={13} />
+                      </span>
+                    )}
                     {metadataLabel(p) && (
                       <div className="text-[10px] text-[var(--color-text-muted)]">
                         {metadataLabel(p)}
@@ -220,17 +283,20 @@ export default function PositionsTable({
             />
             {expandedId === p.asset_id && (
               <div className="mt-1 bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+                {anomalyNotice(p)}
                 <AssetDetailCharts
                   ticker={p.ticker}
                   assetId={p.asset_id}
                   currentPrice={p.current_price}
                   currentPriceNative={p.current_price_native}
                   displayCurrency={displayCurrency}
+                  onPriceHistoryLoaded={onRefresh}
                 />
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
 
         {/* Totals card */}
         <div className="bg-[var(--color-bg-card)] rounded-xl border-2 border-[var(--color-border)] p-4 mt-3">
@@ -309,7 +375,14 @@ export default function PositionsTable({
                           size={22}
                         />
                         <div className="min-w-0">
-                          <div>{p.ticker}</div>
+                          <div className="flex items-center gap-1">
+                            <span>{p.ticker}</span>
+                            {visibleAnomalies(p).length > 0 && (
+                              <span className="inline-flex text-red-400" title="Possivel erro no preco de aporte">
+                                <AlertTriangle size={14} />
+                              </span>
+                            )}
+                          </div>
                           {metadataLabel(p) && (
                             <div className="text-[10px] font-normal text-[var(--color-text-muted)]">
                               {metadataLabel(p)}
@@ -344,12 +417,14 @@ export default function PositionsTable({
                               : formatBRL(1)}
                           </span>
                         </div>
+                        {anomalyNotice(p)}
                         <AssetDetailCharts
                           ticker={p.ticker}
                           assetId={p.asset_id}
                           currentPrice={p.current_price}
                           currentPriceNative={p.current_price_native}
                           displayCurrency={displayCurrency}
+                          onPriceHistoryLoaded={onRefresh}
                         />
                       </td>
                     </tr>

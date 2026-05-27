@@ -16,6 +16,7 @@ from app.models.asset import (
     resolve_asset_metadata,
 )
 from app.models.purchase import Purchase
+from app.models.purchase_price_anomaly_ignore import PurchasePriceAnomalyIgnore
 from app.models.user import User
 from app.models.user_asset import UserAsset
 from app.schemas.purchase import (
@@ -277,6 +278,31 @@ async def create_purchase(
 
     result = await db.execute(select(Purchase).where(Purchase.id == purchase.id))
     return _to_response(result.scalar_one())
+
+
+@router.post("/{purchase_id}/price-anomaly-ignore", status_code=status.HTTP_204_NO_CONTENT)
+async def ignore_purchase_price_anomaly(
+    purchase_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Purchase.id).where(
+            Purchase.id == purchase_id,
+            Purchase.user_id == user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Purchase not found")
+
+    existing = await db.execute(
+        select(PurchasePriceAnomalyIgnore).where(
+            PurchasePriceAnomalyIgnore.purchase_id == purchase_id
+        )
+    )
+    if existing.scalar_one_or_none() is None:
+        db.add(PurchasePriceAnomalyIgnore(purchase_id=purchase_id, user_id=user.id))
+        await db.commit()
 
 
 @router.put("/{purchase_id}", response_model=PurchaseResponse)

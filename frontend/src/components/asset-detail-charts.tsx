@@ -24,6 +24,7 @@ interface AssetDetailChartsProps {
   currentPrice: number | null;
   currentPriceNative?: number | null;
   displayCurrency?: CurrencyCode;
+  onPriceHistoryLoaded?: () => void;
 }
 
 interface DividendPoint {
@@ -227,6 +228,7 @@ export default function AssetDetailCharts({
   currentPrice,
   currentPriceNative,
   displayCurrency = "BRL",
+  onPriceHistoryLoaded,
 }: AssetDetailChartsProps) {
   const isNativeView = displayCurrency !== "BRL";
   const fmt = (v: number | null | undefined) => formatCurrency(v, displayCurrency);
@@ -258,6 +260,7 @@ export default function AssetDetailCharts({
         setPurchases(purchasesData);
         setDividends(dividendsData.events);
         setPriceHistory(priceHistoryData);
+        onPriceHistoryLoaded?.();
       } catch {
         if (cancelled) return;
         setPurchases([]);
@@ -273,7 +276,7 @@ export default function AssetDetailCharts({
     return () => {
       cancelled = true;
     };
-  }, [assetId, ticker]);
+  }, [assetId, ticker, onPriceHistoryLoaded]);
 
   // Build chart data spanning the last 90 days regardless of how many quote
   // points the backend returned. The X axis is bound to [windowStart, windowEnd]

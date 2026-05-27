@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.asset import AllocationBucket, AssetClass, AssetType, CurrencyCode, Market
 from app.schemas.purchase import PurchaseResponse
@@ -13,6 +13,15 @@ class FixedIncomeTransactionItem(BaseModel):
     description: str
     date: date
     amount: Decimal
+
+
+class PurchasePriceAnomaly(BaseModel):
+    purchase_id: int
+    purchase_date: date
+    unit_price_native: Decimal
+    low_native: Decimal
+    high_native: Decimal
+    tolerance_pct: Decimal
 
 
 class PositionItem(BaseModel):
@@ -38,6 +47,8 @@ class PositionItem(BaseModel):
     market_value_native: Decimal | None = None
     pnl_native: Decimal | None = None
     pnl_pct_native: Decimal | None = None
+    price_anomaly_count: int = 0
+    price_anomalies: list[PurchasePriceAnomaly] = Field(default_factory=list)
 
 
 class ClassSummary(BaseModel):

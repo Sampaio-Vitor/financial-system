@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
 import { AssetClass, AssetType, CurrencyCode, Market, PositionsResponse } from "@/types";
 import PositionsTable from "@/components/positions-table";
@@ -26,7 +26,8 @@ export default function AssetListPage({
   const [loading, setLoading] = useState(true);
   const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>("BRL");
 
-  useEffect(() => {
+  const fetchPositions = useCallback((showLoading = true) => {
+    if (showLoading) setLoading(true);
     const params = new URLSearchParams();
     if (assetClass) params.set("asset_class", assetClass);
     if (market) params.set("market", market);
@@ -34,11 +35,21 @@ export default function AssetListPage({
       ? `/portfolio/${assetType}`
       : `/portfolio/positions?${params.toString()}`;
 
-    apiFetch<PositionsResponse>(endpoint)
+    return apiFetch<PositionsResponse>(endpoint)
       .then(setData)
       .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (showLoading) setLoading(false);
+      });
   }, [assetType, assetClass, market]);
+
+  useEffect(() => {
+    fetchPositions();
+  }, [fetchPositions]);
+
+  const refreshPositionsSilently = useCallback(() => {
+    void fetchPositions(false);
+  }, [fetchPositions]);
 
   const nativeCurrency = data?.native_currency ?? null;
   const showToggle = !!nativeCurrency && nativeCurrency !== "BRL";
@@ -104,6 +115,7 @@ export default function AssetListPage({
           totalPnlPct={useNative ? data.total_pnl_pct_native ?? null : data.total_pnl_pct}
           metadataMode={metadataMode}
           displayCurrency={useNative ? nativeCurrency! : "BRL"}
+          onRefresh={refreshPositionsSilently}
         />
       </div>
     </div>

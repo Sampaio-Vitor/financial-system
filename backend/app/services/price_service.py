@@ -45,8 +45,10 @@ def _extract_close(data, yf_ticker: str) -> float | None:
         return None
 
 
-def _extract_close_curve(data, yf_ticker: str) -> dict[date, Decimal]:
-    curve: dict[date, Decimal] = {}
+def _extract_price_curve(
+    data, yf_ticker: str
+) -> dict[date, tuple[Decimal, Decimal | None, Decimal | None]]:
+    curve: dict[date, tuple[Decimal, Decimal | None, Decimal | None]] = {}
     if data is None or data.empty:
         return curve
     try:
@@ -55,17 +57,46 @@ def _extract_close_curve(data, yf_ticker: str) -> dict[date, Decimal]:
             close_data[yf_ticker] if hasattr(close_data, "columns") else close_data
         )
     except Exception:
-        logger.warning("Failed to extract close curve for %s", yf_ticker, exc_info=True)
+        logger.warning("Failed to extract price curve for %s", yf_ticker, exc_info=True)
         return curve
+
+    def _field_series(field: str):
+        try:
+            field_data = data[field]
+            return (
+                field_data[yf_ticker]
+                if hasattr(field_data, "columns")
+                else field_data
+            )
+        except Exception:
+            return None
+
+    low_series = _field_series("Low")
+    high_series = _field_series("High")
 
     for idx, val in close_series.items():
         try:
-            native_price = float(val)
-            if native_price > 0:
-                curve[idx.date()] = Decimal(str(round(native_price, 6)))
+            close_price = float(val)
+            low_value = low_series.get(idx) if low_series is not None else None
+            high_value = high_series.get(idx) if high_series is not None else None
+            low_price = float(low_value) if low_value is not None else 0
+            high_price = float(high_value) if high_value is not None else 0
+            if close_price > 0:
+                curve[idx.date()] = (
+                    Decimal(str(round(close_price, 6))),
+                    Decimal(str(round(low_price, 6))) if low_price > 0 else None,
+                    Decimal(str(round(high_price, 6))) if high_price > 0 else None,
+                )
         except Exception:
             continue
     return curve
+
+
+def _extract_close_curve(data, yf_ticker: str) -> dict[date, Decimal]:
+    return {
+        quote_date: values[0]
+        for quote_date, values in _extract_price_curve(data, yf_ticker).items()
+    }
 
 
 async def _get_system_setting(db: AsyncSession, key: str) -> str | None:
@@ -460,8 +491,12 @@ class PriceService:
         native_price: Decimal,
         fx_rate: Decimal,
         quote_currency: CurrencyCode,
+        low_native: Decimal | None = None,
+        high_native: Decimal | None = None,
     ) -> None:
         brl_price = round(native_price * fx_rate, 4)
+        low_brl = round(low_native * fx_rate, 4) if low_native is not None else None
+        high_brl = round(high_native * fx_rate, 4) if high_native is not None else None
         existing_result = await self.db.execute(
             select(AssetPriceHistory).where(
                 AssetPriceHistory.asset_id == asset.id,
@@ -473,6 +508,12 @@ class PriceService:
         if row:
             row.yf_ticker = yf_ticker
             row.price_native = round(native_price, 6)
+            if low_native is not None:
+                row.low_native = round(low_native, 6)
+                row.low_brl = low_brl
+            if high_native is not None:
+                row.high_native = round(high_native, 6)
+                row.high_brl = high_brl
             row.fx_rate_to_brl = round(fx_rate, 6)
             row.price_brl = brl_price
             row.quote_currency = quote_currency
@@ -486,8 +527,12 @@ class PriceService:
                 yf_ticker=yf_ticker,
                 date=quote_date,
                 price_native=round(native_price, 6),
+                low_native=round(low_native, 6) if low_native is not None else None,
+                high_native=round(high_native, 6) if high_native is not None else None,
                 fx_rate_to_brl=round(fx_rate, 6),
                 price_brl=brl_price,
+                low_brl=low_brl,
+                high_brl=high_brl,
                 quote_currency=quote_currency,
                 source="yfinance",
                 created_at=now,
@@ -509,7 +554,9 @@ class PriceService:
         cached = await self._get_cached_asset_price_history(
             asset.id, start_date, end_date
         )
-        missing_ranges = self._missing_cache_ranges(cached, start_date, end_date)
+        missing_ranges = self._missing_cache_ranges(
+            cached, start_date, end_date, require_ohlc=True
+        )
 
         for missing_start, missing_end in missing_ranges:
             await self._fetch_and_cache_asset_history(
@@ -535,7 +582,12 @@ class PriceService:
         ]
 
     def _missing_cache_ranges(
-        self, cached: list[AssetPriceHistory], start_date: date, end_date: date
+        self,
+        cached: list[AssetPriceHistory],
+        start_date: date,
+        end_date: date,
+        *,
+        require_ohlc: bool,
     ) -> list[tuple[date, date]]:
         if not cached:
             return [(start_date, end_date)]
@@ -549,6 +601,14 @@ class PriceService:
             ranges.append((start_date, first_cached - timedelta(days=1)))
         if last_cached < end_date:
             ranges.append((last_cached + timedelta(days=1), end_date))
+        if require_ohlc:
+            missing_ohlc_dates = [
+                row.date
+                for row in cached
+                if row.low_native is None or row.high_native is None
+            ]
+            if missing_ohlc_dates:
+                ranges.append((min(missing_ohlc_dates), max(missing_ohlc_dates)))
         return ranges
 
     async def _get_cached_asset_price_history(
@@ -586,8 +646,8 @@ class PriceService:
             )
             return
 
-        native_curve = _extract_close_curve(data, yf_ticker)
-        if not native_curve:
+        price_curve = _extract_price_curve(data, yf_ticker)
+        if not price_curve:
             return
 
         fx_curve: dict[date, Decimal] = {}
@@ -609,7 +669,7 @@ class PriceService:
                     "Failed to fetch historical FX for %s", fx_ticker, exc_info=True
                 )
 
-        for quote_date, native_price in native_curve.items():
+        for quote_date, (native_price, low_native, high_native) in price_curve.items():
             fx_rate = (
                 Decimal("1")
                 if quote_currency == CurrencyCode.BRL
@@ -624,5 +684,38 @@ class PriceService:
                 native_price=native_price,
                 fx_rate=fx_rate,
                 quote_currency=quote_currency,
+                low_native=low_native,
+                high_native=high_native,
             )
         await self.db.flush()
+
+    async def ensure_asset_price_history_range(
+        self, asset: Asset, start_date: date, end_date: date, *, require_ohlc: bool
+    ) -> list[AssetPriceHistory]:
+        _asset_class, _market, quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        cached = await self._get_cached_asset_price_history(
+            asset.id, start_date, end_date
+        )
+        missing_ranges = self._missing_cache_ranges(
+            cached, start_date, end_date, require_ohlc=require_ohlc
+        )
+        yf_ticker = self._price_symbol_for(asset)
+        for missing_start, missing_end in missing_ranges:
+            await self._fetch_and_cache_asset_history(
+                asset=asset,
+                yf_ticker=yf_ticker,
+                quote_currency=quote_currency,
+                start_date=missing_start,
+                end_date=missing_end,
+            )
+        if missing_ranges:
+            await self.db.flush()
+            cached = await self._get_cached_asset_price_history(
+                asset.id, start_date, end_date
+            )
+        return cached

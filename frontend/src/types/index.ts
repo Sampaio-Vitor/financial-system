@@ -184,6 +184,17 @@ export interface PositionItem {
   market_value_native?: number | null;
   pnl_native?: number | null;
   pnl_pct_native?: number | null;
+  price_anomaly_count?: number;
+  price_anomalies?: PurchasePriceAnomaly[];
+}
+
+export interface PurchasePriceAnomaly {
+  purchase_id: number;
+  purchase_date: string;
+  unit_price_native: number;
+  low_native: number;
+  high_native: number;
+  tolerance_pct: number;
 }
 
 export interface PositionsResponse {

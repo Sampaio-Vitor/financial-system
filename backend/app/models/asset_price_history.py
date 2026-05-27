@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy import (
     Date,
@@ -30,8 +31,12 @@ class AssetPriceHistory(Base):
     yf_ticker: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     price_native: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    low_native: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    high_native: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
     fx_rate_to_brl: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     price_brl: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    low_brl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    high_brl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
     quote_currency: Mapped[CurrencyCode] = mapped_column(Enum(CurrencyCode), nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="yfinance")
     created_at: Mapped[datetime] = mapped_column(

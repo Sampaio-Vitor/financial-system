@@ -13,7 +13,11 @@ pytestmark = pytest.mark.integration
 
 def _yf_frame(values: dict) -> pd.DataFrame:
     return pd.DataFrame(
-        {"Close": list(values.values())},
+        {
+            "Close": list(values.values()),
+            "Low": [v * 0.99 for v in values.values()],
+            "High": [v * 1.01 for v in values.values()],
+        },
         index=pd.to_datetime(list(values.keys())),
     )
 

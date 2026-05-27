@@ -18,6 +18,8 @@ from app.models.asset import (
     resolve_asset_metadata,
 )
 from app.models.purchase import Purchase
+from app.models.asset_price_history import AssetPriceHistory
+from app.models.purchase_price_anomaly_ignore import PurchasePriceAnomalyIgnore
 from app.models.fixed_income import FixedIncomePosition
 from app.models.fixed_income_interest import FixedIncomeInterest
 from app.models.fixed_income_redemption import FixedIncomeRedemption
@@ -33,11 +35,13 @@ from app.schemas.portfolio import (
     FixedIncomeTransactionItem,
     PositionsResponse,
     PositionItem,
+    PurchasePriceAnomaly,
 )
 from app.schemas.purchase import PurchaseResponse
 from app.schemas.dividend import DividendEventResponse
 
 router = APIRouter()
+PRICE_ANOMALY_TOLERANCE_PCT = Decimal("0.02")
 
 
 async def _get_targets(db: AsyncSession, user: User) -> dict[AllocationBucket, Decimal]:
@@ -45,6 +49,56 @@ async def _get_targets(db: AsyncSession, user: User) -> dict[AllocationBucket, D
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
     )
     return {t.allocation_bucket: t.target_pct for t in result.scalars().all()}
+
+
+async def _get_purchase_price_anomalies(
+    db: AsyncSession, user: User, asset_ids: list[int]
+) -> dict[int, list[PurchasePriceAnomaly]]:
+    if not asset_ids:
+        return {}
+
+    result = await db.execute(
+        select(Purchase, AssetPriceHistory)
+        .join(
+            AssetPriceHistory,
+            (AssetPriceHistory.asset_id == Purchase.asset_id)
+            & (AssetPriceHistory.date == Purchase.purchase_date),
+        )
+        .outerjoin(
+            PurchasePriceAnomalyIgnore,
+            PurchasePriceAnomalyIgnore.purchase_id == Purchase.id,
+        )
+        .where(
+            Purchase.user_id == user.id,
+            Purchase.asset_id.in_(asset_ids),
+            Purchase.quantity > 0,
+            PurchasePriceAnomalyIgnore.id.is_(None),
+            AssetPriceHistory.low_native.is_not(None),
+            AssetPriceHistory.high_native.is_not(None),
+        )
+    )
+
+    by_asset: dict[int, list[PurchasePriceAnomaly]] = {}
+    for purchase, history in result.all():
+        low = history.low_native
+        high = history.high_native
+        if low is None or high is None:
+            continue
+        lower_bound = low * (Decimal("1") - PRICE_ANOMALY_TOLERANCE_PCT)
+        upper_bound = high * (Decimal("1") + PRICE_ANOMALY_TOLERANCE_PCT)
+        if lower_bound <= purchase.unit_price_native <= upper_bound:
+            continue
+        by_asset.setdefault(purchase.asset_id, []).append(
+            PurchasePriceAnomaly(
+                purchase_id=purchase.id,
+                purchase_date=purchase.purchase_date,
+                unit_price_native=purchase.unit_price_native,
+                low_native=low,
+                high_native=high,
+                tolerance_pct=PRICE_ANOMALY_TOLERANCE_PCT,
+            )
+        )
+    return by_asset
 
 
 async def _build_variable_income_positions(
@@ -99,7 +153,38 @@ async def _build_variable_income_positions(
     selected_market: Market | None = market
     selected_bucket: AllocationBucket | None = None
 
-    for row in result.all():
+    rows = result.all()
+    candidate_asset_ids: list[int] = []
+    for row in rows:
+        (
+            asset_id,
+            _ticker,
+            _desc,
+            a_type,
+            a_asset_class,
+            a_market,
+            a_quote_currency,
+            *_rest,
+        ) = row
+        resolved_class, resolved_market, _resolved_currency = resolve_asset_metadata(
+            legacy_type=a_type,
+            asset_class=a_asset_class,
+            market=a_market,
+            quote_currency=a_quote_currency,
+        )
+        if legacy_type is not None and a_type != legacy_type:
+            continue
+        if asset_class is not None and resolved_class != asset_class:
+            continue
+        if market is not None and resolved_market != market:
+            continue
+        candidate_asset_ids.append(asset_id)
+
+    anomalies_by_asset = await _get_purchase_price_anomalies(
+        db, user, candidate_asset_ids
+    )
+
+    for row in rows:
         (
             asset_id,
             ticker,
@@ -150,6 +235,7 @@ async def _build_variable_income_positions(
             if pnl_native is not None and cost_native
             else None
         )
+        price_anomalies = anomalies_by_asset.get(asset_id, [])
 
         positions.append(PositionItem(
             asset_id=asset_id,
@@ -174,6 +260,8 @@ async def _build_variable_income_positions(
             market_value_native=market_value_native,
             pnl_native=round(pnl_native, 4) if pnl_native is not None else None,
             pnl_pct_native=round(pnl_pct_native, 2) if pnl_pct_native is not None else None,
+            price_anomaly_count=len(price_anomalies),
+            price_anomalies=price_anomalies,
         ))
         total_cost += cost
         if market_value:

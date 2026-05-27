@@ -18,9 +18,22 @@ pytestmark = pytest.mark.unit
 def _yf_frame(values: dict, ticker: str | None = None) -> pd.DataFrame:
     index = pd.to_datetime(list(values.keys()))
     if ticker:
-        columns = pd.MultiIndex.from_tuples([("Close", ticker)])
-        return pd.DataFrame([[v] for v in values.values()], index=index, columns=columns)
-    return pd.DataFrame({"Close": list(values.values())}, index=index)
+        columns = pd.MultiIndex.from_tuples(
+            [("Close", ticker), ("Low", ticker), ("High", ticker)]
+        )
+        return pd.DataFrame(
+            [[v, v * 0.99, v * 1.01] for v in values.values()],
+            index=index,
+            columns=columns,
+        )
+    return pd.DataFrame(
+        {
+            "Close": list(values.values()),
+            "Low": [v * 0.99 for v in values.values()],
+            "High": [v * 1.01 for v in values.values()],
+        },
+        index=index,
+    )
 
 
 async def test_price_history_cache_downloads_and_stores_first_request(db, user, monkeypatch):
@@ -81,6 +94,8 @@ async def test_price_history_cache_downloads_and_stores_first_request(db, user, 
     ).scalars().all()
     assert len(rows) == 2
     assert rows[0].quote_currency == CurrencyCode.USD
+    assert rows[0].low_native is not None
+    assert rows[0].high_native is not None
 
 
 async def test_price_history_cache_second_request_uses_database(db, user, monkeypatch):
@@ -139,8 +154,12 @@ async def test_price_history_cache_fetches_trailing_missing_range(db, user, monk
             yf_ticker="VOO",
             date=today - timedelta(days=2),
             price_native=Decimal("400"),
+            low_native=Decimal("396"),
+            high_native=Decimal("404"),
             fx_rate_to_brl=Decimal("5"),
             price_brl=Decimal("2000"),
+            low_brl=Decimal("1980"),
+            high_brl=Decimal("2020"),
             quote_currency=CurrencyCode.USD,
         )
     )
