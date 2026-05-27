@@ -12,6 +12,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 import { apiFetch } from "@/lib/api";
 import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
@@ -503,6 +504,20 @@ export default function AssetDetailCharts({
               connectNulls
               isAnimationActive={false}
             />
+            {averagePrice != null && (
+              <ReferenceLine
+                y={averagePrice}
+                stroke="var(--color-text-muted)"
+                strokeDasharray="4 4"
+                strokeWidth={1.5}
+                label={{
+                  value: `PM ${fmt(averagePrice)}`,
+                  position: "insideTopRight",
+                  fill: "var(--color-text-muted)",
+                  fontSize: 10,
+                }}
+              />
+            )}
             {purchaseScatterData.length > 0 && (
               <Scatter
                 data={purchaseScatterData}
