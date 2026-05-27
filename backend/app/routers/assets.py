@@ -811,16 +811,22 @@ async def get_asset_price_history(
     try:
         close_series = data["Close"][yf_ticker]
         for idx, val in close_series.items():
-            price = float(val)
-            if price <= 0:
+            native_price = float(val)
+            if native_price <= 0:
                 continue
             if quote_currency != CurrencyCode.BRL:
                 fx_rate = fx_rates_by_date.get(idx.date(), fallback_fx_rate)
                 if not fx_rate:
                     continue
-                price *= fx_rate
+                price_brl = native_price * fx_rate
+            else:
+                price_brl = native_price
             date_str = idx.strftime("%Y-%m-%d")
-            points.append({"date": date_str, "price": round(price, 2)})
+            points.append({
+                "date": date_str,
+                "price": round(price_brl, 2),
+                "price_native": round(native_price, 4),
+            })
     except Exception:
         return []
 

@@ -224,6 +224,8 @@ export default function PositionsTable({
                   ticker={p.ticker}
                   assetId={p.asset_id}
                   currentPrice={p.current_price}
+                  currentPriceNative={p.current_price_native}
+                  displayCurrency={displayCurrency}
                 />
               </div>
             )}
@@ -342,7 +344,13 @@ export default function PositionsTable({
                               : formatBRL(1)}
                           </span>
                         </div>
-                        <AssetDetailCharts ticker={p.ticker} assetId={p.asset_id} currentPrice={p.current_price} />
+                        <AssetDetailCharts
+                          ticker={p.ticker}
+                          assetId={p.asset_id}
+                          currentPrice={p.current_price}
+                          currentPriceNative={p.current_price_native}
+                          displayCurrency={displayCurrency}
+                        />
                       </td>
                     </tr>
                   )}

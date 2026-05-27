@@ -21,6 +21,8 @@ interface AssetDetailChartsProps {
   ticker: string;
   assetId: number;
   currentPrice: number | null;
+  currentPriceNative?: number | null;
+  displayCurrency?: CurrencyCode;
 }
 
 interface DividendPoint {
@@ -32,12 +34,14 @@ interface DividendPoint {
 interface HistoricalPricePoint {
   date: string;
   price: number;
+  price_native?: number | null;
 }
 
 interface ChartDataPoint {
   date: string;
   label: string;
-  price: number;
+  timestamp: number;
+  price: number | null;
   purchases?: PurchaseMarker[];
 }
 
@@ -53,7 +57,7 @@ interface PurchaseMarker {
   kind: "buy" | "sell";
 }
 
-function calculateAveragePrice(purchases: Purchase[]): number | null {
+function calculateAveragePrice(purchases: Purchase[], native = false): number | null {
   if (purchases.length === 0) return null;
 
   let totalCost = 0;
@@ -65,7 +69,7 @@ function calculateAveragePrice(purchases: Purchase[]): number | null {
 
   for (const p of sorted) {
     const qty = Number(p.quantity);
-    const cost = Number(p.total_value);
+    const cost = Number(native ? p.total_value_native : p.total_value);
 
     if (qty > 0) {
       totalCost += cost;
@@ -136,9 +140,10 @@ interface CustomTooltipProps {
     value: number;
     payload: ChartDataPoint;
   }>;
+  displayCurrency?: CurrencyCode;
 }
 
-function CustomCotacaoTooltip({ active, payload }: CustomTooltipProps) {
+function CustomCotacaoTooltip({ active, payload, displayCurrency = "BRL" }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
@@ -204,7 +209,7 @@ function CustomCotacaoTooltip({ active, payload }: CustomTooltipProps) {
           {data.label}
         </p>
         <p style={{ color: "var(--color-text-primary)" }}>
-          Cotação: {formatBRL(priceValue)}
+          Cotação: {formatCurrency(priceValue, displayCurrency)}
         </p>
       </div>
     );
@@ -219,7 +224,15 @@ export default function AssetDetailCharts({
   ticker,
   assetId,
   currentPrice,
+  currentPriceNative,
+  displayCurrency = "BRL",
 }: AssetDetailChartsProps) {
+  const isNativeView = displayCurrency !== "BRL";
+  const fmt = (v: number | null | undefined) => formatCurrency(v, displayCurrency);
+  const yTickFormatter = (v: number) => {
+    const s = fmt(v);
+    return isNativeView ? s : s.replace("R$ ", "R$");
+  };
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [dividends, setDividends] = useState<DividendEventListResponse["events"]>([]);
   const [priceHistory, setPriceHistory] = useState<HistoricalPricePoint[]>([]);
@@ -261,9 +274,15 @@ export default function AssetDetailCharts({
     };
   }, [assetId, ticker]);
 
-  // Build chart data with purchase markers
-  const chartData = useMemo(() => {
-    if (priceHistory.length === 0) return [];
+  // Build chart data spanning the last 90 days regardless of how many quote
+  // points the backend returned. The X axis is bound to [windowStart, windowEnd]
+  // so the visible range is always 90 days; missing quotes render as gaps
+  // (connectNulls on the Line bridges them visually).
+  const { chartData, windowStart, windowEnd, yDomain } = useMemo(() => {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 90);
 
     const purchaseMarkers = buildPurchaseMarkers(purchases, ticker);
     const purchasesByDate = new Map<string, PurchaseMarker[]>();
@@ -273,53 +292,67 @@ export default function AssetDetailCharts({
       purchasesByDate.set(pm.date, sameDatePurchases);
     }
 
-    // Build price history data first. Keep the line series pure: do not insert
-    // synthetic null-price purchase rows, because those can break/hide the Area path.
-    const data: ChartDataPoint[] = priceHistory
-      .map((p) => {
-        const d = new Date(p.date + "T00:00:00");
-        return {
-          date: p.date,
-          label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-          price: p.price,
-          purchases: purchasesByDate.get(p.date),
-        };
-      })
-      .sort((a, b) => a.date.localeCompare(b.date));
+    const toLabel = (d: Date) =>
+      d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
-    // If a buy happened on a weekend/holiday inside the visible 90-day window,
-    // attach it to the nearest available trading day. Ignore purchases outside the
-    // displayed quote range so old buys do not stretch or pollute the chart.
-    const firstDate = data[0]?.date;
-    const lastDate = data[data.length - 1]?.date;
-    for (const [date, datePurchases] of purchasesByDate) {
-      if (!firstDate || !lastDate || date < firstDate || date > lastDate) continue;
-      if (data.some((d) => d.date === date)) continue;
-
-      const purchaseTime = new Date(date + "T00:00:00").getTime();
-      let nearestIndex = 0;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-
-      data.forEach((point, index) => {
-        const pointTime = new Date(point.date + "T00:00:00").getTime();
-        const distance = Math.abs(pointTime - purchaseTime);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
-
-      data[nearestIndex].purchases = [
-        ...(data[nearestIndex].purchases ?? []),
-        ...datePurchases,
-      ];
+    // Index price history by date string for O(1) lookup.
+    const priceByDate = new Map<string, number>();
+    for (const p of priceHistory) {
+      const value = isNativeView ? p.price_native : p.price;
+      if (value != null) priceByDate.set(p.date, Number(value));
     }
 
-    return data;
-  }, [priceHistory, purchases, ticker]);
+    // Marker Y position: native trade price when in native view, otherwise BRL unit_price.
+    const markerYForPurchase = (m: PurchaseMarker) =>
+      isNativeView ? m.unitPriceNative : m.price;
 
-  // Average price calculation
-  const averagePrice = useMemo(() => calculateAveragePrice(purchases), [purchases]);
+    // One row per calendar day in the window. Days without a quote get price=null
+    // and the Line connects across them.
+    const data: ChartDataPoint[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const iso = cursor.toISOString().slice(0, 10);
+      data.push({
+        date: iso,
+        label: toLabel(cursor),
+        timestamp: cursor.getTime(),
+        price: priceByDate.get(iso) ?? null,
+        purchases: purchasesByDate.get(iso),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    // Compute Y domain from line prices, marker prices and current price so the
+    // axis always shows everything visible with a small padding.
+    const values: number[] = [];
+    for (const d of data) if (d.price != null) values.push(d.price);
+    for (const pm of purchaseMarkers) values.push(markerYForPurchase(pm));
+    const currentForView = isNativeView ? currentPriceNative : currentPrice;
+    if (currentForView != null) values.push(Number(currentForView));
+
+    let domain: [number | string, number | string] = ["auto", "auto"];
+    if (values.length > 0) {
+      const minV = Math.min(...values);
+      const maxV = Math.max(...values);
+      const range = maxV - minV;
+      const pad = range > 0 ? range * 0.1 : Math.max(1, maxV * 0.02);
+      domain = [Math.max(0, minV - pad), maxV + pad];
+    }
+
+    return {
+      chartData: data,
+      windowStart: start.getTime(),
+      windowEnd: end.getTime(),
+      yDomain: domain,
+    };
+  }, [priceHistory, purchases, ticker, isNativeView, currentPrice, currentPriceNative]);
+
+  // Average price calculation — in display currency.
+  const averagePrice = useMemo(
+    () => calculateAveragePrice(purchases, isNativeView),
+    [purchases, isNativeView],
+  );
+  const currentPriceForView = isNativeView ? currentPriceNative ?? null : currentPrice;
 
   if (loading) {
     return (
@@ -331,7 +364,7 @@ export default function AssetDetailCharts({
 
   const dividendData = buildDividendData(dividends);
   const hasDividends = dividendData.length > 0;
-  const hasPriceHistory = chartData.length > 0;
+  const hasPriceHistory = priceHistory.length > 0;
 
   if (!hasDividends && !hasPriceHistory) {
     return (
@@ -359,14 +392,20 @@ export default function AssetDetailCharts({
     dividendos: "bg-[#10b981]",
   };
 
-  // Scatter data for purchase markers (one marker per transaction date)
+  // Scatter data for purchase markers (one marker per transaction date).
+  // Y-position uses the average purchase unit price so dots sit on the buy level,
+  // independent of whether a quote exists for that day. Picks native/BRL based
+  // on the active currency.
   const purchaseScatterData = chartData
     .filter((d) => d.purchases && d.purchases.length > 0)
     .map((d) => ({
       ...d,
       markerPrice:
-        d.purchases!.reduce((sum, purchase) => sum + purchase.price, 0) /
-        d.purchases!.length,
+        d.purchases!.reduce(
+          (sum, purchase) =>
+            sum + (isNativeView ? purchase.unitPriceNative : purchase.price),
+          0,
+        ) / d.purchases!.length,
     }));
 
   return (
@@ -398,13 +437,13 @@ export default function AssetDetailCharts({
             {averagePrice != null && (
               <div className="text-right">
                 <span className="text-[var(--color-text-muted)]">Preço médio: </span>
-                <span className="font-semibold text-[var(--color-text-primary)]">{formatBRL(averagePrice)}</span>
+                <span className="font-semibold text-[var(--color-text-primary)]">{fmt(averagePrice)}</span>
               </div>
             )}
-            {currentPrice != null && (
+            {currentPriceForView != null && (
               <div className="text-right">
                 <span className="text-[var(--color-text-muted)]">Cotação atual: </span>
-                <span className="font-semibold text-[var(--color-text-primary)]">{formatBRL(currentPrice)}</span>
+                <span className="font-semibold text-[var(--color-text-primary)]">{fmt(currentPriceForView)}</span>
               </div>
             )}
           </div>
@@ -423,21 +462,30 @@ export default function AssetDetailCharts({
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
             <XAxis
-              dataKey="label"
+              dataKey="timestamp"
+              type="number"
+              scale="time"
+              domain={[windowStart, windowEnd]}
               tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
               axisLine={false}
               tickLine={false}
-              interval="preserveStartEnd"
+              tickFormatter={(v: number) =>
+                new Date(v).toLocaleDateString("pt-BR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                })
+              }
+              allowDuplicatedCategory={false}
             />
             <YAxis
               tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v) => formatBRL(v).replace("R$\u00a0", "R$")}
+              tickFormatter={yTickFormatter}
               width={80}
-              domain={["auto", "auto"]}
+              domain={yDomain}
             />
-            <Tooltip content={<CustomCotacaoTooltip />} />
+            <Tooltip content={<CustomCotacaoTooltip displayCurrency={displayCurrency} />} />
             <Area
               type="monotone"
               dataKey="price"
