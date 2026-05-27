@@ -179,6 +179,11 @@ export interface PositionItem {
   market_value: number | null;
   pnl: number | null;
   pnl_pct: number | null;
+  total_cost_native?: number | null;
+  avg_price_native?: number | null;
+  market_value_native?: number | null;
+  pnl_native?: number | null;
+  pnl_pct_native?: number | null;
 }
 
 export interface PositionsResponse {
@@ -191,6 +196,11 @@ export interface PositionsResponse {
   total_market_value: number;
   total_pnl: number;
   total_pnl_pct: number | null;
+  total_cost_native?: number | null;
+  total_market_value_native?: number | null;
+  total_pnl_native?: number | null;
+  total_pnl_pct_native?: number | null;
+  native_currency?: CurrencyCode | null;
 }
 
 export interface AllocationTarget {

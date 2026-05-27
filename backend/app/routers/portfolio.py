@@ -12,6 +12,7 @@ from app.models.asset import (
     Asset,
     AssetClass,
     AssetType,
+    CurrencyCode,
     Market,
     asset_bucket_for,
     resolve_asset_metadata,
@@ -68,6 +69,7 @@ async def _build_variable_income_positions(
             Asset.fx_rate_to_brl,
             func.sum(Purchase.quantity).label("total_qty"),
             func.sum(Purchase.total_value).label("total_cost"),
+            func.sum(Purchase.total_value_native).label("total_cost_native"),
             func.min(Purchase.purchase_date).label("first_date"),
         )
         .join(Asset, Purchase.asset_id == Asset.id)
@@ -90,6 +92,9 @@ async def _build_variable_income_positions(
     positions = []
     total_cost = Decimal("0")
     total_market = Decimal("0")
+    total_cost_native_sum = Decimal("0")
+    total_market_native_sum = Decimal("0")
+    native_currencies: set[CurrencyCode] = set()
     selected_v2: AssetClass | None = asset_class
     selected_market: Market | None = market
     selected_bucket: AllocationBucket | None = None
@@ -108,6 +113,7 @@ async def _build_variable_income_positions(
             fx_rate_to_brl,
             qty,
             cost,
+            cost_native,
             first_date,
         ) = row
         resolved_class, resolved_market, resolved_currency = resolve_asset_metadata(
@@ -130,6 +136,21 @@ async def _build_variable_income_positions(
         bucket = asset_bucket_for(resolved_class, resolved_market)
         selected_bucket = selected_bucket or bucket
 
+        avg_price_native = (cost_native / qty) if (cost_native is not None and qty) else None
+        market_value_native = (
+            native_price * qty if native_price and qty else None
+        )
+        pnl_native = (
+            market_value_native - cost_native
+            if market_value_native is not None and cost_native is not None
+            else None
+        )
+        pnl_pct_native = (
+            (pnl_native / cost_native * 100)
+            if pnl_native is not None and cost_native
+            else None
+        )
+
         positions.append(PositionItem(
             asset_id=asset_id,
             ticker=ticker,
@@ -148,13 +169,30 @@ async def _build_variable_income_positions(
             market_value=market_value,
             pnl=round(pnl, 4) if pnl else None,
             pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
+            total_cost_native=cost_native,
+            avg_price_native=round(avg_price_native, 4) if avg_price_native is not None else None,
+            market_value_native=market_value_native,
+            pnl_native=round(pnl_native, 4) if pnl_native is not None else None,
+            pnl_pct_native=round(pnl_pct_native, 2) if pnl_pct_native is not None else None,
         ))
         total_cost += cost
         if market_value:
             total_market += market_value
+        if resolved_currency:
+            native_currencies.add(resolved_currency)
+        if cost_native is not None:
+            total_cost_native_sum += cost_native
+        if market_value_native is not None:
+            total_market_native_sum += market_value_native
 
     total_pnl = total_market - total_cost
     response_type = legacy_type or AssetType.STOCK
+
+    unique_native = (
+        next(iter(native_currencies)) if len(native_currencies) == 1 else None
+    )
+    has_native = unique_native is not None
+    total_pnl_native = total_market_native_sum - total_cost_native_sum
     return PositionsResponse(
         asset_class=response_type,
         asset_class_v2=selected_v2,
@@ -165,6 +203,15 @@ async def _build_variable_income_positions(
         total_market_value=total_market,
         total_pnl=total_pnl,
         total_pnl_pct=(total_pnl / total_cost * 100) if total_cost else None,
+        total_cost_native=total_cost_native_sum if has_native else None,
+        total_market_value_native=total_market_native_sum if has_native else None,
+        total_pnl_native=total_pnl_native if has_native else None,
+        total_pnl_pct_native=(
+            (total_pnl_native / total_cost_native_sum * 100)
+            if has_native and total_cost_native_sum
+            else None
+        ),
+        native_currency=unique_native,
     )
 
 

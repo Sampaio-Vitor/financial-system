@@ -19,6 +19,8 @@ interface PositionsTableProps {
   usdBrlRate?: number;
   /** "focus" hides P&L and current price from default view; "full" shows everything */
   mode?: "focus" | "full";
+  /** Currency in which monetary values are displayed. Defaults to BRL. */
+  displayCurrency?: CurrencyCode;
 }
 
 type SortKey = keyof PositionItem;
@@ -65,11 +67,20 @@ export default function PositionsTable({
   totalMarketValue,
   metadataMode = "none",
   mode = "focus",
+  displayCurrency = "BRL",
 }: PositionsTableProps) {
   const sortOptions = mode === "focus" ? SORT_OPTIONS_FOCUS : SORT_OPTIONS_FULL;
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const isNative = displayCurrency !== "BRL";
+  const fmt = (value: number | null | undefined) =>
+    formatCurrency(value, displayCurrency);
+  const marketValueOf = (p: PositionItem) =>
+    isNative ? p.market_value_native ?? null : p.market_value;
+  const totalCostOf = (p: PositionItem) =>
+    isNative ? p.total_cost_native ?? null : p.total_cost;
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -185,11 +196,11 @@ export default function PositionsTable({
                 </span>
               }
               bodyItems={[
-                { label: "Valor na Carteira", value: formatBRL(p.market_value) },
+                { label: "Valor na Carteira", value: fmt(marketValueOf(p)) },
                 { label: "Quantidade", value: formatQuantity(p.quantity) },
               ]}
               expandedItems={[
-                { label: "Custo Total", value: formatBRL(p.total_cost) },
+                { label: "Custo Total", value: fmt(totalCostOf(p)) },
                 { label: "Primeira Compra", value: formatDate(p.first_date) },
                 ...(p.quote_currency && p.quote_currency !== "BRL"
                   ? [{ label: "Moeda / FX", value: `${CURRENCY_LABELS[p.quote_currency]} • ${formatBRL(p.fx_rate_to_brl)}` }]
@@ -228,13 +239,13 @@ export default function PositionsTable({
             <div>
               <span className="text-xs text-[var(--color-text-muted)]">Valor na Carteira</span>
               <div className="text-sm font-medium text-[var(--color-text-secondary)]">
-                {formatBRL(totalMarketValue)}
+                {fmt(totalMarketValue)}
               </div>
             </div>
             <div>
               <span className="text-xs text-[var(--color-text-muted)]">Custo Total</span>
               <div className="text-sm font-medium text-[var(--color-text-secondary)]">
-                {formatBRL(totalCost)}
+                {fmt(totalCost)}
               </div>
             </div>
           </div>
@@ -262,8 +273,8 @@ export default function PositionsTable({
             <tr className="border-b-2 border-[var(--color-border)] font-bold text-sm">
               <td className="px-3 py-2">TOTAL</td>
               <td className="px-3 py-2"></td>
-              <td className="px-3 py-2">{formatBRL(totalMarketValue)}</td>
-              <td className="px-3 py-2">{formatBRL(totalCost)}</td>
+              <td className="px-3 py-2">{fmt(totalMarketValue)}</td>
+              <td className="px-3 py-2">{fmt(totalCost)}</td>
               <td className="px-3 py-2"></td>
             </tr>
           </thead>
@@ -310,8 +321,8 @@ export default function PositionsTable({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
-                    <td className="px-3 py-2.5">{formatBRL(p.market_value)}</td>
-                    <td className="px-3 py-2.5">{formatBRL(p.total_cost)}</td>
+                    <td className="px-3 py-2.5">{fmt(marketValueOf(p))}</td>
+                    <td className="px-3 py-2.5">{fmt(totalCostOf(p))}</td>
                     <td className="px-3 py-2.5">{formatDate(p.first_date)}</td>
                   </tr>
                   {isExpanded && (

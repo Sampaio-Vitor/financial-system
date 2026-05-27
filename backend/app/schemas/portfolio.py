@@ -33,6 +33,11 @@ class PositionItem(BaseModel):
     market_value: Decimal | None
     pnl: Decimal | None
     pnl_pct: Decimal | None
+    total_cost_native: Decimal | None = None
+    avg_price_native: Decimal | None = None
+    market_value_native: Decimal | None = None
+    pnl_native: Decimal | None = None
+    pnl_pct_native: Decimal | None = None
 
 
 class ClassSummary(BaseModel):
@@ -77,3 +82,8 @@ class PositionsResponse(BaseModel):
     total_market_value: Decimal
     total_pnl: Decimal
     total_pnl_pct: Decimal | None
+    total_cost_native: Decimal | None = None
+    total_market_value_native: Decimal | None = None
+    total_pnl_native: Decimal | None = None
+    total_pnl_pct_native: Decimal | None = None
+    native_currency: CurrencyCode | None = None
