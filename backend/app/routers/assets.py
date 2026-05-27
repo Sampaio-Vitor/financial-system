@@ -1,11 +1,8 @@
-import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-import yfinance as yf
 from decimal import Decimal
 
 from app.database import get_db
@@ -27,6 +24,7 @@ from app.models.fixed_income import FixedIncomePosition
 from app.models.user_asset import UserAsset
 from app.models.user import User
 from app.services.portfolio_service import get_bucket_values
+from app.services.price_service import PriceService
 from app.schemas.asset import (
     AssetCreate,
     AssetUpdate,
@@ -749,85 +747,4 @@ async def get_asset_price_history(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    asset_class, market, quote_currency = resolve_asset_metadata(
-        legacy_type=asset.type,
-        asset_class=asset.asset_class,
-        market=asset.market,
-        quote_currency=asset.quote_currency,
-    )
-    if asset.price_symbol:
-        yf_ticker = asset.price_symbol
-    elif market == Market.BR and asset_class in (
-        AssetClass.STOCK,
-        AssetClass.ETF,
-        AssetClass.FII,
-    ):
-        yf_ticker = f"{asset.ticker}.SA"
-    else:
-        yf_ticker = asset.ticker
-
-    loop = asyncio.get_running_loop()
-    try:
-        data = await loop.run_in_executor(
-            None,
-            lambda: yf.download(yf_ticker, period=f"{days}d", progress=False),
-        )
-    except Exception:
-        return []
-
-    if data.empty:
-        return []
-
-    fx_rates_by_date: dict[object, float] = {}
-    if quote_currency != CurrencyCode.BRL:
-        from app.services.price_service import FX_TICKERS, _get_system_setting
-
-        rate_str = await _get_system_setting(
-            db, f"{quote_currency.value.lower()}_brl_rate"
-        )
-        fallback_fx_rate = float(rate_str) if rate_str else None
-        try:
-            fx_data = await loop.run_in_executor(
-                None,
-                lambda: yf.download(
-                    FX_TICKERS[quote_currency],
-                    period=f"{days}d",
-                    progress=False,
-                ),
-            )
-            if not fx_data.empty:
-                fx_close_series = fx_data["Close"][FX_TICKERS[quote_currency]]
-                fx_rates_by_date = {
-                    idx.date(): float(val)
-                    for idx, val in fx_close_series.items()
-                    if float(val) > 0
-                }
-        except Exception:
-            fx_rates_by_date = {}
-    else:
-        fallback_fx_rate = 1.0
-
-    points = []
-    try:
-        close_series = data["Close"][yf_ticker]
-        for idx, val in close_series.items():
-            native_price = float(val)
-            if native_price <= 0:
-                continue
-            if quote_currency != CurrencyCode.BRL:
-                fx_rate = fx_rates_by_date.get(idx.date(), fallback_fx_rate)
-                if not fx_rate:
-                    continue
-                price_brl = native_price * fx_rate
-            else:
-                price_brl = native_price
-            date_str = idx.strftime("%Y-%m-%d")
-            points.append({
-                "date": date_str,
-                "price": round(price_brl, 2),
-                "price_native": round(native_price, 4),
-            })
-    except Exception:
-        return []
-
-    return points
+    return await PriceService(db, user).get_asset_price_history(asset, days)

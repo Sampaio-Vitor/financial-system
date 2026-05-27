@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset, CurrencyCode, Market, resolve_asset_metadata
+from app.models.asset_price_history import AssetPriceHistory
 from app.models.system_setting import SystemSetting
 from app.models.user import User
 from app.services.tesouro_price_service import fetch_tesouro_price
@@ -42,6 +43,29 @@ def _extract_close(data, yf_ticker: str) -> float | None:
     except Exception:
         logger.warning("Failed to extract close price", exc_info=True)
         return None
+
+
+def _extract_close_curve(data, yf_ticker: str) -> dict[date, Decimal]:
+    curve: dict[date, Decimal] = {}
+    if data is None or data.empty:
+        return curve
+    try:
+        close_data = data["Close"]
+        close_series = (
+            close_data[yf_ticker] if hasattr(close_data, "columns") else close_data
+        )
+    except Exception:
+        logger.warning("Failed to extract close curve for %s", yf_ticker, exc_info=True)
+        return curve
+
+    for idx, val in close_series.items():
+        try:
+            native_price = float(val)
+            if native_price > 0:
+                curve[idx.date()] = Decimal(str(round(native_price, 6)))
+        except Exception:
+            continue
+    return curve
 
 
 async def _get_system_setting(db: AsyncSession, key: str) -> str | None:
@@ -229,6 +253,14 @@ class PriceService:
                     asset.fx_rate_to_brl = fx_rate
                     asset.current_price = round(native_price * fx_rate, 4)
                     asset.price_updated_at = now
+                    await self._upsert_asset_price_history(
+                        asset=asset,
+                        yf_ticker=yf_ticker,
+                        quote_date=now.date(),
+                        native_price=native_price,
+                        fx_rate=fx_rate,
+                        quote_currency=quote_currency,
+                    )
                     results["updated"].append(
                         {"ticker": asset.ticker, "price": float(asset.current_price)}
                     )
@@ -266,6 +298,14 @@ class PriceService:
                     asset.fx_rate_to_brl = fx_rate
                     asset.current_price = round(native_price * fx_rate, 4)
                     asset.price_updated_at = now
+                    await self._upsert_asset_price_history(
+                        asset=asset,
+                        yf_ticker=yf_ticker,
+                        quote_date=now.date(),
+                        native_price=native_price,
+                        fx_rate=fx_rate,
+                        quote_currency=quote_currency,
+                    )
                     results["updated"].append(
                         {"ticker": asset.ticker, "price": float(asset.current_price)}
                     )
@@ -410,3 +450,179 @@ class PriceService:
     ) -> dict[int, Decimal]:
         details = await self.fetch_historical_price_details(assets, target_date)
         return {asset_id: item[2] for asset_id, item in details.items()}
+
+    async def _upsert_asset_price_history(
+        self,
+        *,
+        asset: Asset,
+        yf_ticker: str,
+        quote_date: date,
+        native_price: Decimal,
+        fx_rate: Decimal,
+        quote_currency: CurrencyCode,
+    ) -> None:
+        brl_price = round(native_price * fx_rate, 4)
+        existing_result = await self.db.execute(
+            select(AssetPriceHistory).where(
+                AssetPriceHistory.asset_id == asset.id,
+                AssetPriceHistory.date == quote_date,
+            )
+        )
+        row = existing_result.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if row:
+            row.yf_ticker = yf_ticker
+            row.price_native = round(native_price, 6)
+            row.fx_rate_to_brl = round(fx_rate, 6)
+            row.price_brl = brl_price
+            row.quote_currency = quote_currency
+            row.source = "yfinance"
+            row.updated_at = now
+            return
+
+        self.db.add(
+            AssetPriceHistory(
+                asset_id=asset.id,
+                yf_ticker=yf_ticker,
+                date=quote_date,
+                price_native=round(native_price, 6),
+                fx_rate_to_brl=round(fx_rate, 6),
+                price_brl=brl_price,
+                quote_currency=quote_currency,
+                source="yfinance",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    async def get_asset_price_history(self, asset: Asset, days: int) -> list[dict]:
+        _asset_class, _market, quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        yf_ticker = self._price_symbol_for(asset)
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=days)
+
+        cached = await self._get_cached_asset_price_history(
+            asset.id, start_date, end_date
+        )
+        missing_ranges = self._missing_cache_ranges(cached, start_date, end_date)
+
+        for missing_start, missing_end in missing_ranges:
+            await self._fetch_and_cache_asset_history(
+                asset=asset,
+                yf_ticker=yf_ticker,
+                quote_currency=quote_currency,
+                start_date=missing_start,
+                end_date=missing_end,
+            )
+        if missing_ranges:
+            cached = await self._get_cached_asset_price_history(
+                asset.id, start_date, end_date
+            )
+            await self.db.commit()
+
+        return [
+            {
+                "date": row.date.isoformat(),
+                "price": float(round(row.price_brl, 2)),
+                "price_native": float(round(row.price_native, 4)),
+            }
+            for row in sorted(cached, key=lambda item: item.date)
+        ]
+
+    def _missing_cache_ranges(
+        self, cached: list[AssetPriceHistory], start_date: date, end_date: date
+    ) -> list[tuple[date, date]]:
+        if not cached:
+            return [(start_date, end_date)]
+
+        cached_dates = [row.date for row in cached]
+        ranges: list[tuple[date, date]] = []
+        first_cached = min(cached_dates)
+        last_cached = max(cached_dates)
+
+        if first_cached > start_date:
+            ranges.append((start_date, first_cached - timedelta(days=1)))
+        if last_cached < end_date:
+            ranges.append((last_cached + timedelta(days=1), end_date))
+        return ranges
+
+    async def _get_cached_asset_price_history(
+        self, asset_id: int, start_date: date, end_date: date
+    ) -> list[AssetPriceHistory]:
+        result = await self.db.execute(
+            select(AssetPriceHistory)
+            .where(
+                AssetPriceHistory.asset_id == asset_id,
+                AssetPriceHistory.date >= start_date,
+                AssetPriceHistory.date <= end_date,
+            )
+            .order_by(AssetPriceHistory.date)
+        )
+        return list(result.scalars().all())
+
+    async def _fetch_and_cache_asset_history(
+        self,
+        *,
+        asset: Asset,
+        yf_ticker: str,
+        quote_currency: CurrencyCode,
+        start_date: date,
+        end_date: date,
+    ) -> None:
+        # yfinance's end date is exclusive.
+        fetch_end = end_date + timedelta(days=1)
+        try:
+            data = await self._download_yf(
+                yf_ticker, start=start_date.isoformat(), end=fetch_end.isoformat()
+            )
+        except Exception:
+            logger.warning(
+                "Failed to fetch historical prices for %s", yf_ticker, exc_info=True
+            )
+            return
+
+        native_curve = _extract_close_curve(data, yf_ticker)
+        if not native_curve:
+            return
+
+        fx_curve: dict[date, Decimal] = {}
+        fallback_fx_rate: Decimal | None = None
+        if quote_currency == CurrencyCode.BRL:
+            fallback_fx_rate = Decimal("1")
+        else:
+            fallback_fx_rate = await self._get_rate_to_brl(quote_currency)
+            fx_ticker = FX_TICKERS[quote_currency]
+            try:
+                fx_data = await self._download_yf(
+                    fx_ticker,
+                    start=start_date.isoformat(),
+                    end=fetch_end.isoformat(),
+                )
+                fx_curve = _extract_close_curve(fx_data, fx_ticker)
+            except Exception:
+                logger.warning(
+                    "Failed to fetch historical FX for %s", fx_ticker, exc_info=True
+                )
+
+        for quote_date, native_price in native_curve.items():
+            fx_rate = (
+                Decimal("1")
+                if quote_currency == CurrencyCode.BRL
+                else fx_curve.get(quote_date, fallback_fx_rate)
+            )
+            if not fx_rate:
+                continue
+            await self._upsert_asset_price_history(
+                asset=asset,
+                yf_ticker=yf_ticker,
+                quote_date=quote_date,
+                native_price=native_price,
+                fx_rate=fx_rate,
+                quote_currency=quote_currency,
+            )
+        await self.db.flush()
