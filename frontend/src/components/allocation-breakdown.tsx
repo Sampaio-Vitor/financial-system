@@ -47,23 +47,24 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
           const barWidth = Math.min((pct / scale) * 100, 100);
           const markerPos = Math.min((targetPct / scale) * 100, 100);
           const targetValue = (targetPct / 100) * patrimonioInvestivel;
+          const diffPct = pct - targetPct;
 
           return (
             <div key={bucket}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2.5">
+                <div className="flex min-w-0 items-center gap-2.5">
                   <div
                     className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                     style={{ backgroundColor: `${color}20` }}
                   >
                     <Icon size={16} style={{ color }} />
                   </div>
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="truncate text-sm font-medium">{item.label}</span>
                 </div>
-                <span className="text-xs md:text-sm tabular-nums">
-                  <span className="font-semibold">{formatBRL(item.value)}</span>
-                  <span className="text-[var(--color-text-muted)]"> / {formatBRL(targetValue)}</span>
-                </span>
+                <div className="shrink-0 text-right tabular-nums">
+                  <div className="text-sm font-semibold">{pct.toFixed(1)}%</div>
+                  <div className="text-[10px] text-[var(--color-text-muted)]">meta {targetPct.toFixed(0)}%</div>
+                </div>
               </div>
 
               <div className="relative h-1.5 rounded-full bg-[var(--color-border)]/40">
@@ -88,6 +89,18 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                 )}
               </div>
 
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
+                <span className="truncate">{formatBRL(item.value)}</span>
+                <span className={`shrink-0 tabular-nums ${
+                  Math.abs(diffPct) < 0.1
+                    ? "text-[var(--color-text-muted)]"
+                    : diffPct > 0
+                      ? "text-[var(--color-warning)]"
+                      : "text-[var(--color-text-secondary)]"
+                }`}>
+                  {diffPct > 0 ? "+" : ""}{diffPct.toFixed(1)} p.p.
+                </span>
+              </div>
             </div>
           );
         })}
@@ -104,21 +117,19 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
               return (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                         style={{ backgroundColor: `${reserveColor}20` }}
                       >
                         <Shield size={16} style={{ color: reserveColor }} />
                       </div>
-                      <span className="text-sm font-medium">Reserva Financeira</span>
+                      <span className="truncate text-sm font-medium">Reserva Financeira</span>
                     </div>
-                    <span className="text-sm tabular-nums">
-                      <span className="font-semibold">{formatBRL(reserva)}</span>
-                      {target && (
-                        <span className="text-[var(--color-text-muted)]"> / {formatBRL(target)}</span>
-                      )}
-                    </span>
+                    <div className="shrink-0 text-right tabular-nums">
+                      <div className="text-sm font-semibold">{target ? `${Math.round((reserva / target) * 100)}%` : "100%"}</div>
+                      {target && <div className="text-[10px] text-[var(--color-text-muted)]">meta</div>}
+                    </div>
                   </div>
 
                   <div className="relative h-1.5 rounded-full bg-[var(--color-border)]/40">
@@ -141,6 +152,10 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
                     )}
                   </div>
 
+                  <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
+                    <span className="truncate">{formatBRL(reserva)}</span>
+                    {target && <span className="shrink-0 tabular-nums">meta {formatBRL(target)}</span>}
+                  </div>
                 </div>
               );
             })()}

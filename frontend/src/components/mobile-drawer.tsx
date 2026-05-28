@@ -63,12 +63,12 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
 
       {/* Drawer */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[var(--color-bg-sidebar)] border-r border-[var(--color-border)] flex flex-col transition-transform duration-300 ease-in-out md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)] flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-sidebar)] transition-transform duration-300 ease-in-out md:hidden ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Header */}
-        <div className="border-b border-[var(--color-border)] py-4 px-4 flex items-center justify-between">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
           <div className="flex items-center gap-3">
             <img src="/logo.svg" alt="CofrinhoGordinho" className="w-10 h-10" />
             <span className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -77,14 +77,15 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
+            aria-label="Fechar menu"
+            className="flex size-10 items-center justify-center rounded-xl text-[var(--color-text-secondary)] transition-colors active:bg-[var(--color-bg-card)]"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 space-y-1.5 overflow-y-auto p-4 pb-6">
           {navItems.map((item) => {
             if (item.children) {
               const isChildActive = hasActiveChild(item.children);
@@ -95,7 +96,7 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
                 <div key={item.label}>
                   <button
                     onClick={() => setAtivosExpanded(!ativosExpanded)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 w-full ${
+                    className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                       isChildActive
                         ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                         : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
@@ -124,7 +125,7 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
                           <Link
                             key={child.href}
                             href={child.href}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                               isActive
                                 ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] shadow-sm"
                                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
@@ -153,7 +154,7 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
                     ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] shadow-sm"
                     : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
@@ -170,11 +171,11 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-[var(--color-border)] space-y-1.5">
+        <div className="space-y-1.5 border-t border-[var(--color-border)] p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           {isAdmin && (
             <Link
               href="/admin"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 w-full ${
+              className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 pathname.startsWith("/admin")
                   ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] shadow-sm"
                   : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
@@ -189,7 +190,7 @@ export default function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
           )}
           <button
             onClick={logout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)] transition-all duration-200 w-full"
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-text-secondary)] transition-all duration-200 hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
           >
             <LogOut size={18} className="text-[var(--color-text-muted)]" />
             <span>Sair</span>

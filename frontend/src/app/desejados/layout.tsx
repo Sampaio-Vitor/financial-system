@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import MobileHeader from "@/components/mobile-header";
 import MobileDrawer from "@/components/mobile-drawer";
+import MobileBottomNav from "@/components/mobile-bottom-nav";
 import { useAuth } from "@/lib/auth";
 
 export default function DesejadosLayout({
@@ -42,11 +43,12 @@ export default function DesejadosLayout({
         {/* Mobile header */}
         <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
 
-        <main className="flex-1 p-4 md:p-8 overflow-auto transition-all duration-300">
+        <main className="flex-1 overflow-auto px-3 pb-24 pt-4 transition-all duration-300 sm:px-4 md:p-8">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>
         </main>
+        <MobileBottomNav />
       </div>
     </div>
   );

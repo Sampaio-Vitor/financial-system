@@ -196,17 +196,17 @@ export default function PositionsTable({
   return (
     <>
       {/* Mobile card view */}
-      <div className="md:hidden space-y-2 max-h-[792px] overflow-y-auto">
+      <div className="space-y-3 md:hidden">
         {/* Sort control */}
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xs text-[var(--color-text-muted)]">Ordenar:</span>
+        <div className="sticky top-[3.5rem] z-20 -mx-3 flex items-center gap-2 border-y border-[var(--color-border)] bg-[var(--color-bg-main)]/95 px-3 py-2 backdrop-blur">
+          <span className="text-xs font-medium text-[var(--color-text-muted)]">Ordenar</span>
           <select
             value={sortKey}
             onChange={(e) => {
               setSortKey(e.target.value as SortKey);
               setSortAsc(true);
             }}
-            className="text-xs bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-[var(--color-text-secondary)]"
+            className="min-h-9 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
           >
             {sortOptions.map((opt) => (
               <option key={opt.key} value={opt.key}>
@@ -216,7 +216,7 @@ export default function PositionsTable({
           </select>
           <button
             onClick={() => setSortAsc(!sortAsc)}
-            className="text-xs px-2 py-1.5 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-muted)]"
+            className="min-h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)]"
           >
             {sortAsc ? "\u2191" : "\u2193"}
           </button>
@@ -237,7 +237,7 @@ export default function PositionsTable({
                     size={22}
                   />
                   <div className="min-w-0">
-                    <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                    <span className="block truncate text-sm font-semibold text-[var(--color-text-primary)]">
                       {p.ticker}
                     </span>
                     {anomalies.length > 0 && (
@@ -246,7 +246,7 @@ export default function PositionsTable({
                       </span>
                     )}
                     {metadataLabel(p) && (
-                      <div className="text-[10px] text-[var(--color-text-muted)]">
+                      <div className="truncate text-[10px] text-[var(--color-text-muted)]">
                         {metadataLabel(p)}
                       </div>
                     )}
@@ -254,7 +254,7 @@ export default function PositionsTable({
                 </>
               }
               badge={
-                <span className="text-xs font-medium text-[var(--color-text-muted)]">
+                <span className="rounded-md bg-[var(--color-bg-main)] px-2 py-1 text-[10px] font-semibold text-[var(--color-text-muted)]">
                   {badgeLabel(p)}
                 </span>
               }
@@ -275,14 +275,14 @@ export default function PositionsTable({
                     e.stopPropagation();
                     setExpandedId(expandedId === p.asset_id ? null : p.asset_id);
                   }}
-                  className="p-1.5 rounded-lg hover:bg-[var(--color-bg-main)] text-[var(--color-text-muted)] transition-colors text-xs"
+                  className="min-h-9 rounded-lg border border-[var(--color-border)] px-2.5 text-xs font-medium text-[var(--color-text-muted)] transition-colors active:bg-[var(--color-bg-main)]"
                 >
-                  Graficos
+                  Gráficos
                 </button>
               }
             />
             {expandedId === p.asset_id && (
-              <div className="mt-1 bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+              <div className="mt-2 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)]">
                 {anomalyNotice(p)}
                 <AssetDetailCharts
                   ticker={p.ticker}
@@ -299,20 +299,20 @@ export default function PositionsTable({
         })}
 
         {/* Totals card */}
-        <div className="bg-[var(--color-bg-card)] rounded-xl border-2 border-[var(--color-border)] p-4 mt-3">
+        <div className="mt-3 rounded-xl border border-[var(--color-accent)]/35 bg-[var(--color-bg-card)] p-4">
           <div className="flex items-center justify-between">
             <span className="font-bold text-sm text-[var(--color-text-primary)]">TOTAL</span>
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-            <div>
-              <span className="text-xs text-[var(--color-text-muted)]">Valor na Carteira</span>
-              <div className="text-sm font-medium text-[var(--color-text-secondary)]">
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+            <div className="min-w-0">
+              <span className="block text-[11px] text-[var(--color-text-muted)]">Valor na Carteira</span>
+              <div className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
                 {fmt(totalMarketValue)}
               </div>
             </div>
-            <div>
-              <span className="text-xs text-[var(--color-text-muted)]">Custo Total</span>
-              <div className="text-sm font-medium text-[var(--color-text-secondary)]">
+            <div className="min-w-0">
+              <span className="block text-[11px] text-[var(--color-text-muted)]">Custo Total</span>
+              <div className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
                 {fmt(totalCost)}
               </div>
             </div>

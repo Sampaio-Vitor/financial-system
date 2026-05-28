@@ -62,18 +62,18 @@ export default function AssetListPage({
 
   if (loading) {
     return (
-      <div>
-        <h1 className="text-xl font-bold mb-6">{title}</h1>
-        <div className="animate-pulse h-96 rounded-xl bg-[var(--color-bg-card)]" />
+      <div className="space-y-4">
+        <h1 className="text-xl font-bold md:text-2xl">{title}</h1>
+        <div className="h-96 animate-pulse rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)]" />
       </div>
     );
   }
 
   if (!data || data.positions.length === 0) {
     return (
-      <div>
-        <h1 className="text-xl font-bold mb-6">{title}</h1>
-        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-8 text-center">
+      <div className="space-y-4">
+        <h1 className="text-xl font-bold md:text-2xl">{title}</h1>
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-6 text-center md:p-8">
           <p className="text-[var(--color-text-muted)]">{emptyMessage}</p>
         </div>
       </div>
@@ -83,16 +83,21 @@ export default function AssetListPage({
   const useNative = displayCurrency !== "BRL" && showToggle;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-xl font-bold">{title}</h1>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold md:text-2xl">{title}</h1>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)] md:hidden">
+            {data.positions.length} ativos na carteira
+          </p>
+        </div>
         {showToggle && nativeCurrency && (
-          <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
+          <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 sm:flex sm:bg-[var(--color-bg-main)]">
             {(["BRL", nativeCurrency] as CurrencyCode[]).map((code) => (
               <button
                 key={code}
                 onClick={() => setDisplayCurrency(code)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                className={`min-h-9 rounded-md px-4 py-1.5 text-xs font-medium transition-all ${
                   displayCurrency === code
                     ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                     : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -104,7 +109,7 @@ export default function AssetListPage({
           </div>
         )}
       </div>
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4">
+      <div className="md:rounded-xl md:border md:border-[var(--color-border)] md:bg-[var(--color-bg-card)] md:p-4">
         <PositionsTable
           positions={data.positions}
           totalCost={useNative ? data.total_cost_native ?? 0 : data.total_cost}

@@ -58,6 +58,7 @@ export default function AportesPage() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const dateFromRef = useRef<HTMLInputElement>(null);
   const dateToRef = useRef<HTMLInputElement>(null);
@@ -248,28 +249,31 @@ export default function AportesPage() {
   const editCalculatedUnitPrice = calculateUnitPrice(editData.total_value, editData.quantity) || 0;
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4rem)] min-h-0">
+    <div className="flex min-h-0 flex-col md:h-[calc(100dvh-4rem)]">
       <ConfirmDialog />
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4 shrink-0">
-        <h1 className="text-xl font-bold">Aportes em Renda Variavel</h1>
-        <div className="flex gap-2">
+      <div className="mb-3 flex shrink-0 flex-col gap-2 md:mb-4 md:flex-row md:items-center md:justify-between md:gap-3">
+        <h1 className="text-lg font-bold md:text-xl">Aportes em Renda Variavel</h1>
+        <div className="grid grid-cols-3 gap-2 md:flex">
           <button
             onClick={() => setShowOcrImport(true)}
-            className="flex-1 md:flex-none px-4 py-2 rounded-lg border border-[var(--color-accent)] text-[var(--color-accent)] text-xs md:text-sm font-medium hover:bg-[var(--color-accent)]/10 transition-colors"
+            className="min-h-10 rounded-lg border border-[var(--color-accent)] px-2 py-2 text-[11px] font-medium leading-tight text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)]/10 md:flex-none md:px-4 md:text-sm"
           >
-            Importar via Imagem
+            <span className="md:hidden">Importar</span>
+            <span className="hidden md:inline">Importar via Imagem</span>
           </button>
           <button
             onClick={() => { setFormMode("compra"); setShowForm(true); }}
-            className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+            className="min-h-10 rounded-lg bg-[var(--color-accent)] px-2 py-2 text-[11px] font-medium leading-tight text-white transition-opacity hover:opacity-90 md:flex-none md:px-4 md:text-sm"
           >
-            Registrar Aporte
+            <span className="md:hidden">Aporte</span>
+            <span className="hidden md:inline">Registrar Aporte</span>
           </button>
           <button
             onClick={() => { setFormMode("venda"); setShowForm(true); }}
-            className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-[var(--color-negative)] text-white text-xs md:text-sm font-medium hover:opacity-90 transition-opacity"
+            className="min-h-10 rounded-lg bg-[var(--color-negative)] px-2 py-2 text-[11px] font-medium leading-tight text-white transition-opacity hover:opacity-90 md:flex-none md:px-4 md:text-sm"
           >
-            Registrar Venda
+            <span className="md:hidden">Venda</span>
+            <span className="hidden md:inline">Registrar Venda</span>
           </button>
         </div>
       </div>
@@ -297,8 +301,21 @@ export default function AportesPage() {
 
       {/* Filters */}
       {!loading && (totalCount > 0 || hasActiveFilters) && (
-        <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 mb-3 shrink-0">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="mb-2 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 md:mb-3 md:p-4">
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((open) => !open)}
+            className="flex w-full items-center justify-between gap-3 text-left md:hidden"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-primary)]">Filtros</span>
+              <span className="text-xs text-[var(--color-text-muted)]">{totalCount} registros encontrados</span>
+            </span>
+            <span className="text-xs font-medium text-[var(--color-accent)]">
+              {mobileFiltersOpen ? "Ocultar" : hasActiveFilters ? "Editar" : "Mostrar"}
+            </span>
+          </button>
+          <div className={`${mobileFiltersOpen ? "grid" : "hidden"} mt-3 grid-cols-2 gap-2 md:mt-0 md:grid md:grid-cols-3 md:gap-3 lg:grid-cols-5`}>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-[var(--color-text-muted)]">Tipo</label>
               <select
@@ -356,8 +373,8 @@ export default function AportesPage() {
             </div>
           </div>
           {(hasActiveFilters || totalCount > 0) && (
-            <div className="mt-3 pt-3 border-t border-[var(--color-border)]/50 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-              <div>{totalCount} registros encontrados</div>
+            <div className={`${mobileFiltersOpen ? "flex" : "hidden"} mt-3 items-center justify-between border-t border-[var(--color-border)]/50 pt-3 text-xs text-[var(--color-text-muted)] md:flex`}>
+              <div className="hidden md:block">{totalCount} registros encontrados</div>
               <button
                 onClick={clearFilters}
                 className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
@@ -369,7 +386,7 @@ export default function AportesPage() {
         </div>
       )}
 
-      <div className="bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] p-4 flex flex-col min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 md:p-4">
         {loading ? (
           <div className="animate-pulse h-64" />
         ) : totalCount === 0 && !hasActiveFilters ? (
@@ -382,7 +399,10 @@ export default function AportesPage() {
           </p>
         ) : (
           <>
-          <div className="mb-3 flex items-center justify-end shrink-0">
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-3 md:mb-3 md:justify-end">
+            <div className="text-xs text-[var(--color-text-muted)] md:hidden">
+              {pageStart}-{pageEnd} de {totalCount}
+            </div>
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 py-2 text-right">
               <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
                 Subtotal exibido
@@ -394,15 +414,19 @@ export default function AportesPage() {
           </div>
 
           {/* Mobile card view */}
-          <div className="md:hidden space-y-2 p-2 flex-1 overflow-auto min-h-0">
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-auto md:hidden">
             {purchases.map((p) => {
               const isSale = p.quantity < 0;
               return (
-                <div key={p.id} className={`bg-[var(--color-bg-main)] rounded-xl border border-[var(--color-border)] p-4 ${isSale ? "border-[var(--color-negative)]/30" : ""}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                <div key={p.id} className={`rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-2.5 ${isSale ? "border-[var(--color-negative)]/30" : ""}`}>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5">
                       <TickerLogo ticker={p.ticker!} type={p.asset_type!} assetClass={p.asset_class} market={p.market} size={20} />
-                      <span className="font-medium text-sm">{p.ticker}</span>
+                        <span className="truncate text-sm font-semibold">{p.ticker}</span>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">
+                          {TYPE_LABELS[p.asset_type!] || p.asset_type || p.asset_class}
+                        </span>
                       {isForeignCurrency(p.trade_currency) && (
                         <span className="text-[9px] font-semibold px-1 py-px rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">{p.trade_currency}</span>
                       )}
@@ -411,44 +435,41 @@ export default function AportesPage() {
                           VENDA
                         </span>
                       )}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                        {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className={`text-right text-sm font-semibold ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-primary)]"}`}>
+                      {renderTotalValue(p)}
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2 border-t border-[var(--color-border)]/50 pt-2">
+                    <div>
+                      <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Qtd</span>
+                      <div className={`text-sm leading-tight ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-secondary)]"}`}>
+                        {formatQuantity(p.quantity)}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Unit.</span>
+                      <div className="flex flex-wrap items-baseline gap-x-1 text-sm leading-tight text-[var(--color-text-secondary)]">{renderUnitPrice(p)}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center justify-end gap-1">
                       <button
                         onClick={() => startEdit(p)}
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                        className="flex size-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-secondary)]"
+                        aria-label={`Editar ${p.ticker}`}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
                       </button>
                       <button
                         onClick={() => handleDelete(p.id)}
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-negative)] transition-colors"
+                        className="flex size-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-negative)]"
+                        aria-label={`Remover ${p.ticker}`}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                       </button>
-                    </div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-                    <div>
-                      <span className="text-xs text-[var(--color-text-muted)]">Data</span>
-                      <div className="text-sm text-[var(--color-text-secondary)]">
-                        {new Date(p.purchase_date + "T00:00:00").toLocaleDateString("pt-BR")}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-[var(--color-text-muted)]">Total</span>
-                      <div className={`text-sm font-medium flex flex-wrap items-baseline gap-x-1 ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-secondary)]"}`}>
-                        {renderTotalValue(p)}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-[var(--color-text-muted)]">Qtd</span>
-                      <div className={`text-sm ${isSale ? "text-[var(--color-negative)]" : "text-[var(--color-text-secondary)]"}`}>
-                        {formatQuantity(p.quantity)}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-[var(--color-text-muted)]">Preco Unit.</span>
-                      <div className="text-sm text-[var(--color-text-secondary)] flex flex-wrap items-baseline gap-x-1">{renderUnitPrice(p)}</div>
                     </div>
                   </div>
                 </div>
@@ -634,12 +655,12 @@ export default function AportesPage() {
             </table>
           </div>
 
-          <div className="mt-3 flex flex-col gap-3 border-t border-[var(--color-border)]/50 pt-3 md:flex-row md:items-center md:justify-between shrink-0">
-            <div className="text-xs text-[var(--color-text-muted)]">
+          <div className="mt-3 flex shrink-0 flex-col gap-3 border-t border-[var(--color-border)]/50 pt-3 md:flex-row md:items-center md:justify-between">
+            <div className="hidden text-xs text-[var(--color-text-muted)] md:block">
               Exibindo {pageStart}-{pageEnd} de {totalCount} registros
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="flex items-center justify-between gap-2 text-xs text-[var(--color-text-muted)] sm:justify-start">
                 <span>Por página</span>
                 <select
                   value={pageSize}
@@ -655,7 +676,7 @@ export default function AportesPage() {
                   <option value={50}>50</option>
                 </select>
               </label>
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                 <button
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                   disabled={page <= 1}
@@ -663,7 +684,7 @@ export default function AportesPage() {
                 >
                   Anterior
                 </button>
-                <span className="min-w-24 text-center text-sm text-[var(--color-text-muted)]">
+                <span className="min-w-20 text-center text-sm text-[var(--color-text-muted)] md:min-w-24">
                   Página {page} de {totalPages}
                 </span>
                 <button

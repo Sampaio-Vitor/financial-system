@@ -7,6 +7,7 @@ import PatrimonioChart from "@/components/patrimonio-chart";
 import AporteVsPatrimonioChart from "@/components/aporte-vs-patrimonio-chart";
 import AllocationDonutChart from "@/components/allocation-donut-chart";
 import GeographyDonutChart from "@/components/geography-donut-chart";
+import { RefreshCw } from "lucide-react";
 
 const TABS = [
   { key: "evolucao", label: "Evolução" },
@@ -121,14 +122,29 @@ export default function ChartTabs({
   };
 
   return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-4 md:p-6 shadow-sm flex flex-col min-h-[300px] md:min-h-[400px]">
-      <div className="flex items-center justify-between mb-4 md:mb-6">
-        <div className="flex gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
+    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-3 md:p-6 shadow-sm flex flex-col min-h-[330px] md:min-h-[400px]">
+      <div className="mb-4 md:mb-6 md:flex md:flex-wrap md:items-center md:justify-between md:gap-3">
+        <label className="block md:hidden">
+          <span className="sr-only">Selecionar gráfico</span>
+          <select
+            value={activeTab}
+            onChange={(event) => setActiveTab(event.target.value as TabKey)}
+            className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 text-sm font-medium text-[var(--color-text-primary)]"
+          >
+            {TABS.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="hidden max-w-full flex-wrap gap-1 rounded-lg bg-[var(--color-bg-main)] p-1 md:flex md:min-w-0 md:flex-1">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              className={`min-h-9 shrink-0 rounded-md px-3 py-1.5 text-center text-xs font-medium transition-all ${
                 activeTab === tab.key
                   ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -142,9 +158,12 @@ export default function ChartTabs({
           <button
             onClick={handleGenerateAll}
             disabled={generating}
-            className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-50"
+            aria-label="Atualizar snapshots"
+            title="Atualizar snapshots"
+            className="hidden shrink-0 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)] disabled:opacity-50 md:flex md:items-center md:self-start md:gap-1 md:px-1 md:text-xs"
           >
-            {generating ? "Atualizando..." : "Atualizar"}
+            <RefreshCw size={16} className={generating ? "animate-spin" : ""} />
+            <span>{generating ? "Atualizando..." : "Atualizar"}</span>
           </button>
         )}
       </div>

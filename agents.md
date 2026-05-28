@@ -135,9 +135,19 @@ gunzip -c backup_YYYY-MM-DD.sql.gz | \
 
 ## Local dev
 
+### Build / run
+
 ```bash
-docker compose up                       # dev (base + override)
+# Dev (auto-loads docker-compose.override.yml: host ports, --reload, volumes)
+docker compose up --build               # build + run
+docker compose up                       # run (skip rebuild)
 docker compose logs -f backend          # tail
+
+# Prod-like build check (catches TS errors, missing fields, standalone bundling).
+# Run this BEFORE pushing to main — it mirrors what CI/CD does on the VPS.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+# DB shell
 docker exec -it portfolio_db mysql -uportfolio_user -pportfolio_pass portfolio
 ```
 
