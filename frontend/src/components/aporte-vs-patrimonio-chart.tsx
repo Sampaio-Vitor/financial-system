@@ -40,18 +40,25 @@ export default function AporteVsPatrimonioChart({ data }: AporteVsPatrimonioChar
     <div className="flex-1 flex flex-col">
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData}>
+          <BarChart
+            data={chartData}
+            margin={{ top: 8, right: 8, bottom: 0, left: -10 }}
+            barCategoryGap="28%"
+          >
             <XAxis
               dataKey="label"
               tick={{ fontSize: 11, fill: "#64748b" }}
               axisLine={{ stroke: "#2a2d3a" }}
               tickLine={false}
+              interval="preserveStartEnd"
+              minTickGap={18}
             />
             <YAxis
               tick={{ fontSize: 11, fill: "#64748b" }}
               axisLine={false}
               tickLine={false}
               tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+              width={44}
             />
             <Tooltip
               contentStyle={{

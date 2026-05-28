@@ -121,54 +121,64 @@ export default function ChartTabs({
     return <AporteVsPatrimonioChart data={evolutionData} />;
   };
 
-  return (
-    <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-3 md:p-6 shadow-sm flex flex-col min-h-[330px] md:min-h-[400px]">
-      <div className="mb-4 md:mb-6 md:flex md:flex-wrap md:items-center md:justify-between md:gap-3">
-        <label className="block md:hidden">
-          <span className="sr-only">Selecionar gráfico</span>
-          <select
-            value={activeTab}
-            onChange={(event) => setActiveTab(event.target.value as TabKey)}
-            className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 text-sm font-medium text-[var(--color-text-primary)]"
-          >
-            {TABS.map((tab) => (
-              <option key={tab.key} value={tab.key}>
-                {tab.label}
-              </option>
-            ))}
-          </select>
-        </label>
+  const showRefresh =
+    activeTab !== "alocacao" && activeTab !== "geografia" && evolutionData.length > 0;
 
-        <div className="hidden max-w-full flex-wrap gap-1 rounded-lg bg-[var(--color-bg-main)] p-1 md:flex md:min-w-0 md:flex-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`min-h-9 shrink-0 rounded-md px-3 py-1.5 text-center text-xs font-medium transition-all ${
-                activeTab === tab.key
-                  ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        {activeTab !== "alocacao" && activeTab !== "geografia" && evolutionData.length > 0 && (
+  return (
+    <div className="flex flex-col gap-2">
+      {showRefresh && (
+        <div className="hidden justify-end md:flex">
           <button
             onClick={handleGenerateAll}
             disabled={generating}
             aria-label="Atualizar snapshots"
             title="Atualizar snapshots"
-            className="hidden shrink-0 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)] disabled:opacity-50 md:flex md:items-center md:self-start md:gap-1 md:px-1 md:text-xs"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 text-xs font-medium text-[var(--color-text-muted)] shadow-sm transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
           >
-            <RefreshCw size={16} className={generating ? "animate-spin" : ""} />
+            <RefreshCw size={15} className={generating ? "animate-spin" : ""} />
             <span>{generating ? "Atualizando..." : "Atualizar"}</span>
           </button>
-        )}
-      </div>
-      <div className="flex-1 flex flex-col min-h-0">
-        {renderTabContent()}
+        </div>
+      )}
+
+      <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-3 md:p-5 shadow-sm flex flex-col min-h-[330px] md:min-h-[400px]">
+        <div className="mb-4 md:mb-5 md:flex md:items-center">
+          <label className="block md:hidden">
+            <span className="sr-only">Selecionar gráfico</span>
+            <select
+              value={activeTab}
+              onChange={(event) => setActiveTab(event.target.value as TabKey)}
+              className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              {TABS.map((tab) => (
+                <option key={tab.key} value={tab.key}>
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="hidden min-w-0 flex-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 md:block">
+            <div className="grid min-w-0 grid-cols-4 gap-1">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`min-h-9 min-w-0 rounded-md px-2 py-1.5 text-center text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
+                    activeTab === tab.key
+                      ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  }`}
+                >
+                  <span className="block truncate">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col min-h-0">
+          {renderTabContent()}
+        </div>
       </div>
     </div>
   );
