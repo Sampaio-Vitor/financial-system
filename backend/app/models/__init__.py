@@ -23,6 +23,7 @@ from app.models.asset_daily_snapshot import AssetDailySnapshot
 from app.models.asset_price_history import AssetPriceHistory
 from app.models.purchase_price_anomaly_ignore import PurchasePriceAnomalyIgnore
 from app.models.retirement_goal import RetirementGoal
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -52,4 +53,5 @@ __all__ = [
     "AssetPriceHistory",
     "PurchasePriceAnomalyIgnore",
     "RetirementGoal",
+    "Notification",
 ]

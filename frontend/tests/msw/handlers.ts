@@ -35,6 +35,12 @@ export const handlers = [
 
   http.get(`${API}/assets`, () => HttpResponse.json([])),
   http.get(`${API}/purchases`, () => HttpResponse.json([])),
+  http.get(`${API}/notifications/unread-count`, () =>
+    HttpResponse.json({ unread_count: 0 }),
+  ),
+  http.get(`${API}/notifications`, () =>
+    HttpResponse.json({ notifications: [], unread_count: 0, total_count: 0 }),
+  ),
   http.get(`${API}/financial-reserves`, () =>
     HttpResponse.json({ month: "2026-05", amount: null, entry: null }),
   ),

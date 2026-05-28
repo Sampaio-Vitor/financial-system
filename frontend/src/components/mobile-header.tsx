@@ -1,6 +1,7 @@
 "use client";
 
 import { Menu } from "lucide-react";
+import NotificationBell from "@/components/notification-bell";
 
 interface MobileHeaderProps {
   onMenuClick: () => void;
@@ -15,12 +16,13 @@ export default function MobileHeader({ onMenuClick }: MobileHeaderProps) {
       >
         <Menu size={22} />
       </button>
-      <div className="ml-2 flex items-center gap-2">
+      <div className="ml-2 flex items-center gap-2 min-w-0 flex-1">
         <img src="/logo.svg" alt="CofrinhoGordinho" className="w-7 h-7" />
-        <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+        <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
           Cofrinho Gordinho
         </span>
       </div>
+      <NotificationBell />
     </header>
   );
 }

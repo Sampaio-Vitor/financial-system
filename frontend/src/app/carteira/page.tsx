@@ -6,6 +6,7 @@ import { formatBRL } from "@/lib/format";
 import { MonthlyOverview } from "@/types";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import ChartTabs from "@/components/chart-tabs";
+import NotificationBell from "@/components/notification-bell";
 
 export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
@@ -32,6 +33,9 @@ export default function VisaoGeralPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
+          <div className="hidden md:block">
+            <NotificationBell />
+          </div>
         </div>
         <div className="animate-pulse space-y-6">
           <div className="h-28 rounded-2xl bg-[var(--color-bg-card)]/80 border border-[var(--color-border)]" />
@@ -49,6 +53,9 @@ export default function VisaoGeralPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
+          <div className="hidden md:block">
+            <NotificationBell />
+          </div>
         </div>
         <div className="p-8 text-center bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)]">
           <p className="text-[var(--color-text-muted)] font-medium">Erro ao carregar dados do portfólio.</p>
@@ -61,6 +68,9 @@ export default function VisaoGeralPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold tracking-tight">Visão Geral</h1>
+        <div className="hidden md:block">
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Hero: Patrimônio Total */}

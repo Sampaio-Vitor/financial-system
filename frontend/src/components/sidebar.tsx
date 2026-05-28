@@ -108,12 +108,14 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
       <div className={`border-b border-[var(--color-border)] flex flex-col items-center ${isCollapsed ? "py-3" : "py-5 relative"}`}>
         <img src="/logo.svg" alt="CofrinhoGordinho" className={isCollapsed ? "w-10 h-10" : "w-14 h-14"} />
         {isCollapsed ? (
-          <button
-            onClick={onToggle}
-            className="mt-2 p-1.5 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
-          >
-            <Menu size={18} />
-          </button>
+          <div className="mt-2">
+            <button
+              onClick={onToggle}
+              className="p-1.5 rounded-xl hover:bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors"
+            >
+              <Menu size={18} />
+            </button>
+          </div>
         ) : (
           <button
             onClick={onToggle}

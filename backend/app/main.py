@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine
 from app.config import settings
 from app.limiter import limiter
-from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends, bastter_sync, retirement, ocr
+from app.routers import admin, auth, assets, purchases, fixed_income, portfolio, prices, allocation, rebalancing, financial_reserve, snapshots, pluggy_credentials, connections, transactions, saved_plans, dividends, bastter_sync, retirement, ocr, notifications
 
 
 @asynccontextmanager
@@ -134,6 +134,7 @@ app.include_router(saved_plans.router, prefix="/api/saved-plans", tags=["saved-p
 app.include_router(bastter_sync.router, prefix="/api/bastter", tags=["bastter"])
 app.include_router(retirement.router, prefix="/api/retirement", tags=["retirement"])
 app.include_router(ocr.router, prefix="/api/ocr", tags=["ocr"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 
 
 @app.get("/api/health")

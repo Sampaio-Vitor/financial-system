@@ -67,6 +67,28 @@ export interface PurchasePageResponse {
   total_value: number;
 }
 
+export interface Notification {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  severity: "info" | "success" | "warning" | "error" | string;
+  link: string | null;
+  metadata: Record<string, unknown> | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: Notification[];
+  unread_count: number;
+  total_count: number;
+}
+
+export interface NotificationUnreadCountResponse {
+  unread_count: number;
+}
+
 export interface FixedIncomePosition {
   id: number;
   asset_id: number;
