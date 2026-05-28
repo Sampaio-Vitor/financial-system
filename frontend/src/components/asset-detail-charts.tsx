@@ -44,6 +44,13 @@ interface ChartDataPoint {
   label: string;
   timestamp: number;
   price: number | null;
+  // Forward-filled last known close so the tooltip can show a price on days
+  // that have no quote (weekends/gaps), where `price` is null.
+  displayPrice: number | null;
+  // Y-position for the purchase/sell dot on days that have a trade; null
+  // otherwise. Lives on the shared dataset so the Scatter doesn't need its own
+  // `data` prop (which would hijack the tooltip's active point).
+  markerPrice?: number | null;
   purchases?: PurchaseMarker[];
 }
 
@@ -149,28 +156,44 @@ function CustomCotacaoTooltip({ active, payload, displayCurrency = "BRL" }: Cust
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
+  const priceValue = data.displayPrice;
+  if (priceValue == null) return null;
 
-  // If this point has purchase/sell markers, show every transaction from the date.
-  if (data.purchases && data.purchases.length > 0) {
-    const d = new Date(data.date + "T00:00:00");
-    const dateStr = d.toLocaleDateString("pt-BR");
+  const d = new Date(data.date + "T00:00:00");
+  const dateStr = d.toLocaleDateString("pt-BR");
+  const hasPurchases = data.purchases != null && data.purchases.length > 0;
 
-    return (
-      <div
-        style={{
-          backgroundColor: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "8px",
-          padding: "8px 12px",
-          fontSize: "12px",
-          maxWidth: "280px",
-        }}
-      >
-        <p style={{ color: "var(--color-text-muted)", marginBottom: "6px" }}>
-          {dateStr}
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          {data.purchases.map((p, index) => {
+  // A single box: always shows the day's price, and expands with the
+  // operation details when there was a buy/sell on that day.
+  return (
+    <div
+      style={{
+        backgroundColor: "var(--color-bg-card)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "8px",
+        padding: "8px 12px",
+        fontSize: "12px",
+        maxWidth: "280px",
+      }}
+    >
+      <p style={{ color: "var(--color-text-muted)", marginBottom: "4px" }}>
+        {dateStr}
+      </p>
+      <p style={{ color: "var(--color-text-primary)" }}>
+        Cotação: {formatCurrency(priceValue, displayCurrency)}
+      </p>
+      {hasPurchases && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            marginTop: "8px",
+            paddingTop: "8px",
+            borderTop: "1px solid var(--color-border)",
+          }}
+        >
+          {data.purchases!.map((p, index) => {
             const isBuy = p.kind === "buy";
             const absQty = Math.abs(p.quantity);
             return (
@@ -190,34 +213,9 @@ function CustomCotacaoTooltip({ active, payload, displayCurrency = "BRL" }: Cust
             );
           })}
         </div>
-      </div>
-    );
-  }
-
-  // Normal price point
-  const priceValue = payload.find((p) => p.dataKey === "price")?.value;
-  if (priceValue != null) {
-    return (
-      <div
-        style={{
-          backgroundColor: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "8px",
-          padding: "8px 12px",
-          fontSize: "12px",
-        }}
-      >
-        <p style={{ color: "var(--color-text-muted)", marginBottom: "4px" }}>
-          {data.label}
-        </p>
-        <p style={{ color: "var(--color-text-primary)" }}>
-          Cotação: {formatCurrency(priceValue, displayCurrency)}
-        </p>
-      </div>
-    );
-  }
-
-  return null;
+      )}
+    </div>
+  );
 }
 
 type ChartView = "cotacao" | "dividendos";
@@ -314,14 +312,25 @@ export default function AssetDetailCharts({
     // and the Line connects across them.
     const data: ChartDataPoint[] = [];
     const cursor = new Date(start);
+    let lastKnownPrice: number | null = null;
     while (cursor <= end) {
       const iso = cursor.toISOString().slice(0, 10);
+      const price = priceByDate.get(iso) ?? null;
+      if (price != null) lastKnownPrice = price;
+      const dayPurchases = purchasesByDate.get(iso);
+      const markerPrice =
+        dayPurchases && dayPurchases.length > 0
+          ? dayPurchases.reduce((sum, m) => sum + markerYForPurchase(m), 0) /
+            dayPurchases.length
+          : null;
       data.push({
         date: iso,
         label: toLabel(cursor),
         timestamp: cursor.getTime(),
-        price: priceByDate.get(iso) ?? null,
-        purchases: purchasesByDate.get(iso),
+        price,
+        displayPrice: price ?? lastKnownPrice,
+        markerPrice,
+        purchases: dayPurchases,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -397,20 +406,9 @@ export default function AssetDetailCharts({
   };
 
   // Scatter data for purchase markers (one marker per transaction date).
-  // Y-position uses the average purchase unit price so dots sit on the buy level,
-  // independent of whether a quote exists for that day. Picks native/BRL based
-  // on the active currency.
-  const purchaseScatterData = chartData
-    .filter((d) => d.purchases && d.purchases.length > 0)
-    .map((d) => ({
-      ...d,
-      markerPrice:
-        d.purchases!.reduce(
-          (sum, purchase) =>
-            sum + (isNativeView ? purchase.unitPriceNative : purchase.price),
-          0,
-        ) / d.purchases!.length,
-    }));
+  const hasPurchaseMarkers = chartData.some(
+    (d) => d.purchases != null && d.purchases.length > 0,
+  );
 
   return (
     <div className="p-4">
@@ -507,6 +505,18 @@ export default function AssetDetailCharts({
               connectNulls
               isAnimationActive={false}
             />
+            {/* Invisible forward-filled series so the tooltip activates on every
+                day in the window, even those without a quote. */}
+            <Line
+              type="stepAfter"
+              dataKey="displayPrice"
+              stroke="transparent"
+              strokeWidth={0}
+              dot={false}
+              activeDot={false}
+              connectNulls
+              isAnimationActive={false}
+            />
             {averagePrice != null && (
               <ReferenceLine
                 y={averagePrice}
@@ -521,9 +531,8 @@ export default function AssetDetailCharts({
                 }}
               />
             )}
-            {purchaseScatterData.length > 0 && (
+            {hasPurchaseMarkers && (
               <Scatter
-                data={purchaseScatterData}
                 dataKey="markerPrice"
                 fill="var(--color-positive)"
                 shape={(props: unknown) => {
