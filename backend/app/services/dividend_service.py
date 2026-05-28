@@ -12,7 +12,9 @@ from app.models.transaction import Transaction
 PROCEEDS_CATEGORY = "Proceeds interests and dividends"
 
 _TICKER_RE = re.compile(r"\b([A-Z]{4,6}\d{1,2})\b")
-_QUANTITY_TICKER_RE = re.compile(r"(?P<qty>\d+(?:[.,]\d+)?)\s+(?P<ticker>[A-Z]{4,6}\d{1,2})\s*$")
+_QUANTITY_TICKER_RE = re.compile(
+    r"(?P<qty>\d+(?:[.,]\d+)?)\s+(?P<ticker>[A-Z]{4,6}\d{1,2})\s*$"
+)
 
 
 @dataclass
@@ -149,6 +151,8 @@ async def upsert_dividend_event_for_transaction(
 
     event.asset_id = asset_id
     event.ticker = ticker
+    event.source = "BANK_TRANSACTION"
+    event.status = "CONFIRMED"
     event.event_type = _extract_event_type(description)
     event.credited_amount = txn.amount
     event.gross_amount = txn.amount

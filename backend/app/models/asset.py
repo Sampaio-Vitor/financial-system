@@ -64,10 +64,20 @@ def asset_bucket_for(asset_class: AssetClass, market: Market) -> AllocationBucke
     if asset_class == AssetClass.FII:
         return AllocationBucket.FII
     if asset_class == AssetClass.STOCK:
-        return AllocationBucket.STOCK_BR if market == Market.BR else AllocationBucket.STOCK_US
+        return (
+            AllocationBucket.STOCK_BR
+            if market == Market.BR
+            else AllocationBucket.STOCK_US
+        )
     if asset_class == AssetClass.ETF:
-        return AllocationBucket.STOCK_BR if market == Market.BR else AllocationBucket.ETF_INTL
-    raise ValueError(f"Unsupported asset class/market combination: {asset_class}/{market}")
+        return (
+            AllocationBucket.STOCK_BR
+            if market == Market.BR
+            else AllocationBucket.ETF_INTL
+        )
+    raise ValueError(
+        f"Unsupported asset class/market combination: {asset_class}/{market}"
+    )
 
 
 def asset_bucket_from_legacy_type(asset_type: AssetType) -> AllocationBucket:
@@ -101,20 +111,64 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    ticker: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(
+        String(20), unique=True, nullable=False, index=True
+    )
     type: Mapped[AssetType] = mapped_column(Enum(AssetType), nullable=False)
-    asset_class: Mapped[Optional[AssetClass]] = mapped_column(Enum(AssetClass), nullable=True)
+    asset_class: Mapped[Optional[AssetClass]] = mapped_column(
+        Enum(AssetClass), nullable=True
+    )
     market: Mapped[Optional[Market]] = mapped_column(Enum(Market), nullable=True)
-    quote_currency: Mapped[Optional[CurrencyCode]] = mapped_column(Enum(CurrencyCode), nullable=True)
+    quote_currency: Mapped[Optional[CurrencyCode]] = mapped_column(
+        Enum(CurrencyCode), nullable=True
+    )
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     price_symbol: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    current_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
-    current_price_native: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
-    fx_rate_to_brl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
-    price_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    current_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    current_price_native: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    fx_rate_to_brl: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    price_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    investing_instrument_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    investing_instrument_name: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    investing_exchange: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    investing_resolved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    investing_resolution_status: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )
+    investing_resolution_error: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )
+    investing_dividends_fetched_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    investing_dividends_next_fetch_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
+    investing_dividends_failure_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    investing_dividends_last_error: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )
     td_kind: Mapped[Optional[TesouroKind]] = mapped_column(
         Enum(TesouroKind, values_callable=lambda x: [e.value for e in x]),
         nullable=True,
     )
     td_maturity_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )

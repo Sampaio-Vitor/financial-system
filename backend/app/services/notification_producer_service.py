@@ -26,6 +26,8 @@ from app.notification_types import (
     BANK_SYNC_NEW_TRANSACTIONS,
     DIVIDEND_DETECTED,
     FIXED_INCOME_MATURITY,
+    INVESTING_DIVIDEND_DETECTED,
+    INVESTING_DIVIDEND_FETCH_FAILED,
     PURCHASE_PRICE_ANOMALY,
     PRICE_UPDATE_COMPLETED,
     PRICE_UPDATE_TICKER_FAILED,
@@ -79,6 +81,59 @@ async def notify_dividend_detected(
             "payment_date": payment_date.isoformat(),
             "confidence": confidence,
         },
+    )
+
+
+async def notify_investing_dividend_detected(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    asset_id: int,
+    source_event_key: str,
+    ticker: str,
+    net_amount: Decimal,
+    payment_date: date,
+    status: str,
+) -> None:
+    label = "recebido" if status == "PAID" else "previsto"
+    await create_notification(
+        db,
+        user_id=user_id,
+        notification_type=INVESTING_DIVIDEND_DETECTED,
+        title="Novo provento previsto",
+        message=f"{ticker}: {_money(net_amount)} líquidos {label} para {_date_br(payment_date)}.",
+        severity="info",
+        link="/carteira/proventos?tab=previstos",
+        dedupe_key=f"investing_dividend:{user_id}:{asset_id}:{source_event_key}",
+        metadata={
+            "asset_id": asset_id,
+            "source_event_key": source_event_key,
+            "ticker": ticker,
+            "net_amount": _decimal_str(net_amount),
+            "payment_date": payment_date.isoformat(),
+            "status": status,
+        },
+    )
+
+
+async def notify_investing_dividend_fetch_failed(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    ticker: str,
+    error: str,
+    run_date: date,
+) -> None:
+    await create_notification(
+        db,
+        user_id=user_id,
+        notification_type=INVESTING_DIVIDEND_FETCH_FAILED,
+        title="Falha ao buscar proventos",
+        message=f"Não foi possível atualizar proventos de {ticker} hoje.",
+        severity="warning",
+        link="/carteira/proventos?tab=previstos",
+        dedupe_key=f"investing_dividend_fetch_failed:{user_id}:{ticker}:{run_date.isoformat()}",
+        metadata={"ticker": ticker, "error": error, "run_date": run_date.isoformat()},
     )
 
 
@@ -163,7 +218,9 @@ async def notify_price_update_completed(
             if patrimonio_variation_pct is not None
             else ""
         )
-        message += f" Patrimônio hoje: {sign}{_money(abs(patrimonio_variation))}{pct_text}."
+        message += (
+            f" Patrimônio hoje: {sign}{_money(abs(patrimonio_variation))}{pct_text}."
+        )
     if failed_count:
         message += f" {failed_count} falha(s) encontrada(s)."
     await create_notification(
@@ -258,10 +315,14 @@ def maturity_bucket(today: date, maturity_date: date) -> str | None:
     return None
 
 
-async def scan_fixed_income_maturities(db: AsyncSession, *, today: date | None = None) -> int:
+async def scan_fixed_income_maturities(
+    db: AsyncSession, *, today: date | None = None
+) -> int:
     today = today or date.today()
     result = await db.execute(
-        select(FixedIncomePosition).where(FixedIncomePosition.maturity_date.is_not(None))
+        select(FixedIncomePosition).where(
+            FixedIncomePosition.maturity_date.is_not(None)
+        )
     )
     created = 0
     for position in result.scalars().all():
@@ -277,7 +338,9 @@ async def scan_fixed_income_maturities(db: AsyncSession, *, today: date | None =
         else:
             dedupe_key = f"fixed_income_maturity:{position.id}:{bucket}"
             message = f"{ticker} vence em {_date_br(position.maturity_date)}."
-        if await notification_exists(db, user_id=position.user_id, dedupe_key=dedupe_key):
+        if await notification_exists(
+            db, user_id=position.user_id, dedupe_key=dedupe_key
+        ):
             continue
         await create_notification(
             db,
@@ -404,7 +467,11 @@ async def _users_for_failed_ticker(db: AsyncSession, ticker: str) -> set[int]:
     result = await db.execute(
         select(UserAsset.user_id)
         .join(Asset, Asset.id == UserAsset.asset_id)
-        .where((Asset.ticker == ticker) | (Asset.ticker == normalized) | (Asset.price_symbol == ticker))
+        .where(
+            (Asset.ticker == ticker)
+            | (Asset.ticker == normalized)
+            | (Asset.price_symbol == ticker)
+        )
     )
     return set(result.scalars().all())
 
@@ -421,12 +488,16 @@ async def scan_retirement_milestones(db: AsyncSession, user: User) -> int:
     reserve_result = await db.execute(
         select(FinancialReserveEntry)
         .where(FinancialReserveEntry.user_id == user.id)
-        .order_by(FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc())
+        .order_by(
+            FinancialReserveEntry.recorded_at.desc(), FinancialReserveEntry.id.desc()
+        )
         .limit(1)
     )
     reserve = reserve_result.scalar_one_or_none()
-    patrimonio_atual = sum(class_values.values()) + (reserve.amount if reserve else Decimal("0"))
-    progress = (patrimonio_atual / goal.patrimonio_meta * Decimal("100"))
+    patrimonio_atual = sum(class_values.values()) + (
+        reserve.amount if reserve else Decimal("0")
+    )
+    progress = patrimonio_atual / goal.patrimonio_meta * Decimal("100")
     highest = min(int(progress // Decimal("5")) * 5, 100)
     if highest < 5:
         return 0
@@ -472,7 +543,9 @@ async def scan_allocation_drift(
     target_result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
     )
-    targets = {row.allocation_bucket: row.target_pct for row in target_result.scalars().all()}
+    targets = {
+        row.allocation_bucket: row.target_pct for row in target_result.scalars().all()
+    }
     created = 0
     for bucket in AllocationBucket:
         target_pct = targets.get(bucket, Decimal("0")) * Decimal("100")
@@ -506,7 +579,9 @@ async def scan_allocation_drift(
     return created
 
 
-async def notification_exists(db: AsyncSession, *, user_id: int, dedupe_key: str) -> bool:
+async def notification_exists(
+    db: AsyncSession, *, user_id: int, dedupe_key: str
+) -> bool:
     result = await db.execute(
         select(func.count(Notification.id)).where(
             Notification.user_id == user_id,

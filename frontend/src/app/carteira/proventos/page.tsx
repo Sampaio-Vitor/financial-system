@@ -51,12 +51,20 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   RENDIMENTO: "Rendimento",
 };
 
+const TAB_OPTIONS = [
+  { id: "recebidos", label: "Recebidos" },
+  { id: "previstos", label: "Previstos" },
+] as const;
+
+type ProventosTab = (typeof TAB_OPTIONS)[number]["id"];
+
 function getEventTypeLabel(type: string) {
   return EVENT_TYPE_LABELS[type] || type.charAt(0) + type.slice(1).toLowerCase();
 }
 
 export default function ProventosPage() {
   const currentYear = new Date().getFullYear();
+  const [activeTab, setActiveTab] = useState<ProventosTab>("recebidos");
   const [year, setYear] = useState(currentYear);
   const [events, setEvents] = useState<DividendEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,11 +81,11 @@ export default function ProventosPage() {
 
   useEffect(() => {
     setLoading(true);
-    apiFetch<DividendEventListResponse>(`/dividends?year=${year}`)
+    apiFetch<DividendEventListResponse>(`/dividends?year=${year}&tab=${activeTab}`)
       .then((data) => setEvents(data.events))
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
-  }, [year]);
+  }, [year, activeTab]);
 
   // --- Computed data ---
   const totalReceived = useMemo(
@@ -85,7 +93,15 @@ export default function ProventosPage() {
     [events]
   );
 
-  const totalCount = events.length;
+  const totalGross = useMemo(
+    () => events.reduce((sum, e) => sum + Number(e.gross_amount ?? e.credited_amount), 0),
+    [events]
+  );
+
+  const totalTax = useMemo(
+    () => events.reduce((sum, e) => sum + Number(e.withholding_tax ?? 0), 0),
+    [events]
+  );
 
   const topPayer = useMemo(() => {
     if (events.length === 0) return null;
@@ -97,6 +113,13 @@ export default function ProventosPage() {
     const sorted = Object.entries(byTicker).sort((a, b) => b[1] - a[1]);
     return sorted[0] ? { ticker: sorted[0][0], total: sorted[0][1] } : null;
   }, [events]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "previstos") {
+      setActiveTab("previstos");
+    }
+  }, []);
 
   // Discover unique event types and assign colors
   const eventTypeColors = useMemo(() => {
@@ -189,7 +212,25 @@ export default function ProventosPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">Proventos</h1>
+        <div>
+          <h1 className="text-xl font-bold">Proventos</h1>
+          <div className="mt-3 inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1">
+            {TAB_OPTIONS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  activeTab === tab.id
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <select
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
@@ -204,27 +245,29 @@ export default function ProventosPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
-          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Total Recebido</span>
+          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">
+            {activeTab === "recebidos" ? "Líquido Recebido" : "Líquido Previsto"}
+          </span>
           <div className="text-2xl font-bold text-[var(--color-positive)] mt-1">
             {formatBRL(totalReceived)}
           </div>
         </div>
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
-          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Eventos</span>
+          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">
+            Imposto {activeTab === "recebidos" ? "Retido" : "Estimado"}
+          </span>
           <div className="text-2xl font-bold text-[var(--color-text-primary)] mt-1">
-            {totalCount}
+            {formatBRL(totalTax)}
           </div>
         </div>
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
-          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Maior Pagador</span>
+          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Bruto</span>
           <div className="mt-1">
-            {topPayer ? (
-              <>
-                <span className="text-2xl font-bold text-[var(--color-text-primary)]">{topPayer.ticker}</span>
-                <span className="text-sm text-[var(--color-text-muted)] ml-2">{formatBRL(topPayer.total)}</span>
-              </>
-            ) : (
-              <span className="text-[var(--color-text-muted)]">—</span>
+            <span className="text-2xl font-bold text-[var(--color-text-primary)]">{formatBRL(totalGross)}</span>
+            {topPayer && (
+              <span className="text-sm text-[var(--color-text-muted)] ml-2">
+                Maior: {topPayer.ticker}
+              </span>
             )}
           </div>
         </div>
@@ -236,7 +279,7 @@ export default function ProventosPage() {
             <Plug size={28} className="text-[var(--color-accent)]" />
           </div>
           <p className="text-sm text-[var(--color-text-secondary)] mb-4">
-            Nenhum provento registrado em {year}.
+            Nenhum provento {activeTab === "recebidos" ? "recebido" : "previsto"} em {year}.
           </p>
           <p className="text-sm text-[var(--color-text-muted)] mb-6">
             Conecte um banco em <strong>Conexões Bancárias</strong> para detectar proventos automaticamente.
@@ -256,7 +299,7 @@ export default function ProventosPage() {
             {/* Monthly bar chart */}
             <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mb-4">
-                Proventos por Mês
+                {activeTab === "recebidos" ? "Recebidos por Mês" : "Previstos por Mês"}
               </h3>
               <ResponsiveContainer width="100%" height={250}>
                 <ComposedChart data={monthlyData}>
@@ -396,9 +439,13 @@ export default function ProventosPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[var(--color-bg-card)] sticky top-0 z-10">
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Data</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Pagamento</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Ex-data</th>
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Ticker</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Valor</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Status</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Bruto</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Imposto</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Líquido</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -407,7 +454,17 @@ export default function ProventosPage() {
                       <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                         {new Date(e.payment_date + "T00:00:00").toLocaleDateString("pt-BR")}
                       </td>
+                      <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
+                        {e.ex_date ? new Date(e.ex_date + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
+                      </td>
                       <td className="px-4 py-2.5 font-medium">{e.ticker || "—"}</td>
+                      <td className="px-4 py-2.5 text-[var(--color-text-muted)]">{e.status}</td>
+                      <td className="px-4 py-2.5 text-right font-medium">
+                        {formatBRL(Number(e.gross_amount ?? e.credited_amount))}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-[var(--color-text-muted)]">
+                        {formatBRL(Number(e.withholding_tax ?? 0))}
+                      </td>
                       <td className="px-4 py-2.5 text-right font-medium text-[var(--color-positive)]">
                         {formatBRL(Number(e.credited_amount))}
                       </td>

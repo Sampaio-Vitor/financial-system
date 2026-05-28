@@ -20,12 +20,25 @@ def _to_response(event: DividendEvent) -> DividendEventResponse:
         asset_id=event.asset_id,
         ticker=event.ticker,
         asset_type=event.asset.type.value if event.asset else None,
+        asset_class=event.asset.asset_class.value
+        if event.asset and event.asset.asset_class
+        else None,
+        market=event.asset.market.value if event.asset and event.asset.market else None,
         event_type=event.event_type,
+        source=event.source,
+        status=event.status,
         credited_amount=event.credited_amount,
         gross_amount=event.gross_amount,
         withholding_tax=event.withholding_tax,
         quantity_base=event.quantity_base,
         amount_per_unit=event.amount_per_unit,
+        ex_date=event.ex_date,
+        declared_currency=event.declared_currency,
+        amount_per_unit_native=event.amount_per_unit_native,
+        gross_amount_native=event.gross_amount_native,
+        withholding_tax_native=event.withholding_tax_native,
+        credited_amount_native=event.credited_amount_native,
+        fx_rate_to_brl=event.fx_rate_to_brl,
         payment_date=event.payment_date,
         description=event.description,
         source_category=event.source_category,
@@ -40,6 +53,9 @@ async def list_dividend_events(
     month: Optional[int] = Query(None, ge=1, le=12),
     ticker: Optional[str] = Query(None),
     event_type: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    tab: Optional[str] = Query(None, pattern="^(recebidos|previstos|all)$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -57,6 +73,14 @@ async def list_dividend_events(
         query = query.where(DividendEvent.ticker == ticker.upper())
     if event_type:
         query = query.where(DividendEvent.event_type == event_type.upper())
+    if source:
+        query = query.where(DividendEvent.source == source.upper())
+    if status:
+        query = query.where(DividendEvent.status == status.upper())
+    if tab == "recebidos":
+        query = query.where(DividendEvent.status.in_(["PAID", "CONFIRMED"]))
+    elif tab == "previstos":
+        query = query.where(DividendEvent.status == "EXPECTED")
 
     result = await db.execute(query)
     events = result.scalars().all()

@@ -3,17 +3,24 @@ from datetime import date, datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import select, text
+from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import func, select, text
 
 from decimal import Decimal
 
 from app.database import AsyncSessionLocal, engine
 from app.models.asset import Asset
 from app.models.fixed_income import FixedIncomePosition
+from app.models.purchase import Purchase
 from app.models.user import User
+from app.models.user_asset import UserAsset
 from app.services.connection_sync_service import sync_user_connections
+from app.services.investing_dividend_service import InvestingDividendService
 from app.services.notification_producer_service import (
+    notify_investing_dividend_detected,
+    notify_investing_dividend_fetch_failed,
     notify_price_update_results_for_users,
+    notification_exists,
     scan_allocation_drift,
     scan_fixed_income_maturities,
     scan_retirement_milestones,
@@ -26,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 PRICE_UPDATE_LOCK_NAME = "daily_price_update_job"
+INVESTING_DIVIDEND_LOCK_NAME = "investing_dividend_scan_job"
 
 
 def is_last_business_day_of_month(day: date) -> bool:
@@ -61,7 +69,9 @@ async def _recompute_tesouro_positions(db) -> int:
     for fi, asset in rows.all():
         if not fi.quantity or not asset.current_price:
             continue
-        fi.current_balance = (fi.quantity * asset.current_price).quantize(Decimal("0.0001"))
+        fi.current_balance = (fi.quantity * asset.current_price).quantize(
+            Decimal("0.0001")
+        )
         if fi.applied_value:
             fi.yield_value = fi.current_balance - fi.applied_value
             fi.yield_pct = fi.yield_value / fi.applied_value
@@ -69,6 +79,69 @@ async def _recompute_tesouro_positions(db) -> int:
     if updated:
         logger.info("Recomputed %s Tesouro position(s)", updated)
     return updated
+
+
+async def _notify_investing_dividend_results(
+    db,
+    *,
+    summary,
+    run_date: date,
+) -> int:
+    notifications_created = 0
+    for event in summary.detected:
+        if not event.asset_id or not event.ticker or not event.source_event_key:
+            continue
+        dedupe_key = (
+            f"investing_dividend:{event.user_id}:{event.asset_id}:"
+            f"{event.source_event_key}"
+        )
+        if await notification_exists(db, user_id=event.user_id, dedupe_key=dedupe_key):
+            continue
+        await notify_investing_dividend_detected(
+            db,
+            user_id=event.user_id,
+            asset_id=event.asset_id,
+            source_event_key=event.source_event_key,
+            ticker=event.ticker,
+            net_amount=event.credited_amount,
+            payment_date=event.payment_date,
+            status=event.status,
+        )
+        notifications_created += 1
+
+    for failure in summary.failed:
+        ticker = str(failure.get("ticker", "")).strip()
+        if not ticker:
+            continue
+        user_ids_result = await db.execute(
+            select(UserAsset.user_id)
+            .join(Asset, Asset.id == UserAsset.asset_id)
+            .join(Purchase, Purchase.asset_id == UserAsset.asset_id)
+            .where(
+                Asset.ticker == ticker,
+                Asset.investing_dividends_failure_count >= 3,
+                UserAsset.paused.is_(False),
+                Purchase.user_id == UserAsset.user_id,
+            )
+            .group_by(UserAsset.user_id)
+            .having(func.coalesce(func.sum(Purchase.quantity), 0) > 0)
+        )
+        for user_id in set(user_ids_result.scalars().all()):
+            dedupe_key = (
+                f"investing_dividend_fetch_failed:{user_id}:{ticker}:"
+                f"{run_date.isoformat()}"
+            )
+            if await notification_exists(db, user_id=user_id, dedupe_key=dedupe_key):
+                continue
+            await notify_investing_dividend_fetch_failed(
+                db,
+                user_id=user_id,
+                ticker=ticker,
+                error=str(failure.get("error", "Erro desconhecido")),
+                run_date=run_date,
+            )
+            notifications_created += 1
+    return notifications_created
 
 
 async def _execute_price_update_cycle(db) -> dict:
@@ -94,8 +167,12 @@ async def _execute_price_update_cycle(db) -> dict:
                 await db.rollback()
                 logger.exception("Failed to sync connections for user %s", user.id)
                 connection_summaries.append(
-                    {"user_id": user.id, "synced": 0, "new_transactions": 0,
-                     "failed": [{"reason": "exception"}]}
+                    {
+                        "user_id": user.id,
+                        "synced": 0,
+                        "new_transactions": 0,
+                        "failed": [{"reason": "exception"}],
+                    }
                 )
                 continue
             connection_summaries.append(summary)
@@ -193,11 +270,15 @@ async def _execute_price_update_cycle(db) -> dict:
                     db, user
                 )
                 notifications_created += await scan_retirement_milestones(db, user)
-                notifications_created += await scan_allocation_drift(db, user, today=today)
+                notifications_created += await scan_allocation_drift(
+                    db, user, today=today
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
-                notification_failures.append({"stage": "user_scans", "user_id": user.id})
+                notification_failures.append(
+                    {"stage": "user_scans", "user_id": user.id}
+                )
                 logger.exception("Failed notification scans for user %s", user.id)
 
         results["notifications"] = {
@@ -237,7 +318,9 @@ async def run_price_update_cycle() -> dict | None:
             {"lock_name": PRICE_UPDATE_LOCK_NAME},
         )
         if acquired != 1:
-            logger.info("Skipping price update cycle because another worker already holds the lock")
+            logger.info(
+                "Skipping price update cycle because another worker already holds the lock"
+            )
             return None
 
         try:
@@ -258,13 +341,92 @@ async def daily_price_update_job():
     await run_price_update_cycle()
 
 
+async def _execute_investing_dividend_scan(db) -> dict:
+    now = datetime.now(timezone.utc)
+    service = InvestingDividendService(db)
+    summary = await service.scan_due_positions(
+        start_date=now.date() - timedelta(days=30),
+        end_date=now.date() + timedelta(days=180),
+        now=now,
+    )
+    await db.commit()
+
+    notifications_created = 0
+    try:
+        notifications_created = await _notify_investing_dividend_results(
+            db,
+            summary=summary,
+            run_date=now.date(),
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to create Investing dividend scan notifications")
+
+    logger.info(
+        "Investing dividend scan finished: created=%s updated=%s skipped=%s failed=%s notifications=%s",
+        summary.created,
+        summary.updated,
+        summary.skipped,
+        len(summary.failed),
+        notifications_created,
+    )
+    return {
+        "created": summary.created,
+        "updated": summary.updated,
+        "skipped": summary.skipped,
+        "failed": summary.failed,
+        "notifications_created": notifications_created,
+    }
+
+
+async def run_investing_dividend_scan() -> dict | None:
+    """Run a small due-asset Investing scan, skipping when another worker owns the lock."""
+    async with engine.connect() as lock_conn:
+        acquired = await lock_conn.scalar(
+            text("SELECT GET_LOCK(:lock_name, 0)"),
+            {"lock_name": INVESTING_DIVIDEND_LOCK_NAME},
+        )
+        if acquired != 1:
+            logger.info(
+                "Skipping Investing dividend scan because another worker already holds the lock"
+            )
+            return None
+
+        try:
+            async with AsyncSessionLocal() as db:
+                return await _execute_investing_dividend_scan(db)
+        finally:
+            try:
+                await lock_conn.execute(
+                    text("SELECT RELEASE_LOCK(:lock_name)"),
+                    {"lock_name": INVESTING_DIVIDEND_LOCK_NAME},
+                )
+            except Exception:
+                logger.exception("Failed to release Investing dividend scan lock")
+
+
+async def investing_dividend_scan_job():
+    """Entry point used by APScheduler for distributed Investing scans."""
+    await run_investing_dividend_scan()
+
+
 def setup_scheduler():
-    """Configure and return the scheduler with the daily price update job."""
+    """Configure and return the scheduler jobs."""
     scheduler.add_job(
         daily_price_update_job,
         CronTrigger(hour=21, minute=0, timezone="UTC"),
         id="daily_price_update",
         name="Daily Price Update + Snapshots",
         replace_existing=True,
+    )
+    scheduler.add_job(
+        investing_dividend_scan_job,
+        IntervalTrigger(minutes=30),
+        id="investing_dividend_scan",
+        name="Distributed Investing Dividend Scan",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     return scheduler

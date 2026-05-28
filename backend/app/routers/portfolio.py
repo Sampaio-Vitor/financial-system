@@ -26,7 +26,7 @@ from app.models.financial_reserve import FinancialReserveEntry, FinancialReserve
 from app.models.dividend_event import DividendEvent
 from app.models.user import User
 from app.constants import ALLOCATION_BUCKET_LABELS
-from app.services.portfolio_service import get_bucket_values, get_reserve_for_month, get_class_values
+from app.services.portfolio_service import get_bucket_values, get_reserve_for_month
 from app.services.price_anomaly_service import get_purchase_price_anomalies
 from app.schemas.portfolio import (
     MonthlyOverview,
@@ -168,10 +168,10 @@ async def _build_variable_income_positions(
         bucket = asset_bucket_for(resolved_class, resolved_market)
         selected_bucket = selected_bucket or bucket
 
-        avg_price_native = (cost_native / qty) if (cost_native is not None and qty) else None
-        market_value_native = (
-            native_price * qty if native_price and qty else None
+        avg_price_native = (
+            (cost_native / qty) if (cost_native is not None and qty) else None
         )
+        market_value_native = native_price * qty if native_price and qty else None
         pnl_native = (
             market_value_native - cost_native
             if market_value_native is not None and cost_native is not None
@@ -184,32 +184,38 @@ async def _build_variable_income_positions(
         )
         price_anomalies = anomalies_by_asset.get(asset_id, [])
 
-        positions.append(PositionItem(
-            asset_id=asset_id,
-            ticker=ticker,
-            description=desc,
-            type=a_type,
-            asset_class=resolved_class,
-            market=resolved_market,
-            quote_currency=resolved_currency,
-            first_date=first_date.isoformat() if first_date else None,
-            quantity=qty,
-            total_cost=cost,
-            avg_price=round(avg_price, 4),
-            current_price=price,
-            current_price_native=native_price,
-            fx_rate_to_brl=fx_rate_to_brl,
-            market_value=market_value,
-            pnl=round(pnl, 4) if pnl else None,
-            pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
-            total_cost_native=cost_native,
-            avg_price_native=round(avg_price_native, 4) if avg_price_native is not None else None,
-            market_value_native=market_value_native,
-            pnl_native=round(pnl_native, 4) if pnl_native is not None else None,
-            pnl_pct_native=round(pnl_pct_native, 2) if pnl_pct_native is not None else None,
-            price_anomaly_count=len(price_anomalies),
-            price_anomalies=price_anomalies,
-        ))
+        positions.append(
+            PositionItem(
+                asset_id=asset_id,
+                ticker=ticker,
+                description=desc,
+                type=a_type,
+                asset_class=resolved_class,
+                market=resolved_market,
+                quote_currency=resolved_currency,
+                first_date=first_date.isoformat() if first_date else None,
+                quantity=qty,
+                total_cost=cost,
+                avg_price=round(avg_price, 4),
+                current_price=price,
+                current_price_native=native_price,
+                fx_rate_to_brl=fx_rate_to_brl,
+                market_value=market_value,
+                pnl=round(pnl, 4) if pnl else None,
+                pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
+                total_cost_native=cost_native,
+                avg_price_native=round(avg_price_native, 4)
+                if avg_price_native is not None
+                else None,
+                market_value_native=market_value_native,
+                pnl_native=round(pnl_native, 4) if pnl_native is not None else None,
+                pnl_pct_native=round(pnl_pct_native, 2)
+                if pnl_pct_native is not None
+                else None,
+                price_anomaly_count=len(price_anomalies),
+                price_anomalies=price_anomalies,
+            )
+        )
         total_cost += cost
         if market_value:
             total_market += market_value
@@ -274,7 +280,9 @@ async def get_overview(
         select(func.min(Purchase.purchase_date)).where(Purchase.user_id == user.id)
     )
     min_fi = await db.execute(
-        select(func.min(FixedIncomePosition.start_date)).where(FixedIncomePosition.user_id == user.id)
+        select(func.min(FixedIncomePosition.start_date)).where(
+            FixedIncomePosition.user_id == user.id
+        )
     )
     dates = [d for d in [min_purchase.scalar(), min_fi.scalar()] if d]
     min_date = min(dates) if dates else None
@@ -296,8 +304,7 @@ async def get_overview(
 
     # Add fixed income positions started this month
     fi_aportes = await db.execute(
-        select(func.sum(FixedIncomePosition.applied_value))
-        .where(
+        select(func.sum(FixedIncomePosition.applied_value)).where(
             FixedIncomePosition.user_id == user.id,
             FixedIncomePosition.start_date >= month_start,
             FixedIncomePosition.start_date < month_end,
@@ -308,8 +315,7 @@ async def get_overview(
     # --- Resgates do mês ---
     # 1) Vendas RV: purchases com quantity negativa no mês (total_value será negativo)
     vendas_result = await db.execute(
-        select(func.sum(Purchase.total_value))
-        .where(
+        select(func.sum(Purchase.total_value)).where(
             Purchase.user_id == user.id,
             Purchase.purchase_date >= month_start,
             Purchase.purchase_date < month_end,
@@ -320,8 +326,7 @@ async def get_overview(
 
     # 2) Resgates RF no mês
     fi_resgates = await db.execute(
-        select(func.sum(FixedIncomeRedemption.amount))
-        .where(
+        select(func.sum(FixedIncomeRedemption.amount)).where(
             FixedIncomeRedemption.user_id == user.id,
             FixedIncomeRedemption.redemption_date >= month_start,
             FixedIncomeRedemption.redemption_date < month_end,
@@ -331,8 +336,7 @@ async def get_overview(
 
     # 3) Juros RF no mes
     fi_juros = await db.execute(
-        select(func.sum(FixedIncomeInterest.interest_amount))
-        .where(
+        select(func.sum(FixedIncomeInterest.interest_amount)).where(
             FixedIncomeInterest.user_id == user.id,
             FixedIncomeInterest.reference_month >= month_start,
             FixedIncomeInterest.reference_month < month_end,
@@ -359,7 +363,9 @@ async def get_overview(
             FinancialReserveEntry.recorded_at >= month_start_dt,
             FinancialReserveEntry.recorded_at < month_end_dt,
         )
-        .order_by(FinancialReserveEntry.recorded_at.asc(), FinancialReserveEntry.id.asc())
+        .order_by(
+            FinancialReserveEntry.recorded_at.asc(), FinancialReserveEntry.id.asc()
+        )
     )
     reserve_entries_month = all_reserve_entries.scalars().all()
 
@@ -379,15 +385,18 @@ async def get_overview(
 
     # Get total invested (all purchases up to end of month)
     invested_result = await db.execute(
-        select(func.sum(Purchase.total_value))
-        .where(Purchase.user_id == user.id, Purchase.purchase_date < month_end)
+        select(func.sum(Purchase.total_value)).where(
+            Purchase.user_id == user.id, Purchase.purchase_date < month_end
+        )
     )
     total_invested = invested_result.scalar() or Decimal("0")
 
     # Add fixed income applied values (only positions that existed before month_end)
     fi_invested = await db.execute(
-        select(func.sum(FixedIncomePosition.applied_value))
-        .where(FixedIncomePosition.user_id == user.id, FixedIncomePosition.start_date < month_end)
+        select(func.sum(FixedIncomePosition.applied_value)).where(
+            FixedIncomePosition.user_id == user.id,
+            FixedIncomePosition.start_date < month_end,
+        )
     )
     total_invested += fi_invested.scalar() or Decimal("0")
 
@@ -405,11 +414,13 @@ async def get_overview(
 
     # Month-over-month variation: compute previous month's patrimonio on-the-fly
     prev_class_values = await get_bucket_values(db, user, cutoff=month_start)
-    prev_patrimonio = sum(prev_class_values.values()) + (prev_reserve.amount if prev_reserve else Decimal("0"))
+    prev_patrimonio = sum(prev_class_values.values()) + (
+        prev_reserve.amount if prev_reserve else Decimal("0")
+    )
 
     if prev_patrimonio > 0:
         variacao_mes = patrimonio_total - prev_patrimonio
-        variacao_mes_pct = (variacao_mes / prev_patrimonio * 100)
+        variacao_mes_pct = variacao_mes / prev_patrimonio * 100
     else:
         # No previous patrimonio: first month with data
         variacao_mes = Decimal("0")
@@ -423,21 +434,26 @@ async def get_overview(
     allocation = []
     for allocation_bucket in AllocationBucket:
         value = class_values[allocation_bucket]
-        pct = (value / patrimonio_investivel * 100) if patrimonio_investivel else Decimal("0")
+        pct = (
+            (value / patrimonio_investivel * 100)
+            if patrimonio_investivel
+            else Decimal("0")
+        )
         target_pct = targets.get(allocation_bucket, Decimal("0")) * 100
-        allocation.append(ClassSummary(
-            allocation_bucket=allocation_bucket,
-            label=ALLOCATION_BUCKET_LABELS[allocation_bucket],
-            value=value,
-            pct=round(pct, 2),
-            target_pct=round(target_pct, 2),
-            gap=round(target_pct - pct, 2),
-        ))
+        allocation.append(
+            ClassSummary(
+                allocation_bucket=allocation_bucket,
+                label=ALLOCATION_BUCKET_LABELS[allocation_bucket],
+                value=value,
+                pct=round(pct, 2),
+                target_pct=round(target_pct, 2),
+                gap=round(target_pct - pct, 2),
+            )
+        )
 
     # RF aportes detail (positions started this month)
     fi_aportes_detail = await db.execute(
-        select(FixedIncomePosition)
-        .where(
+        select(FixedIncomePosition).where(
             FixedIncomePosition.user_id == user.id,
             FixedIncomePosition.start_date >= month_start,
             FixedIncomePosition.start_date < month_end,
@@ -455,8 +471,7 @@ async def get_overview(
 
     # RF redemptions detail
     fi_resgates_detail = await db.execute(
-        select(FixedIncomeRedemption)
-        .where(
+        select(FixedIncomeRedemption).where(
             FixedIncomeRedemption.user_id == user.id,
             FixedIncomeRedemption.redemption_date >= month_start,
             FixedIncomeRedemption.redemption_date < month_end,
@@ -474,8 +489,7 @@ async def get_overview(
 
     # RF interest detail
     fi_interest_detail = await db.execute(
-        select(FixedIncomeInterest)
-        .where(
+        select(FixedIncomeInterest).where(
             FixedIncomeInterest.user_id == user.id,
             FixedIncomeInterest.reference_month >= month_start,
             FixedIncomeInterest.reference_month < month_end,
@@ -498,6 +512,7 @@ async def get_overview(
             DividendEvent.user_id == user.id,
             DividendEvent.payment_date >= month_start,
             DividendEvent.payment_date < month_end,
+            DividendEvent.status.in_(["PAID", "CONFIRMED"]),
         )
         .order_by(DividendEvent.payment_date.desc())
     )
@@ -510,12 +525,25 @@ async def get_overview(
             asset_id=d.asset_id,
             ticker=d.ticker,
             asset_type=d.asset.type.value if d.asset else None,
+            asset_class=d.asset.asset_class.value
+            if d.asset and d.asset.asset_class
+            else None,
+            market=d.asset.market.value if d.asset and d.asset.market else None,
             event_type=d.event_type,
+            source=d.source,
+            status=d.status,
             credited_amount=d.credited_amount,
             gross_amount=d.gross_amount,
             withholding_tax=d.withholding_tax,
             quantity_base=d.quantity_base,
             amount_per_unit=d.amount_per_unit,
+            ex_date=d.ex_date,
+            declared_currency=d.declared_currency,
+            amount_per_unit_native=d.amount_per_unit_native,
+            gross_amount_native=d.gross_amount_native,
+            withholding_tax_native=d.withholding_tax_native,
+            credited_amount_native=d.credited_amount_native,
+            fx_rate_to_brl=d.fx_rate_to_brl,
             payment_date=d.payment_date,
             description=d.description,
             source_category=d.source_category,
@@ -592,28 +620,29 @@ async def get_positions_by_class(
     if asset_class == AssetType.RF:
         # For RF, return fixed income positions
         fi_result = await db.execute(
-            select(FixedIncomePosition)
-            .where(FixedIncomePosition.user_id == user.id)
+            select(FixedIncomePosition).where(FixedIncomePosition.user_id == user.id)
         )
         fi_positions = fi_result.scalars().all()
         positions = []
         total_cost = Decimal("0")
         total_market = Decimal("0")
         for fi in fi_positions:
-            positions.append(PositionItem(
-                asset_id=fi.asset_id,
-                ticker=fi.asset.ticker if fi.asset else "RF",
-                description=fi.description,
-                type=AssetType.RF,
-                first_date=fi.start_date.isoformat(),
-                quantity=Decimal("1"),
-                total_cost=fi.applied_value,
-                avg_price=fi.applied_value,
-                current_price=fi.current_balance,
-                market_value=fi.current_balance,
-                pnl=fi.yield_value,
-                pnl_pct=fi.yield_pct * 100,
-            ))
+            positions.append(
+                PositionItem(
+                    asset_id=fi.asset_id,
+                    ticker=fi.asset.ticker if fi.asset else "RF",
+                    description=fi.description,
+                    type=AssetType.RF,
+                    first_date=fi.start_date.isoformat(),
+                    quantity=Decimal("1"),
+                    total_cost=fi.applied_value,
+                    avg_price=fi.applied_value,
+                    current_price=fi.current_balance,
+                    market_value=fi.current_balance,
+                    pnl=fi.yield_value,
+                    pnl_pct=fi.yield_pct * 100,
+                )
+            )
             total_cost += fi.applied_value
             total_market += fi.current_balance
 

@@ -513,16 +513,27 @@ export interface TransactionListResponse {
 
 export interface DividendEvent {
   id: number;
-  transaction_id: number;
+  transaction_id: number | null;
   asset_id: number | null;
   ticker: string | null;
   asset_type: string | null;
+  asset_class?: AssetClass | null;
+  market?: Market | null;
   event_type: string;
+  source: string;
+  status: string;
   credited_amount: number;
   gross_amount: number | null;
   withholding_tax: number | null;
   quantity_base: number | null;
   amount_per_unit: number | null;
+  ex_date: string | null;
+  declared_currency: CurrencyCode | string | null;
+  amount_per_unit_native: number | null;
+  gross_amount_native: number | null;
+  withholding_tax_native: number | null;
+  credited_amount_native: number | null;
+  fx_rate_to_brl: number | null;
   payment_date: string;
   description: string;
   source_category: string | null;
