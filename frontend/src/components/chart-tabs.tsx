@@ -7,7 +7,6 @@ import PatrimonioChart from "@/components/patrimonio-chart";
 import AporteVsPatrimonioChart from "@/components/aporte-vs-patrimonio-chart";
 import AllocationDonutChart from "@/components/allocation-donut-chart";
 import GeographyDonutChart from "@/components/geography-donut-chart";
-import { RefreshCw } from "lucide-react";
 
 const TABS = [
   { key: "evolucao", label: "Evolução" },
@@ -121,26 +120,8 @@ export default function ChartTabs({
     return <AporteVsPatrimonioChart data={evolutionData} />;
   };
 
-  const showRefresh =
-    activeTab !== "alocacao" && activeTab !== "geografia" && evolutionData.length > 0;
-
   return (
     <div className="flex flex-col gap-2">
-      {showRefresh && (
-        <div className="hidden justify-end md:flex">
-          <button
-            onClick={handleGenerateAll}
-            disabled={generating}
-            aria-label="Atualizar snapshots"
-            title="Atualizar snapshots"
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 text-xs font-medium text-[var(--color-text-muted)] shadow-sm transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
-          >
-            <RefreshCw size={15} className={generating ? "animate-spin" : ""} />
-            <span>{generating ? "Atualizando..." : "Atualizar"}</span>
-          </button>
-        </div>
-      )}
-
       <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-3 md:p-5 shadow-sm flex flex-col min-h-[330px] md:min-h-[400px]">
         <div className="mb-4 md:mb-5 md:flex md:items-center">
           <label className="block md:hidden">

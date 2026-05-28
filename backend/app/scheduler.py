@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -19,6 +19,20 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 PRICE_UPDATE_LOCK_NAME = "daily_price_update_job"
+
+
+def is_last_business_day_of_month(day: date) -> bool:
+    """Return True when the given weekday is the last Mon-Fri day of its month."""
+    if day.weekday() >= 5:
+        return False
+
+    next_day = day + timedelta(days=1)
+    while next_day.month == day.month:
+        if next_day.weekday() < 5:
+            return False
+        next_day += timedelta(days=1)
+
+    return True
 
 
 async def _record_last_run(db, status: str) -> None:
@@ -89,10 +103,14 @@ async def _execute_price_update_cycle(db) -> dict:
 
         snapshot_failures: list[dict[str, int]] = []
         snapshot_success_count = 0
+        monthly_snapshot_failures: list[dict[str, int]] = []
+        monthly_snapshot_success_count = 0
+        should_generate_monthly_snapshot = is_last_business_day_of_month(today)
 
         for user in users:
+            snap_service = SnapshotService(db, user)
+
             try:
-                snap_service = SnapshotService(db, user)
                 await snap_service.generate_daily_snapshot(today)
                 await db.commit()
                 snapshot_success_count += 1
@@ -100,16 +118,37 @@ async def _execute_price_update_cycle(db) -> dict:
                 await db.rollback()
                 snapshot_failures.append({"user_id": user.id})
                 logger.exception("Failed daily snapshot for user %s", user.id)
+                continue
+
+            if not should_generate_monthly_snapshot:
+                continue
+
+            try:
+                await snap_service.generate_snapshot(today.year, today.month)
+                await db.commit()
+                monthly_snapshot_success_count += 1
+            except Exception:
+                await db.rollback()
+                monthly_snapshot_failures.append({"user_id": user.id})
+                logger.exception("Failed monthly snapshot for user %s", user.id)
 
         status = (
             "success"
-            if not results["failed"] and not snapshot_failures and not connection_failures
+            if not results["failed"]
+            and not snapshot_failures
+            and not monthly_snapshot_failures
+            and not connection_failures
             else "partial"
         )
         results["status"] = status
         results["snapshots"] = {
             "generated": snapshot_success_count,
             "failed": snapshot_failures,
+        }
+        results["monthly_snapshots"] = {
+            "attempted": should_generate_monthly_snapshot,
+            "generated": monthly_snapshot_success_count,
+            "failed": monthly_snapshot_failures,
         }
         results["connections"] = {
             "synced": connections_synced,
@@ -119,7 +158,7 @@ async def _execute_price_update_cycle(db) -> dict:
 
         await _record_last_run(db, status)
         logger.info(
-            "Price update cycle finished: %s prices updated, %s price failures, %s connections synced, %s new txns, %s connection failures, %s snapshots generated, %s snapshot failures",
+            "Price update cycle finished: %s prices updated, %s price failures, %s connections synced, %s new txns, %s connection failures, %s snapshots generated, %s snapshot failures, monthly attempted=%s, %s monthly snapshots generated, %s monthly snapshot failures",
             len(results["updated"]),
             len(results["failed"]),
             connections_synced,
@@ -127,6 +166,9 @@ async def _execute_price_update_cycle(db) -> dict:
             len(connection_failures),
             snapshot_success_count,
             len(snapshot_failures),
+            should_generate_monthly_snapshot,
+            monthly_snapshot_success_count,
+            len(monthly_snapshot_failures),
         )
         return results
     except Exception:
