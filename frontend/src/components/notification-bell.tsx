@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck } from "lucide-react";
+import { AlertCircle, Bell, CheckCheck, CheckCircle2, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import type {
@@ -17,6 +17,30 @@ function formatNotificationTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function severityStyles(severity: string) {
+  switch (severity) {
+    case "success":
+      return {
+        icon: CheckCircle2,
+        color: "text-[var(--color-positive)]",
+        bg: "bg-[var(--color-positive)]/10",
+      };
+    case "warning":
+    case "error":
+      return {
+        icon: AlertCircle,
+        color: "text-[var(--color-negative)]",
+        bg: "bg-[var(--color-negative)]/10",
+      };
+    default:
+      return {
+        icon: Info,
+        color: "text-[var(--color-accent)]",
+        bg: "bg-[var(--color-accent)]/10",
+      };
+  }
 }
 
 export default function NotificationBell() {
@@ -149,6 +173,8 @@ export default function NotificationBell() {
             ) : (
               notifications.map((notification) => {
                 const isUnread = !notification.read_at;
+                const severity = severityStyles(notification.severity);
+                const SeverityIcon = severity.icon;
                 return (
                   <button
                     type="button"
@@ -159,14 +185,19 @@ export default function NotificationBell() {
                     }`}
                   >
                     <div className="flex items-start gap-2">
-                      {isUnread && (
-                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--color-negative)]" />
-                      )}
+                      <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full ${severity.bg} ${severity.color}`}>
+                        <SeverityIcon size={14} />
+                      </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-                            {notification.title}
-                          </p>
+                          <div className="flex min-w-0 items-center gap-2">
+                            {isUnread && (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-negative)]" />
+                            )}
+                            <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                              {notification.title}
+                            </p>
+                          </div>
                           <time className="shrink-0 text-[11px] text-[var(--color-text-muted)]">
                             {formatNotificationTime(notification.created_at)}
                           </time>

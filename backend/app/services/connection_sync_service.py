@@ -18,6 +18,11 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.services import dividend_service, pluggy_service
 from app.services.encryption_service import decrypt
+from app.services.notification_producer_service import (
+    notify_bank_connection_action_required,
+    notify_bank_sync_new_transactions,
+    notify_dividend_detected,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,19 @@ async def _create_transaction_with_dividend(
     txn = Transaction(account_id=account_id, user_id=user_id, **parsed)
     db.add(txn)
     await db.flush()
-    await dividend_service.upsert_dividend_event_for_transaction(db, txn)
+    dividend_result = await dividend_service.upsert_dividend_event_for_transaction(db, txn)
+    if dividend_result.created and dividend_result.event is not None:
+        await db.flush()
+        await notify_dividend_detected(
+            db,
+            user_id=user_id,
+            transaction_id=txn.id,
+            dividend_event_id=dividend_result.event.id,
+            ticker=dividend_result.event.ticker,
+            amount=dividend_result.event.credited_amount,
+            payment_date=dividend_result.event.payment_date,
+            confidence=dividend_result.event.source_confidence,
+        )
     return txn
 
 
@@ -97,12 +114,26 @@ async def sync_connection(
         item_data = await pluggy_service.get_item(api_key, connection.external_id)
     except httpx.HTTPStatusError:
         connection.status = "error"
+        await notify_bank_connection_action_required(
+            db,
+            user_id=connection.user_id,
+            connection_id=connection.id,
+            institution_name=connection.institution_name,
+            reason="error",
+        )
         await db.commit()
         return ConnectionSyncResult(new_transactions=0, connection_status="error")
 
     item_status = item_data.get("status", "")
     if item_status in ("LOGIN_ERROR", "OUTDATED"):
         connection.status = "expired"
+        await notify_bank_connection_action_required(
+            db,
+            user_id=connection.user_id,
+            connection_id=connection.id,
+            institution_name=connection.institution_name,
+            reason="expired",
+        )
         await db.commit()
         return ConnectionSyncResult(new_transactions=0, connection_status="expired")
 
@@ -147,6 +178,13 @@ async def sync_connection(
 
     connection.status = "active"
     connection.last_sync_at = datetime.now(timezone.utc)
+    await notify_bank_sync_new_transactions(
+        db,
+        user_id=connection.user_id,
+        connection_id=connection.id,
+        institution_name=connection.institution_name,
+        new_transactions=new_count,
+    )
     await db.commit()
 
     return ConnectionSyncResult(new_transactions=new_count, connection_status="active")
@@ -173,6 +211,10 @@ async def sync_user_connections(db: AsyncSession, user: User) -> dict:
         return summary
     except InvalidPluggyEncryptionError:
         summary["failed"].append({"reason": "invalid_encryption"})
+        await notify_bank_connection_action_required(
+            db, user_id=user.id, reason="invalid_encryption"
+        )
+        await db.commit()
         logger.warning("User %s has Pluggy credentials that cannot be decrypted", user.id)
         return summary
 
@@ -181,6 +223,10 @@ async def sync_user_connections(db: AsyncSession, user: User) -> dict:
     except Exception:
         logger.exception("Pluggy authentication failed for user %s", user.id)
         summary["failed"].append({"reason": "auth_failed"})
+        await notify_bank_connection_action_required(
+            db, user_id=user.id, reason="auth_failed"
+        )
+        await db.commit()
         return summary
 
     connections_result = await db.execute(

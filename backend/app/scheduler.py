@@ -12,7 +12,14 @@ from app.models.asset import Asset
 from app.models.fixed_income import FixedIncomePosition
 from app.models.user import User
 from app.services.connection_sync_service import sync_user_connections
+from app.services.notification_producer_service import (
+    notify_price_update_results_for_users,
+    scan_allocation_drift,
+    scan_fixed_income_maturities,
+    scan_retirement_milestones,
+)
 from app.services.price_service import PriceService, _upsert_system_setting
+from app.services.price_anomaly_service import scan_and_notify_purchase_price_anomalies
 from app.services.snapshot_service import SnapshotService
 
 logger = logging.getLogger(__name__)
@@ -154,6 +161,48 @@ async def _execute_price_update_cycle(db) -> dict:
             "synced": connections_synced,
             "new_transactions": connections_new_txns,
             "failed": connection_failures,
+        }
+
+        notification_failures: list[dict] = []
+        notifications_created = 0
+
+        try:
+            notifications_created += await notify_price_update_results_for_users(
+                db,
+                results=results,
+                users=users,
+                run_date=today,
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            notification_failures.append({"stage": "price_update"})
+            logger.exception("Failed to create price update notifications")
+
+        try:
+            notifications_created += await scan_fixed_income_maturities(db, today=today)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            notification_failures.append({"stage": "fixed_income_maturities"})
+            logger.exception("Failed to scan fixed income maturity notifications")
+
+        for user in users:
+            try:
+                notifications_created += await scan_and_notify_purchase_price_anomalies(
+                    db, user
+                )
+                notifications_created += await scan_retirement_milestones(db, user)
+                notifications_created += await scan_allocation_drift(db, user, today=today)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                notification_failures.append({"stage": "user_scans", "user_id": user.id})
+                logger.exception("Failed notification scans for user %s", user.id)
+
+        results["notifications"] = {
+            "created": notifications_created,
+            "failed": notification_failures,
         }
 
         await _record_last_run(db, status)

@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
@@ -12,6 +13,12 @@ PROCEEDS_CATEGORY = "Proceeds interests and dividends"
 
 _TICKER_RE = re.compile(r"\b([A-Z]{4,6}\d{1,2})\b")
 _QUANTITY_TICKER_RE = re.compile(r"(?P<qty>\d+(?:[.,]\d+)?)\s+(?P<ticker>[A-Z]{4,6}\d{1,2})\s*$")
+
+
+@dataclass
+class DividendUpsertResult:
+    event: DividendEvent | None
+    created: bool
 
 
 def _normalize_text(value: str | None) -> str:
@@ -115,9 +122,9 @@ async def _find_asset_id(db: AsyncSession, ticker: str | None) -> int | None:
 async def upsert_dividend_event_for_transaction(
     db: AsyncSession,
     txn: Transaction,
-) -> DividendEvent | None:
+) -> DividendUpsertResult:
     if not is_dividend_candidate(txn):
-        return None
+        return DividendUpsertResult(event=None, created=False)
 
     description = _extract_description(txn)
     source_category = _extract_source_category(txn)
@@ -132,6 +139,7 @@ async def upsert_dividend_event_for_transaction(
         select(DividendEvent).where(DividendEvent.transaction_id == txn.id)
     )
     event = result.scalar_one_or_none()
+    created = event is None
     if not event:
         event = DividendEvent(
             user_id=txn.user_id,
@@ -152,7 +160,7 @@ async def upsert_dividend_event_for_transaction(
     event.source_category = source_category
     event.source_confidence = _extract_confidence(source_category, description)
     event.raw_data = txn.raw_data
-    return event
+    return DividendUpsertResult(event=event, created=created)
 
 
 async def backfill_dividend_events_for_account(
@@ -174,7 +182,7 @@ async def backfill_dividend_events_for_account(
     )
     created = 0
     for txn in result.scalars().all():
-        event = await upsert_dividend_event_for_transaction(db, txn)
-        if event is not None:
+        result = await upsert_dividend_event_for_transaction(db, txn)
+        if result.event is not None:
             created += 1
     return created
