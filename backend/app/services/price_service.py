@@ -8,7 +8,13 @@ import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset, CurrencyCode, Market, resolve_asset_metadata
+from app.models.asset import (
+    Asset,
+    AssetClass,
+    CurrencyCode,
+    Market,
+    resolve_asset_metadata,
+)
 from app.models.asset_price_history import AssetPriceHistory
 from app.models.system_setting import SystemSetting
 from app.models.user import User
@@ -28,6 +34,20 @@ YF_RETRY_DELAYS_SECONDS = (2, 5, 10)
 
 def _is_demo_asset(asset: Asset) -> bool:
     return asset.description.strip().endswith(" Demo")
+
+
+def _is_tesouro_asset(asset: Asset) -> bool:
+    return bool(asset.td_kind and asset.td_maturity_year)
+
+
+def _is_non_tesouro_fixed_income(asset: Asset) -> bool:
+    asset_class, _market, _quote_currency = resolve_asset_metadata(
+        legacy_type=asset.type,
+        asset_class=asset.asset_class,
+        market=asset.market,
+        quote_currency=asset.quote_currency,
+    )
+    return asset_class == AssetClass.RF and not _is_tesouro_asset(asset)
 
 
 def _extract_close(data, yf_ticker: str) -> float | None:
@@ -64,9 +84,7 @@ def _extract_price_curve(
         try:
             field_data = data[field]
             return (
-                field_data[yf_ticker]
-                if hasattr(field_data, "columns")
-                else field_data
+                field_data[yf_ticker] if hasattr(field_data, "columns") else field_data
             )
         except Exception:
             return None
@@ -159,8 +177,17 @@ class PriceService:
             if _is_demo_asset(asset)
         )
 
-        tesouro_assets = [a for a in assets if a.td_kind and a.td_maturity_year]
-        other_assets = [a for a in assets if not (a.td_kind and a.td_maturity_year)]
+        tesouro_assets = [a for a in assets if _is_tesouro_asset(a)]
+        non_tesouro_rf_assets = [a for a in assets if _is_non_tesouro_fixed_income(a)]
+        results["skipped"].extend(
+            {"ticker": asset.ticker, "reason": "non-Tesouro fixed income"}
+            for asset in non_tesouro_rf_assets
+        )
+        other_assets = [
+            a
+            for a in assets
+            if not _is_tesouro_asset(a) and not _is_non_tesouro_fixed_income(a)
+        ]
 
         td_results = await self._fetch_tesouro_prices(tesouro_assets)
         results["updated"].extend(td_results["updated"])

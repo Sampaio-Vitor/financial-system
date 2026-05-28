@@ -36,7 +36,9 @@ def _yf_frame(values: dict, ticker: str | None = None) -> pd.DataFrame:
     )
 
 
-async def test_price_history_cache_downloads_and_stores_first_request(db, user, monkeypatch):
+async def test_price_history_cache_downloads_and_stores_first_request(
+    db, user, monkeypatch
+):
     today = datetime.now(timezone.utc).date()
     asset = await make_asset(
         db,
@@ -88,10 +90,14 @@ async def test_price_history_cache_downloads_and_stores_first_request(db, user, 
     assert [call[0] for call in calls] == ["AAPL", "USDBRL=X"]
 
     rows = (
-        await db.execute(
-            select(AssetPriceHistory).where(AssetPriceHistory.asset_id == asset.id)
+        (
+            await db.execute(
+                select(AssetPriceHistory).where(AssetPriceHistory.asset_id == asset.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 2
     assert rows[0].quote_currency == CurrencyCode.USD
     assert rows[0].low_native is not None
@@ -137,7 +143,9 @@ async def test_price_history_cache_second_request_uses_database(db, user, monkey
     ]
 
 
-async def test_price_history_cache_fetches_trailing_missing_range(db, user, monkeypatch):
+async def test_price_history_cache_fetches_trailing_missing_range(
+    db, user, monkeypatch
+):
     today = datetime.now(timezone.utc).date()
     asset = await make_asset(
         db,
@@ -193,3 +201,48 @@ async def test_price_history_cache_fetches_trailing_missing_range(db, user, monk
         },
     ]
     assert [call[0] for call in calls] == ["VOO", "USDBRL=X"]
+
+
+async def test_update_all_prices_skips_non_tesouro_fixed_income(db, user, monkeypatch):
+    rf_asset = await make_asset(
+        db,
+        ticker="CDB-TEST",
+        asset_type=AssetType.RF,
+        asset_class=AssetClass.RF,
+        market=Market.BR,
+        quote_currency=CurrencyCode.BRL,
+    )
+    stock_asset = await make_asset(
+        db,
+        ticker="AAPL",
+        asset_type=AssetType.STOCK,
+        asset_class=AssetClass.STOCK,
+        market=Market.US,
+        quote_currency=CurrencyCode.USD,
+    )
+
+    async def fake_refresh_fx_rates(self, results):
+        return {CurrencyCode.BRL: Decimal("1"), CurrencyCode.USD: Decimal("5")}
+
+    async def fake_fetch_tesouro_prices(self, assets):
+        assert assets == []
+        return {"updated": [], "failed": []}
+
+    yf_assets = []
+
+    async def fake_fetch_yf_prices(self, assets, fx_rates):
+        yf_assets.extend(assets)
+        return {"updated": [], "failed": []}
+
+    monkeypatch.setattr(PriceService, "_refresh_fx_rates", fake_refresh_fx_rates)
+    monkeypatch.setattr(
+        PriceService, "_fetch_tesouro_prices", fake_fetch_tesouro_prices
+    )
+    monkeypatch.setattr(PriceService, "_fetch_yf_prices", fake_fetch_yf_prices)
+
+    results = await PriceService(db, user).update_all_prices()
+
+    assert yf_assets == [stock_asset]
+    assert {"ticker": rf_asset.ticker, "reason": "non-Tesouro fixed income"} in results[
+        "skipped"
+    ]
