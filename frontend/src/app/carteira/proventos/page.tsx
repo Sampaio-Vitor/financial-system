@@ -16,7 +16,7 @@ import {
   Cell,
 } from "recharts";
 import Link from "next/link";
-import { Plug } from "lucide-react";
+import { Plug, CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { DividendEventListResponse, DividendEvent } from "@/types";
@@ -69,6 +69,22 @@ export default function ProventosPage() {
   const [events, setEvents] = useState<DividendEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [tickerFilter, setTickerFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  const [donutExpanded, setDonutExpanded] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [expandedPanel, setExpandedPanel] = useState<"calendario" | "barras" | "donut" | null>(null);
+
+  const togglePanel = (p: "calendario" | "barras" | "donut") =>
+    setExpandedPanel((prev) => (prev === p ? null : p));
+
+  useEffect(() => {
+    if (!expandedPanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpandedPanel(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expandedPanel]);
 
   // Year options: current year down to 5 years ago
   const yearOptions = useMemo(() => {
@@ -81,38 +97,46 @@ export default function ProventosPage() {
 
   useEffect(() => {
     setLoading(true);
+    setTypeFilter(new Set());
+    setDonutExpanded(false);
     apiFetch<DividendEventListResponse>(`/dividends?year=${year}&tab=${activeTab}`)
       .then((data) => setEvents(data.events))
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
   }, [year, activeTab]);
 
+  // Events scoped by the active event-type filter (empty set = all types)
+  const scopedEvents = useMemo(
+    () => (typeFilter.size === 0 ? events : events.filter((e) => typeFilter.has(e.event_type))),
+    [events, typeFilter]
+  );
+
   // --- Computed data ---
   const totalReceived = useMemo(
-    () => events.reduce((sum, e) => sum + Number(e.credited_amount), 0),
-    [events]
+    () => scopedEvents.reduce((sum, e) => sum + Number(e.credited_amount), 0),
+    [scopedEvents]
   );
 
   const totalGross = useMemo(
-    () => events.reduce((sum, e) => sum + Number(e.gross_amount ?? e.credited_amount), 0),
-    [events]
+    () => scopedEvents.reduce((sum, e) => sum + Number(e.gross_amount ?? e.credited_amount), 0),
+    [scopedEvents]
   );
 
   const totalTax = useMemo(
-    () => events.reduce((sum, e) => sum + Number(e.withholding_tax ?? 0), 0),
-    [events]
+    () => scopedEvents.reduce((sum, e) => sum + Number(e.withholding_tax ?? 0), 0),
+    [scopedEvents]
   );
 
   const topPayer = useMemo(() => {
-    if (events.length === 0) return null;
+    if (scopedEvents.length === 0) return null;
     const byTicker: Record<string, number> = {};
-    for (const e of events) {
+    for (const e of scopedEvents) {
       const t = e.ticker || "?";
       byTicker[t] = (byTicker[t] || 0) + Number(e.credited_amount);
     }
     const sorted = Object.entries(byTicker).sort((a, b) => b[1] - a[1]);
     return sorted[0] ? { ticker: sorted[0][0], total: sorted[0][1] } : null;
-  }, [events]);
+  }, [scopedEvents]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -133,6 +157,29 @@ export default function ProventosPage() {
 
   const activeTypes = useMemo(() => Object.keys(eventTypeColors), [eventTypeColors]);
 
+  const fmtMini = (v: number) =>
+    v >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${Math.round(v)}`;
+
+  const isTypeOn = (t: string) => typeFilter.size === 0 || typeFilter.has(t);
+
+  const toggleType = (t: string) => {
+    setDonutExpanded(false);
+    setTypeFilter((prev) => {
+      const all = activeTypes;
+      let next: Set<string>;
+      if (prev.size === 0) {
+        next = new Set(all.filter((x) => x !== t));
+      } else {
+        next = new Set(prev);
+        if (next.has(t)) next.delete(t);
+        else next.add(t);
+      }
+      // empty or "everything selected" both mean no filter
+      if (next.size === 0 || next.size === all.length) return new Set();
+      return next;
+    });
+  };
+
   // Bar chart: monthly by event type + accumulated line
   const monthlyData = useMemo(() => {
     const data = MONTH_LABELS.map((label) => {
@@ -143,7 +190,7 @@ export default function ProventosPage() {
 
     // Track which months have events
     const monthsWithEvents = new Set<number>();
-    for (const e of events) {
+    for (const e of scopedEvents) {
       const monthIdx = new Date(e.payment_date + "T00:00:00").getMonth();
       monthsWithEvents.add(monthIdx);
       const type = e.event_type;
@@ -162,38 +209,82 @@ export default function ProventosPage() {
     }
 
     return data;
-  }, [events, activeTypes]);
+  }, [scopedEvents, activeTypes]);
 
-  // Donut: by ticker (top 5 + outros)
+  // Donut: by ticker. Collapsed = top 5 + Outros; expanded = every ticker.
   const donutData = useMemo(() => {
     const byTicker: Record<string, number> = {};
-    for (const e of events) {
+    for (const e of scopedEvents) {
       const t = e.ticker || "?";
       byTicker[t] = (byTicker[t] || 0) + Number(e.credited_amount);
     }
     const sorted = Object.entries(byTicker).sort((a, b) => b[1] - a[1]);
+
+    const colorAt = (i: number) => TICKER_COLORS[i % TICKER_COLORS.length];
+
+    if (donutExpanded) {
+      return sorted.map(([name, value], i) => ({ name, value, color: colorAt(i) }));
+    }
+
     const top5 = sorted.slice(0, 5);
     const othersTotal = sorted.slice(5).reduce((sum, [, v]) => sum + v, 0);
-
-    const result = top5.map(([name, value], i) => ({
-      name,
-      value,
-      color: TICKER_COLORS[i],
-    }));
-
+    const result = top5.map(([name, value], i) => ({ name, value, color: colorAt(i) }));
     if (othersTotal > 0) {
       result.push({ name: "Outros", value: othersTotal, color: TICKER_COLORS[5] });
     }
-
     return result;
-  }, [events]);
+  }, [scopedEvents, donutExpanded]);
 
-  // Filtered events for table
+  // Clicking a donut slice/legend: "Outros" expands the breakdown, a ticker
+  // toggles the table/calendar filter for that ticker.
+  const handleSliceClick = (name: string) => {
+    if (name === "Outros") {
+      setDonutExpanded(true);
+      return;
+    }
+    setTickerFilter((prev) => (prev.toUpperCase() === name ? "" : name));
+  };
+
+  // Filtered events for table/calendar (scoped + ticker text filter)
   const filteredEvents = useMemo(() => {
-    if (!tickerFilter) return events;
+    if (!tickerFilter) return scopedEvents;
     const filter = tickerFilter.toUpperCase();
-    return events.filter((e) => e.ticker?.includes(filter));
-  }, [events, tickerFilter]);
+    return scopedEvents.filter((e) => e.ticker?.includes(filter));
+  }, [scopedEvents, tickerFilter]);
+
+  // Calendar: events grouped by payment day, plus the month grid + month total
+  const eventsByDay = useMemo(() => {
+    const map: Record<string, DividendEvent[]> = {};
+    for (const e of filteredEvents) {
+      (map[e.payment_date] ||= []).push(e);
+    }
+    return map;
+  }, [filteredEvents]);
+
+  const calendarWeeks = useMemo(() => {
+    const startDow = new Date(year, calMonth, 1).getDay();
+    const daysInMonth = new Date(year, calMonth + 1, 0).getDate();
+    const cells: ({ day: number; dateStr: string } | null)[] = [];
+    for (let i = 0; i < startDow; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, dateStr });
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    const weeks: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+    return weeks;
+  }, [year, calMonth]);
+
+  const calMonthTotal = useMemo(
+    () =>
+      filteredEvents
+        .filter((e) => new Date(e.payment_date + "T00:00:00").getMonth() === calMonth)
+        .reduce((sum, e) => sum + Number(e.credited_amount), 0),
+    [filteredEvents, calMonth]
+  );
+
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   if (loading) {
     return (
@@ -273,6 +364,36 @@ export default function ProventosPage() {
         </div>
       </div>
 
+      {/* Event-type filter */}
+      {activeTypes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide mr-1">
+            Tipo
+          </span>
+          {activeTypes.map((t) => {
+            const on = isTypeOn(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleType(t)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+                  on
+                    ? "border-[var(--color-border)] bg-[var(--color-bg-card)] text-[var(--color-text-primary)]"
+                    : "border-transparent bg-transparent text-[var(--color-text-muted)] opacity-50"
+                }`}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: eventTypeColors[t] }}
+                />
+                {getEventTypeLabel(t)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {events.length === 0 ? (
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-8 text-center max-w-md mx-auto">
           <div className="w-16 h-16 bg-[var(--color-accent)]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -294,9 +415,258 @@ export default function ProventosPage() {
         </div>
       ) : (
         <>
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            {/* Monthly bar chart */}
+          {/* Condensed panel selector */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            {/* Calendar tile */}
+            <button
+              type="button"
+              onClick={() => togglePanel("calendario")}
+              className={`text-left rounded-2xl border p-4 transition-colors ${
+                expandedPanel === "calendario"
+                  ? "border-[var(--color-accent)] bg-[var(--color-bg-card)]"
+                  : "border-[var(--color-border)] bg-[var(--color-bg-card)] hover:border-[var(--color-text-muted)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <CalendarDays size={15} className="text-[var(--color-accent)]" />
+                <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+                  Calendário
+                </span>
+                <span className="ml-auto text-xs font-semibold text-[var(--color-positive)]">
+                  {formatBRL(calMonthTotal)}
+                </span>
+              </div>
+              <div className="grid grid-cols-7 gap-0.5">
+                {calendarWeeks.flat().map((cell, i) => {
+                  if (!cell) return <div key={`mc-${i}`} className="h-6" />;
+                  const de = eventsByDay[cell.dateStr] || [];
+                  const tot = de.reduce((s, e) => s + Number(e.credited_amount), 0);
+                  return (
+                    <div
+                      key={cell.dateStr}
+                      className={`h-6 rounded flex flex-col items-center justify-center leading-none ${
+                        de.length ? "bg-[var(--color-bg-main)]" : ""
+                      }`}
+                    >
+                      <span className="text-[8px] text-[var(--color-text-muted)]">{cell.day}</span>
+                      {de.length > 0 && (
+                        <span className="text-[8px] text-[var(--color-positive)] font-medium">
+                          {fmtMini(tot)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </button>
+
+            {/* Monthly bars tile */}
+            <button
+              type="button"
+              onClick={() => togglePanel("barras")}
+              className={`text-left rounded-2xl border p-4 transition-colors ${
+                expandedPanel === "barras"
+                  ? "border-[var(--color-accent)] bg-[var(--color-bg-card)]"
+                  : "border-[var(--color-border)] bg-[var(--color-bg-card)] hover:border-[var(--color-text-muted)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+                  {activeTab === "recebidos" ? "Recebidos por Mês" : "Previstos por Mês"}
+                </span>
+                <span className="ml-auto text-xs font-semibold text-[var(--color-positive)]">
+                  {formatBRL(totalReceived)}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={150} className="pointer-events-none">
+                <ComposedChart data={monthlyData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                  {activeTypes.map((type, i) => (
+                    <Bar
+                      key={type}
+                      dataKey={type}
+                      stackId="a"
+                      fill={eventTypeColors[type]}
+                      radius={i === activeTypes.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                    />
+                  ))}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </button>
+
+            {/* Distribution tile */}
+            <button
+              type="button"
+              onClick={() => togglePanel("donut")}
+              className={`text-left rounded-2xl border p-4 transition-colors ${
+                expandedPanel === "donut"
+                  ? "border-[var(--color-accent)] bg-[var(--color-bg-card)]"
+                  : "border-[var(--color-border)] bg-[var(--color-bg-card)] hover:border-[var(--color-text-muted)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+                  Distribuição
+                </span>
+                {topPayer && (
+                  <span className="ml-auto text-xs text-[var(--color-text-muted)]">
+                    Maior: {topPayer.ticker}
+                  </span>
+                )}
+              </div>
+              <div className="relative pointer-events-none" style={{ height: 150 }}>
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie
+                      data={donutData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="58%"
+                      outerRadius="88%"
+                      dataKey="value"
+                      strokeWidth={2}
+                      stroke="var(--color-bg-card)"
+                    >
+                      {donutData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-xs font-bold text-[var(--color-text-primary)]">
+                    {formatBRL(totalReceived)}
+                  </span>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          {/* Expanded panel modal */}
+          {expandedPanel && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setExpandedPanel(null)}
+          >
+          <div
+            className="relative w-full max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <button
+            type="button"
+            onClick={() => setExpandedPanel(null)}
+            aria-label="Fechar"
+            className="absolute -top-3 -right-3 z-20 w-8 h-8 rounded-full bg-[var(--color-bg-card)] border border-[var(--color-border)] shadow-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+          >
+            <X size={16} />
+          </button>
+          <div className="max-h-[88vh] overflow-y-auto rounded-2xl">
+
+          {/* Dividend calendar */}
+          {expandedPanel === "calendario" && (
+          <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CalendarDays size={18} className="text-[var(--color-accent)]" />
+                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Calendário de Proventos
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCalMonth((m) => Math.max(0, m - 1))}
+                  disabled={calMonth === 0}
+                  className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] disabled:opacity-30"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="text-center min-w-[110px]">
+                  <div className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    {MONTH_LABELS[calMonth]} {year}
+                  </div>
+                  <div className="text-xs text-[var(--color-positive)] font-medium">
+                    {formatBRL(calMonthTotal)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalMonth((m) => Math.min(11, m + 1))}
+                  disabled={calMonth === 11}
+                  className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] disabled:opacity-30"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Weekday labels */}
+            <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
+                <div key={d} className="text-center text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Day grid */}
+            <div className="grid grid-cols-7 gap-1.5">
+              {calendarWeeks.flat().map((cell, i) => {
+                if (!cell) return <div key={`empty-${i}`} className="min-h-[92px]" />;
+                const dayEvents = eventsByDay[cell.dateStr] || [];
+                const isToday = cell.dateStr === todayStr;
+                const dayTotal = dayEvents.reduce((s, e) => s + Number(e.credited_amount), 0);
+                return (
+                  <div
+                    key={cell.dateStr}
+                    className={`min-h-[92px] rounded-lg border p-2 flex flex-col ${
+                      dayEvents.length
+                        ? "border-[var(--color-border)] bg-[var(--color-bg-main)]"
+                        : "border-transparent"
+                    }`}
+                  >
+                    <div
+                      className={`text-xs mb-1 ${
+                        isToday
+                          ? "font-bold text-[var(--color-accent)]"
+                          : "text-[var(--color-text-muted)]"
+                      }`}
+                    >
+                      {cell.day}
+                    </div>
+                    <div className="space-y-0.5 flex-1">
+                      {dayEvents.slice(0, 3).map((e) => (
+                        <div
+                          key={e.id}
+                          className="flex items-center justify-between gap-1 text-[11px] leading-tight"
+                          title={`${e.ticker} · ${formatBRL(Number(e.credited_amount))}`}
+                        >
+                          <span className="text-[var(--color-text-secondary)] truncate">{e.ticker}</span>
+                          <span className="text-[var(--color-positive)] shrink-0">
+                            {formatBRL(Number(e.credited_amount)).replace("R$ ", "R$")}
+                          </span>
+                        </div>
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <div className="text-[10px] text-[var(--color-text-muted)] leading-tight">
+                          +{dayEvents.length - 3} mais
+                        </div>
+                      )}
+                    </div>
+                    {dayEvents.length > 1 && (
+                      <div className="mt-1 pt-1 border-t border-[var(--color-border)]/60 text-right text-[11px] font-semibold text-[var(--color-positive)] truncate">
+                        {formatBRL(dayTotal).replace("R$ ", "R$")}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          )}
+
+          {/* Monthly bar chart (expanded) */}
+          {expandedPanel === "barras" && (
+          <div>
             <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mb-4">
                 {activeTab === "recebidos" ? "Recebidos por Mês" : "Previstos por Mês"}
@@ -348,8 +718,12 @@ export default function ProventosPage() {
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
+          </div>
+          )}
 
-            {/* Donut by ticker */}
+          {/* Donut by ticker (expanded) */}
+          {expandedPanel === "donut" && (
+          <div>
             <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide mb-4">
                 Distribuição por Ativo
@@ -367,6 +741,8 @@ export default function ProventosPage() {
                         dataKey="value"
                         strokeWidth={2}
                         stroke="var(--color-bg-card)"
+                        onClick={(d: { name?: string }) => d?.name && handleSliceClick(d.name)}
+                        className="cursor-pointer outline-none"
                       >
                         {donutData.map((entry, i) => (
                           <Cell key={i} fill={entry.color} />
@@ -385,25 +761,49 @@ export default function ProventosPage() {
                     </span>
                   </div>
                 </div>
-                <div className="space-y-2 shrink-0">
-                  {donutData.map((entry) => (
-                    <div key={entry.name} className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: entry.color }} />
-                      <div className="text-xs">
-                        <span className="text-[var(--color-text-secondary)] font-medium">{entry.name}</span>
-                        <span className="text-[var(--color-text-muted)] ml-1.5">{formatBRL(entry.value)}</span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-1.5 shrink-0 max-h-[200px] overflow-y-auto pr-1">
+                  {donutData.map((entry) => {
+                    const selected = tickerFilter.toUpperCase() === entry.name;
+                    return (
+                      <button
+                        key={entry.name}
+                        type="button"
+                        onClick={() => handleSliceClick(entry.name)}
+                        className={`flex items-center gap-2 w-full text-left rounded-md px-1.5 py-0.5 transition-colors hover:bg-[var(--color-bg-main)] ${
+                          selected ? "bg-[var(--color-bg-main)]" : ""
+                        }`}
+                      >
+                        <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: entry.color }} />
+                        <div className="text-xs">
+                          <span className="text-[var(--color-text-secondary)] font-medium">{entry.name}</span>
+                          <span className="text-[var(--color-text-muted)] ml-1.5">{formatBRL(entry.value)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {donutExpanded && (
+                    <button
+                      type="button"
+                      onClick={() => setDonutExpanded(false)}
+                      className="text-xs text-[var(--color-accent)] hover:underline px-1.5 pt-1"
+                    >
+                      Recolher
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           </div>
+          )}
+          </div>
+          </div>
+          </div>
+          )}
 
           {/* Events table */}
           <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
-              <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
+            <div className="flex items-center justify-between gap-3 p-4 border-b border-[var(--color-border)]">
+              <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide shrink-0">
                 Eventos ({filteredEvents.length})
               </h3>
               <input
@@ -411,7 +811,7 @@ export default function ProventosPage() {
                 placeholder="Filtrar por ticker..."
                 value={tickerFilter}
                 onChange={(e) => setTickerFilter(e.target.value)}
-                className="bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)] w-48"
+                className="bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)] w-32 sm:w-48"
               />
             </div>
 
