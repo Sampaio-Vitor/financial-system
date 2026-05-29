@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.notification import Notification
@@ -12,8 +13,16 @@ from app.schemas.notification import (
     NotificationListResponse,
     NotificationResponse,
     NotificationUnreadCountResponse,
+    PushPublicKeyResponse,
+    PushSubscriptionCreate,
+    PushSubscriptionResponse,
 )
 from app.services.notification_service import mark_read, unread_count
+from app.services.push_service import (
+    push_enabled,
+    unsubscribe_endpoint,
+    upsert_subscription,
+)
 
 router = APIRouter()
 
@@ -69,6 +78,49 @@ async def get_unread_count(
     return NotificationUnreadCountResponse(
         unread_count=await unread_count(db, user_id=user.id)
     )
+
+
+@router.get("/push/public-key", response_model=PushPublicKeyResponse)
+async def get_push_public_key(_user: User = Depends(get_current_user)):
+    return PushPublicKeyResponse(
+        enabled=push_enabled(),
+        public_key=settings.VAPID_PUBLIC_KEY or None,
+    )
+
+
+@router.post("/push/subscribe", response_model=PushSubscriptionResponse)
+async def subscribe_push_notifications(
+    payload: PushSubscriptionCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not push_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Push notifications are not configured",
+        )
+    await upsert_subscription(
+        db,
+        user_id=user.id,
+        endpoint=payload.endpoint,
+        p256dh=payload.keys.p256dh,
+        auth=payload.keys.auth,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return PushSubscriptionResponse(subscribed=True)
+
+
+@router.post("/push/unsubscribe", response_model=PushSubscriptionResponse)
+async def unsubscribe_push_notifications(
+    payload: PushSubscriptionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await unsubscribe_endpoint(db, user_id=user.id, endpoint=payload.endpoint)
+    await db.commit()
+    return PushSubscriptionResponse(subscribed=False)
 
 
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)

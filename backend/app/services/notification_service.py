@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
+from app.services.push_service import send_notification_pushes
 
 
 async def create_notification(
@@ -40,6 +41,8 @@ async def create_notification(
         dedupe_key=dedupe_key,
     )
     db.add(notification)
+    await db.flush()
+    await send_notification_pushes(db, notification=notification)
     return notification
 
 

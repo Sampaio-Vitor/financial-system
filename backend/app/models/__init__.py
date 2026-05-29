@@ -24,6 +24,7 @@ from app.models.asset_price_history import AssetPriceHistory
 from app.models.purchase_price_anomaly_ignore import PurchasePriceAnomalyIgnore
 from app.models.retirement_goal import RetirementGoal
 from app.models.notification import Notification
+from app.models.push_subscription import PushSubscription
 
 __all__ = [
     "User",
@@ -54,4 +55,5 @@ __all__ = [
     "PurchasePriceAnomalyIgnore",
     "RetirementGoal",
     "Notification",
+    "PushSubscription",
 ]

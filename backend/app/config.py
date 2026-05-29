@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     OCR_MODEL: str = "gemini-2.5-flash-lite"
 
+    # Web Push
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "https://cofrinhogordinho.uk"
+
     model_config = {"env_file": "../.env", "extra": "ignore"}
 
     @field_validator("ENCRYPTION_KEY")

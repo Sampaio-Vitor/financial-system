@@ -19,3 +19,4 @@ redis[hiredis]>=5.0.0
 arq>=0.26.0
 google-genai>=1.0.0
 Pillow>=10.0.0
+pywebpush>=2.0.3

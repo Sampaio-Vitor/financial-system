@@ -138,3 +138,22 @@ async def test_create_notification_dedupes_by_user_and_key(db, user):
 
     assert second.id == first.id
     assert second.title == "One"
+
+
+async def test_push_public_key_reports_disabled_when_not_configured(auth_client):
+    response = await auth_client.get("/api/notifications/push/public-key")
+
+    assert response.status_code == 200
+    assert response.json() == {"enabled": False, "public_key": None}
+
+
+async def test_push_subscribe_requires_vapid_config(auth_client):
+    response = await auth_client.post(
+        "/api/notifications/push/subscribe",
+        json={
+            "endpoint": "https://push.example.test/subscription",
+            "keys": {"p256dh": "key", "auth": "auth"},
+        },
+    )
+
+    assert response.status_code == 503

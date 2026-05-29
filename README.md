@@ -87,6 +87,13 @@ Edite o `.env` com seus valores:
 - `SECRET_KEY` — gere com `openssl rand -hex 32`
 - `GEMINI_API_KEY` — necessário apenas para funcionalidade de OCR
 - `ENCRYPTION_KEY` — necessário apenas para integração Pluggy
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — necessários para notificações push mobile
+
+Gere as chaves VAPID com:
+
+```bash
+docker compose run --rm --entrypoint python backend scripts/generate_vapid_keys.py
+```
 
 ### 2. Inicie os containers
 
@@ -120,6 +127,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 **Arquitetura:** Browser → Cloudflare (SSL) → VPS → Caddy (:443) → Frontend (:3000) → rewrites `/api/*` → Backend (:8000) → MySQL (:3306)
 
 CI/CD configurado via GitHub Actions — push na `main` faz deploy automático no VPS.
+O deploy recria o `.env` do VPS a partir de GitHub Secrets antes de subir a stack;
+valores reais não devem ser commitados.
 
 ## Variáveis de Ambiente
 
@@ -130,6 +139,9 @@ CI/CD configurado via GitHub Actions — push na `main` faz deploy automático n
 | `GEMINI_API_KEY` | API key do Google Gemini (OCR) | Apenas OCR |
 | `REDIS_URL` | URL do Redis | ✅ |
 | `ENCRYPTION_KEY` | Chave Fernet (credenciais Pluggy) | Apenas Pluggy |
+| `VAPID_PUBLIC_KEY` | Chave pública Web Push | Apenas push mobile |
+| `VAPID_PRIVATE_KEY` | Chave privada Web Push | Apenas push mobile |
+| `VAPID_SUBJECT` | Contato/origem VAPID (`mailto:` ou URL) | Apenas push mobile |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile CAPTCHA | Opcional |
 | `CORS_ORIGINS` | Origens permitidas (comma-separated) | Opcional |
 | `API_DOCS_ENABLED` | Habilita Swagger UI em `/docs` | Opcional |
