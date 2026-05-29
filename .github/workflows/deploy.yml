@@ -57,30 +57,7 @@ jobs:
             export SESSION_COOKIE_SAMESITE="strict"
             export OCR_MODEL="gemini-2.5-flash-lite"
             compose() {
-              sudo \
-                DATABASE_URL="${DATABASE_URL}" \
-                MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
-                MYSQL_DATABASE="${MYSQL_DATABASE}" \
-                MYSQL_USER="${MYSQL_USER}" \
-                MYSQL_PASSWORD="${MYSQL_PASSWORD}" \
-                SECRET_KEY="${SECRET_KEY}" \
-                ADMIN_USERNAME="${ADMIN_USERNAME}" \
-                ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-                ENCRYPTION_KEY="${ENCRYPTION_KEY}" \
-                CORS_ORIGINS="${CORS_ORIGINS}" \
-                CSRF_TRUSTED_ORIGINS="${CSRF_TRUSTED_ORIGINS}" \
-                TURNSTILE_SECRET_KEY="${TURNSTILE_SECRET_KEY}" \
-                NEXT_PUBLIC_TURNSTILE_SITE_KEY="${NEXT_PUBLIC_TURNSTILE_SITE_KEY}" \
-                TURNSTILE_REQUIRED="${TURNSTILE_REQUIRED}" \
-                API_DOCS_ENABLED="${API_DOCS_ENABLED}" \
-                SESSION_COOKIE_SECURE="${SESSION_COOKIE_SECURE}" \
-                SESSION_COOKIE_SAMESITE="${SESSION_COOKIE_SAMESITE}" \
-                GEMINI_API_KEY="${GEMINI_API_KEY}" \
-                OCR_MODEL="${OCR_MODEL}" \
-                VAPID_PUBLIC_KEY="${VAPID_PUBLIC_KEY}" \
-                VAPID_PRIVATE_KEY="${VAPID_PRIVATE_KEY}" \
-                VAPID_SUBJECT="${VAPID_SUBJECT}" \
-                "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
+              "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
             }
             compose build
             compose start mysql || compose up -d mysql
@@ -102,7 +79,7 @@ jobs:
             compose run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
             compose run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
             compose up -d redis backend worker frontend caddy
-            sudo "${DOCKER_BIN}" image prune -f
+            "${DOCKER_BIN}" image prune -f
         env:
           APP_DIR: ${{ secrets.VPS_APP_DIR }}
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
