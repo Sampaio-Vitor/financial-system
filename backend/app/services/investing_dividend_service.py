@@ -249,7 +249,7 @@ class InvestingDividendService:
         )
         assets = []
         for asset in result.scalars().unique().all():
-            asset_class, _market, _currency = resolve_asset_metadata(
+            asset_class, market, _currency = resolve_asset_metadata(
                 legacy_type=asset.type,
                 asset_class=asset.asset_class,
                 market=asset.market,
