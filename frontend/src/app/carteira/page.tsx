@@ -7,6 +7,7 @@ import { MonthlyOverview } from "@/types";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import ChartTabs from "@/components/chart-tabs";
 import NotificationBell from "@/components/notification-bell";
+import PatrimonioDailyEvolutionChart from "@/components/patrimonio-daily-evolution-chart";
 
 export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
@@ -80,6 +81,8 @@ export default function VisaoGeralPage() {
           {formatBRL(data.patrimonio_total)}
         </p>
       </div>
+
+      <PatrimonioDailyEvolutionChart />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AllocationBreakdown
