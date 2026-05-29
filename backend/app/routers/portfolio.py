@@ -399,6 +399,7 @@ async def get_overview(
         )
     )
     total_invested += fi_invested.scalar() or Decimal("0")
+    total_invested += reserva_financeira or Decimal("0")
 
     # Current values per class (purchases up to end of viewed month)
     class_values = await get_bucket_values(db, user, cutoff=month_end)
