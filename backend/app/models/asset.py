@@ -164,6 +164,18 @@ class Asset(Base):
     investing_dividends_last_error: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True
     )
+    investidor10_dividends_fetched_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    investidor10_dividends_next_fetch_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
+    investidor10_dividends_failure_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    investidor10_dividends_last_error: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )
     td_kind: Mapped[Optional[TesouroKind]] = mapped_column(
         Enum(TesouroKind, values_callable=lambda x: [e.value for e in x]),
         nullable=True,

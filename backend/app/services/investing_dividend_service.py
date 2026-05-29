@@ -255,7 +255,11 @@ class InvestingDividendService:
                 market=asset.market,
                 quote_currency=asset.quote_currency,
             )
-            if asset_class in {AssetClass.STOCK, AssetClass.ETF, AssetClass.FII}:
+            if market != Market.BR and asset_class in {
+                AssetClass.STOCK,
+                AssetClass.ETF,
+                AssetClass.FII,
+            }:
                 assets.append(asset)
         return assets
 

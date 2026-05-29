@@ -15,6 +15,7 @@ from app.models.purchase import Purchase
 from app.models.user import User
 from app.models.user_asset import UserAsset
 from app.services.connection_sync_service import sync_user_connections
+from app.services.investidor10_dividend_service import Investidor10DividendService
 from app.services.investing_dividend_service import InvestingDividendService
 from app.services.notification_producer_service import (
     notify_investing_dividend_detected,
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 PRICE_UPDATE_LOCK_NAME = "daily_price_update_job"
 INVESTING_DIVIDEND_LOCK_NAME = "investing_dividend_scan_job"
+INVESTIDOR10_DIVIDEND_LOCK_NAME = "investidor10_dividend_scan_job"
 
 
 def is_last_business_day_of_month(day: date) -> bool:
@@ -380,6 +382,45 @@ async def _execute_investing_dividend_scan(db) -> dict:
     }
 
 
+async def _execute_investidor10_dividend_scan(db) -> dict:
+    now = datetime.now(timezone.utc)
+    service = Investidor10DividendService(db)
+    summary = await service.scan_due_positions(
+        start_date=now.date() - timedelta(days=30),
+        end_date=now.date() + timedelta(days=180),
+        now=now,
+    )
+    await db.commit()
+
+    notifications_created = 0
+    try:
+        notifications_created = await _notify_investing_dividend_results(
+            db,
+            summary=summary,
+            run_date=now.date(),
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to create Investidor10 dividend scan notifications")
+
+    logger.info(
+        "Investidor10 dividend scan finished: created=%s updated=%s skipped=%s failed=%s notifications=%s",
+        summary.created,
+        summary.updated,
+        summary.skipped,
+        len(summary.failed),
+        notifications_created,
+    )
+    return {
+        "created": summary.created,
+        "updated": summary.updated,
+        "skipped": summary.skipped,
+        "failed": summary.failed,
+        "notifications_created": notifications_created,
+    }
+
+
 async def run_investing_dividend_scan() -> dict | None:
     """Run a small due-asset Investing scan, skipping when another worker owns the lock."""
     async with engine.connect() as lock_conn:
@@ -406,9 +447,40 @@ async def run_investing_dividend_scan() -> dict | None:
                 logger.exception("Failed to release Investing dividend scan lock")
 
 
+async def run_investidor10_dividend_scan() -> dict | None:
+    """Run a small due-asset Investidor10 scan, skipping when another worker owns the lock."""
+    async with engine.connect() as lock_conn:
+        acquired = await lock_conn.scalar(
+            text("SELECT GET_LOCK(:lock_name, 0)"),
+            {"lock_name": INVESTIDOR10_DIVIDEND_LOCK_NAME},
+        )
+        if acquired != 1:
+            logger.info(
+                "Skipping Investidor10 dividend scan because another worker already holds the lock"
+            )
+            return None
+
+        try:
+            async with AsyncSessionLocal() as db:
+                return await _execute_investidor10_dividend_scan(db)
+        finally:
+            try:
+                await lock_conn.execute(
+                    text("SELECT RELEASE_LOCK(:lock_name)"),
+                    {"lock_name": INVESTIDOR10_DIVIDEND_LOCK_NAME},
+                )
+            except Exception:
+                logger.exception("Failed to release Investidor10 dividend scan lock")
+
+
 async def investing_dividend_scan_job():
     """Entry point used by APScheduler for distributed Investing scans."""
     await run_investing_dividend_scan()
+
+
+async def investidor10_dividend_scan_job():
+    """Entry point used by APScheduler for distributed Investidor10 scans."""
+    await run_investidor10_dividend_scan()
 
 
 def setup_scheduler():
@@ -425,6 +497,15 @@ def setup_scheduler():
         IntervalTrigger(minutes=30),
         id="investing_dividend_scan",
         name="Distributed Investing Dividend Scan",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        investidor10_dividend_scan_job,
+        IntervalTrigger(minutes=30),
+        id="investidor10_dividend_scan",
+        name="Distributed Investidor10 Dividend Scan",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
