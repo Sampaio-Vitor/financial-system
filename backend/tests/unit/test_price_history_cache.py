@@ -179,9 +179,9 @@ async def test_price_history_cache_fetches_trailing_missing_range(
         calls.append((tickers, kwargs))
         assert kwargs["start"] == (today - timedelta(days=1)).isoformat()
         if tickers == "VOO":
-            return _yf_frame({today: 405.0})
+            return _yf_frame({today - timedelta(days=1): 405.0})
         if tickers == "USDBRL=X":
-            return _yf_frame({today: 5.2})
+            return _yf_frame({today - timedelta(days=1): 5.2})
         raise AssertionError(f"unexpected ticker {tickers}")
 
     monkeypatch.setattr(PriceService, "_download_yf", fake_download)
@@ -195,12 +195,53 @@ async def test_price_history_cache_fetches_trailing_missing_range(
             "price_native": 400.0,
         },
         {
-            "date": today.isoformat(),
+            "date": (today - timedelta(days=1)).isoformat(),
             "price": 2106.0,
             "price_native": 405.0,
         },
     ]
     assert [call[0] for call in calls] == ["VOO", "USDBRL=X"]
+
+
+async def test_price_history_cache_does_not_refetch_missing_current_day(
+    db, user, monkeypatch
+):
+    today = datetime.now(timezone.utc).date()
+    asset = await make_asset(
+        db,
+        ticker="ITUB3",
+        asset_type=AssetType.ACAO,
+        asset_class=AssetClass.STOCK,
+        market=Market.BR,
+        quote_currency=CurrencyCode.BRL,
+    )
+    db.add(
+        AssetPriceHistory(
+            asset_id=asset.id,
+            yf_ticker="ITUB3.SA",
+            date=today - timedelta(days=1),
+            price_native=Decimal("31.500000"),
+            fx_rate_to_brl=Decimal("1"),
+            price_brl=Decimal("31.5000"),
+            quote_currency=CurrencyCode.BRL,
+        )
+    )
+    await db.commit()
+
+    async def fail_download(self, tickers, **kwargs):
+        raise AssertionError("missing current day should not trigger yfinance")
+
+    monkeypatch.setattr(PriceService, "_download_yf", fail_download)
+
+    points = await PriceService(db, user).get_asset_price_history(asset, days=1)
+
+    assert points == [
+        {
+            "date": (today - timedelta(days=1)).isoformat(),
+            "price": 31.5,
+            "price_native": 31.5,
+        }
+    ]
 
 
 async def test_update_all_prices_skips_non_tesouro_fixed_income(db, user, monkeypatch):

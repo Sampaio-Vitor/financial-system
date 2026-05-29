@@ -577,12 +577,16 @@ class PriceService:
         yf_ticker = self._price_symbol_for(asset)
         end_date = datetime.now(timezone.utc).date()
         start_date = end_date - timedelta(days=days)
+        fetch_end_date = max(start_date, end_date - timedelta(days=1))
 
         cached = await self._get_cached_asset_price_history(
             asset.id, start_date, end_date
         )
         missing_ranges = self._missing_cache_ranges(
-            cached, start_date, end_date, require_ohlc=True
+            [row for row in cached if start_date <= row.date <= fetch_end_date],
+            start_date,
+            fetch_end_date,
+            require_ohlc=False,
         )
 
         for missing_start, missing_end in missing_ranges:
