@@ -48,30 +48,32 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             umask 077
-            cat > .env <<EOF
-            DATABASE_URL=mysql+aiomysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-            MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-            MYSQL_DATABASE=${MYSQL_DATABASE}
-            MYSQL_USER=${MYSQL_USER}
-            MYSQL_PASSWORD=${MYSQL_PASSWORD}
-            SECRET_KEY=${SECRET_KEY}
-            ADMIN_USERNAME=${ADMIN_USERNAME}
-            ADMIN_PASSWORD=${ADMIN_PASSWORD}
-            ENCRYPTION_KEY=${ENCRYPTION_KEY}
-            CORS_ORIGINS=https://cofrinhogordinho.uk
-            CSRF_TRUSTED_ORIGINS=https://cofrinhogordinho.uk
-            TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
-            NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
-            TURNSTILE_REQUIRED=true
-            API_DOCS_ENABLED=false
-            SESSION_COOKIE_SECURE=true
-            SESSION_COOKIE_SAMESITE=strict
-            GEMINI_API_KEY=${GEMINI_API_KEY}
-            OCR_MODEL=gemini-2.5-flash-lite
-            VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
-            VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
-            VAPID_SUBJECT=${VAPID_SUBJECT}
-            EOF
+            : > .env
+            write_env_var() {
+              printf '%s=%s\n' "$1" "$2" >> .env
+            }
+            write_env_var DATABASE_URL "mysql+aiomysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
+            write_env_var MYSQL_ROOT_PASSWORD "${MYSQL_ROOT_PASSWORD}"
+            write_env_var MYSQL_DATABASE "${MYSQL_DATABASE}"
+            write_env_var MYSQL_USER "${MYSQL_USER}"
+            write_env_var MYSQL_PASSWORD "${MYSQL_PASSWORD}"
+            write_env_var SECRET_KEY "${SECRET_KEY}"
+            write_env_var ADMIN_USERNAME "${ADMIN_USERNAME}"
+            write_env_var ADMIN_PASSWORD "${ADMIN_PASSWORD}"
+            write_env_var ENCRYPTION_KEY "${ENCRYPTION_KEY}"
+            write_env_var CORS_ORIGINS "https://cofrinhogordinho.uk"
+            write_env_var CSRF_TRUSTED_ORIGINS "https://cofrinhogordinho.uk"
+            write_env_var TURNSTILE_SECRET_KEY "${TURNSTILE_SECRET_KEY}"
+            write_env_var NEXT_PUBLIC_TURNSTILE_SITE_KEY "${NEXT_PUBLIC_TURNSTILE_SITE_KEY}"
+            write_env_var TURNSTILE_REQUIRED "true"
+            write_env_var API_DOCS_ENABLED "false"
+            write_env_var SESSION_COOKIE_SECURE "true"
+            write_env_var SESSION_COOKIE_SAMESITE "strict"
+            write_env_var GEMINI_API_KEY "${GEMINI_API_KEY}"
+            write_env_var OCR_MODEL "gemini-2.5-flash-lite"
+            write_env_var VAPID_PUBLIC_KEY "${VAPID_PUBLIC_KEY}"
+            write_env_var VAPID_PRIVATE_KEY "${VAPID_PRIVATE_KEY}"
+            write_env_var VAPID_SUBJECT "${VAPID_SUBJECT}"
             sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml build
             sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml start mysql || sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
             until sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent; do
