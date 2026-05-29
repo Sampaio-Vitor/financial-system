@@ -57,7 +57,7 @@ jobs:
             export SESSION_COOKIE_SAMESITE="strict"
             export OCR_MODEL="gemini-2.5-flash-lite"
             compose() {
-              sudo env \
+              sudo \
                 DATABASE_URL="${DATABASE_URL}" \
                 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD}" \
                 MYSQL_DATABASE="${MYSQL_DATABASE}" \
