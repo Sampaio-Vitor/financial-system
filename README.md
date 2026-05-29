@@ -127,8 +127,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 **Arquitetura:** Browser → Cloudflare (SSL) → VPS → Caddy (:443) → Frontend (:3000) → rewrites `/api/*` → Backend (:8000) → MySQL (:3306)
 
 CI/CD configurado via GitHub Actions — push na `main` faz deploy automático no VPS.
-O deploy recria o `.env` do VPS a partir de GitHub Secrets antes de subir a stack;
-valores reais não devem ser commitados.
+Em produção, os valores reais vêm de GitHub Secrets e são injetados no
+`docker compose` em runtime; não há `.env` de produção como fonte de verdade.
 
 ## Variáveis de Ambiente
 

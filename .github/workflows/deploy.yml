@@ -47,39 +47,24 @@ jobs:
             DOCKER_BIN="$(command -v docker)"
             git fetch origin main
             git reset --hard origin/main
-            umask 077
-            : > .env
-            write_env_var() {
-              printf '%s=%s\n' "$1" "$2" >> .env
+            rm -f .env
+            export DATABASE_URL="mysql+aiomysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
+            export CORS_ORIGINS="https://cofrinhogordinho.uk"
+            export CSRF_TRUSTED_ORIGINS="https://cofrinhogordinho.uk"
+            export TURNSTILE_REQUIRED="true"
+            export API_DOCS_ENABLED="false"
+            export SESSION_COOKIE_SECURE="true"
+            export SESSION_COOKIE_SAMESITE="strict"
+            export OCR_MODEL="gemini-2.5-flash-lite"
+            compose() {
+              sudo --preserve-env=DATABASE_URL,MYSQL_ROOT_PASSWORD,MYSQL_DATABASE,MYSQL_USER,MYSQL_PASSWORD,SECRET_KEY,ADMIN_USERNAME,ADMIN_PASSWORD,ENCRYPTION_KEY,CORS_ORIGINS,CSRF_TRUSTED_ORIGINS,TURNSTILE_SECRET_KEY,NEXT_PUBLIC_TURNSTILE_SITE_KEY,TURNSTILE_REQUIRED,API_DOCS_ENABLED,SESSION_COOKIE_SECURE,SESSION_COOKIE_SAMESITE,GEMINI_API_KEY,OCR_MODEL,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
             }
-            write_env_var DATABASE_URL "mysql+aiomysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
-            write_env_var MYSQL_ROOT_PASSWORD "${MYSQL_ROOT_PASSWORD}"
-            write_env_var MYSQL_DATABASE "${MYSQL_DATABASE}"
-            write_env_var MYSQL_USER "${MYSQL_USER}"
-            write_env_var MYSQL_PASSWORD "${MYSQL_PASSWORD}"
-            write_env_var SECRET_KEY "${SECRET_KEY}"
-            write_env_var ADMIN_USERNAME "${ADMIN_USERNAME}"
-            write_env_var ADMIN_PASSWORD "${ADMIN_PASSWORD}"
-            write_env_var ENCRYPTION_KEY "${ENCRYPTION_KEY}"
-            write_env_var CORS_ORIGINS "https://cofrinhogordinho.uk"
-            write_env_var CSRF_TRUSTED_ORIGINS "https://cofrinhogordinho.uk"
-            write_env_var TURNSTILE_SECRET_KEY "${TURNSTILE_SECRET_KEY}"
-            write_env_var NEXT_PUBLIC_TURNSTILE_SITE_KEY "${NEXT_PUBLIC_TURNSTILE_SITE_KEY}"
-            write_env_var TURNSTILE_REQUIRED "true"
-            write_env_var API_DOCS_ENABLED "false"
-            write_env_var SESSION_COOKIE_SECURE "true"
-            write_env_var SESSION_COOKIE_SAMESITE "strict"
-            write_env_var GEMINI_API_KEY "${GEMINI_API_KEY}"
-            write_env_var OCR_MODEL "gemini-2.5-flash-lite"
-            write_env_var VAPID_PUBLIC_KEY "${VAPID_PUBLIC_KEY}"
-            write_env_var VAPID_PRIVATE_KEY "${VAPID_PRIVATE_KEY}"
-            write_env_var VAPID_SUBJECT "${VAPID_SUBJECT}"
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml build
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml start mysql || sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
-            until sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent; do
+            compose build
+            compose start mysql || compose up -d mysql
+            until compose exec -T mysql mysqladmin ping -h localhost --silent; do
               sleep 2
             done
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql sh -lc '
+            compose exec -T mysql sh -lc '
               HAS_ALEMBIC=$(MYSQL_PWD="${MYSQL_PASSWORD}" mysql -N -B -u"${MYSQL_USER}" -D "${MYSQL_DATABASE}" -e "
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -91,9 +76,9 @@ jobs:
                 "
               fi
             '
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
-            sudo "${DOCKER_BIN}" compose -f docker-compose.yml -f docker-compose.prod.yml up -d redis backend worker frontend caddy
+            compose run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app alembic upgrade head'
+            compose run --rm --entrypoint="" backend sh -lc 'PYTHONPATH=/app python scripts/seed_user.py'
+            compose up -d redis backend worker frontend caddy
             sudo "${DOCKER_BIN}" image prune -f
         env:
           APP_DIR: ${{ secrets.VPS_APP_DIR }}

@@ -2,7 +2,6 @@ services:
   mysql:
     image: mysql:8.0
     container_name: portfolio_db
-    env_file: .env
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-portfolio}
@@ -22,9 +21,28 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: portfolio_api
-    env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio}
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRATION_DAYS: ${REFRESH_TOKEN_EXPIRATION_DAYS:-30}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_REQUIRED: ${TURNSTILE_REQUIRED:-false}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-strict}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:3000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-http://localhost:3000}
     depends_on:
       mysql:
         condition: service_healthy
@@ -45,9 +63,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: portfolio_worker
-    env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://portfolio_user:portfolio_pass@mysql:3306/portfolio}
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}

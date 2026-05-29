@@ -21,10 +21,18 @@ services:
       JWT_EXPIRATION_MINUTES: "30"
       REFRESH_TOKEN_EXPIRATION_DAYS: "30"
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
       TURNSTILE_REQUIRED: "true"
       API_DOCS_ENABLED: "false"
       SESSION_COOKIE_SECURE: "true"
       SESSION_COOKIE_SAMESITE: "strict"
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://cofrinhogordinho.uk}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-https://cofrinhogordinho.uk}
 
   frontend:
     restart: unless-stopped
@@ -43,6 +51,10 @@ services:
     restart: unless-stopped
     user: appuser
     environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       OCR_MODEL: ${OCR_MODEL:-gemini-2.5-flash-lite}
 
