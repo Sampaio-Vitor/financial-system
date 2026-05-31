@@ -19,6 +19,7 @@ from app.models.asset_price_history import AssetPriceHistory
 from app.models.system_setting import SystemSetting
 from app.models.user import User
 from app.services.tesouro_price_service import fetch_tesouro_price
+from app.services.trading_calendar import last_trading_day
 
 logger = logging.getLogger(__name__)
 
@@ -568,14 +569,14 @@ class PriceService:
         )
 
     async def get_asset_price_history(self, asset: Asset, days: int) -> list[dict]:
-        _asset_class, _market, quote_currency = resolve_asset_metadata(
+        _asset_class, market, quote_currency = resolve_asset_metadata(
             legacy_type=asset.type,
             asset_class=asset.asset_class,
             market=asset.market,
             quote_currency=asset.quote_currency,
         )
         yf_ticker = self._price_symbol_for(asset)
-        end_date = datetime.now(timezone.utc).date()
+        end_date = last_trading_day(market, datetime.now(timezone.utc).date())
         start_date = end_date - timedelta(days=days)
         fetch_end_date = max(start_date, end_date - timedelta(days=1))
 
@@ -723,12 +724,15 @@ class PriceService:
     async def ensure_asset_price_history_range(
         self, asset: Asset, start_date: date, end_date: date, *, require_ohlc: bool
     ) -> list[AssetPriceHistory]:
-        _asset_class, _market, quote_currency = resolve_asset_metadata(
+        _asset_class, market, quote_currency = resolve_asset_metadata(
             legacy_type=asset.type,
             asset_class=asset.asset_class,
             market=asset.market,
             quote_currency=asset.quote_currency,
         )
+        end_date = last_trading_day(market, end_date)
+        if start_date > end_date:
+            start_date = end_date
         cached = await self._get_cached_asset_price_history(
             asset.id, start_date, end_date
         )

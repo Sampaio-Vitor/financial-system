@@ -11,6 +11,7 @@ python-multipart==0.0.20
 httpx==0.28.1
 slowapi==0.1.9
 yfinance>=1.2.0
+pandas-market-calendars>=5.1.0
 openpyxl==3.1.5
 slowapi>=0.1.9
 cryptography>=44.0.0

@@ -10,6 +10,7 @@ from app.database import AsyncSessionLocal, engine
 from app.models.asset import Asset, AssetClass, Market, resolve_asset_metadata
 from app.models.asset_price_history import AssetPriceHistory
 from app.services.price_service import PriceService
+from app.services.trading_calendar import last_trading_day
 
 
 def _parse_date(value: str) -> date:
@@ -152,7 +153,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=10)
     parser.add_argument("--start-date", type=_parse_date)
-    parser.add_argument("--end-date", type=_parse_date, default=date.today())
+    parser.add_argument("--end-date", type=_parse_date)
     parser.add_argument("--asset-class", type=_parse_asset_class)
     parser.add_argument("--market", type=_parse_market)
     parser.add_argument("--limit", type=int)
@@ -161,11 +162,12 @@ def main() -> None:
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
-    start_date = args.start_date or (args.end_date - timedelta(days=365 * args.years))
+    end_date = args.end_date or last_trading_day(args.market, date.today())
+    start_date = args.start_date or (end_date - timedelta(days=365 * args.years))
     asyncio.run(
         _run(
             start_date=start_date,
-            end_date=args.end_date,
+            end_date=end_date,
             asset_class=args.asset_class,
             market=args.market,
             limit=args.limit,
