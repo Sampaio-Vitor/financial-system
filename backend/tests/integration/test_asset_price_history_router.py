@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
+from freezegun import freeze_time
 
 from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
 from app.services.price_service import PriceService
@@ -22,6 +23,7 @@ def _yf_frame(values: dict) -> pd.DataFrame:
     )
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
 async def test_asset_price_history_endpoint_uses_cache_shape(
     auth_client, db, user, monkeypatch
 ):

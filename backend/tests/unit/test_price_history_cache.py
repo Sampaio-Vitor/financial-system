@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pandas as pd
 import pytest
+from freezegun import freeze_time
 from sqlalchemy import select
 
 from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
@@ -36,6 +37,7 @@ def _yf_frame(values: dict, ticker: str | None = None) -> pd.DataFrame:
     )
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
 async def test_price_history_cache_downloads_and_stores_first_request(
     db, user, monkeypatch
 ):
@@ -104,6 +106,7 @@ async def test_price_history_cache_downloads_and_stores_first_request(
     assert rows[0].high_native is not None
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
 async def test_price_history_cache_second_request_uses_database(db, user, monkeypatch):
     today = datetime.now(timezone.utc).date()
     asset = await make_asset(
@@ -143,6 +146,7 @@ async def test_price_history_cache_second_request_uses_database(db, user, monkey
     ]
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
 async def test_price_history_cache_fetches_trailing_missing_range(
     db, user, monkeypatch
 ):
@@ -203,6 +207,7 @@ async def test_price_history_cache_fetches_trailing_missing_range(
     assert [call[0] for call in calls] == ["VOO", "USDBRL=X"]
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
 async def test_price_history_cache_does_not_refetch_missing_current_day(
     db, user, monkeypatch
 ):
