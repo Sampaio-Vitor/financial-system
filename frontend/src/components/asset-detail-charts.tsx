@@ -219,6 +219,25 @@ function CustomCotacaoTooltip({ active, payload, displayCurrency = "BRL" }: Cust
 }
 
 type ChartView = "cotacao" | "dividendos";
+type RangeKey = "YTD" | "1Y" | "5Y" | "ALL";
+
+const PRICE_RANGES: { key: RangeKey; label: string; days: number }[] = [
+  { key: "YTD", label: "YTD", days: 0 },
+  { key: "1Y", label: "1A", days: 365 },
+  { key: "5Y", label: "5A", days: 365 * 5 },
+  { key: "ALL", label: "Tudo", days: 3650 },
+];
+
+function getRangeDays(range: RangeKey): number {
+  if (range !== "YTD") {
+    return PRICE_RANGES.find((item) => item.key === range)?.days ?? 365;
+  }
+
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const diffMs = now.getTime() - startOfYear.getTime();
+  return Math.max(1, Math.ceil(diffMs / 86_400_000));
+}
 
 export default function AssetDetailCharts({
   ticker,
@@ -239,6 +258,7 @@ export default function AssetDetailCharts({
   const [priceHistory, setPriceHistory] = useState<HistoricalPricePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ChartView>("cotacao");
+  const [range, setRange] = useState<RangeKey>("YTD");
 
   useEffect(() => {
     let cancelled = false;
@@ -246,12 +266,12 @@ export default function AssetDetailCharts({
 
     async function fetchData() {
       try {
-        // Keep the price chart behavior exactly as before: a 90-day quote history.
-        // Purchases are fetched only to overlay markers when they fall in this visible range.
         const [purchasesData, dividendsData, priceHistoryData] = await Promise.all([
           apiFetch<Purchase[]>(`/purchases?asset_id=${assetId}`),
           apiFetch<DividendEventListResponse>(`/dividends?ticker=${ticker}`),
-          apiFetch<HistoricalPricePoint[]>(`/assets/${assetId}/price-history?days=90`),
+          apiFetch<HistoricalPricePoint[]>(
+            `/assets/${assetId}/price-history?days=${getRangeDays(range)}`
+          ),
         ]);
 
         if (cancelled) return;
@@ -274,17 +294,21 @@ export default function AssetDetailCharts({
     return () => {
       cancelled = true;
     };
-  }, [assetId, ticker, onPriceHistoryLoaded]);
+  }, [assetId, ticker, range, onPriceHistoryLoaded]);
 
-  // Build chart data spanning the last 90 days regardless of how many quote
-  // points the backend returned. The X axis is bound to [windowStart, windowEnd]
-  // so the visible range is always 90 days; missing quotes render as gaps
-  // (connectNulls on the Line bridges them visually).
+  // Build one row per calendar day in the selected range. Missing quotes render
+  // as gaps and the invisible displayPrice series keeps tooltips usable.
   const { chartData, windowStart, windowEnd, yDomain } = useMemo(() => {
     const end = new Date();
     end.setHours(0, 0, 0, 0);
     const start = new Date(end);
-    start.setDate(start.getDate() - 90);
+    start.setDate(start.getDate() - getRangeDays(range));
+
+    const firstPriceDate = priceHistory[0]?.date;
+    if (range === "ALL" && firstPriceDate) {
+      const first = new Date(firstPriceDate + "T00:00:00");
+      if (first > start) start.setTime(first.getTime());
+    }
 
     const purchaseMarkers = buildPurchaseMarkers(purchases, ticker);
     const purchasesByDate = new Map<string, PurchaseMarker[]>();
@@ -339,7 +363,9 @@ export default function AssetDetailCharts({
     // axis always shows everything visible with a small padding.
     const values: number[] = [];
     for (const d of data) if (d.price != null) values.push(d.price);
-    for (const pm of purchaseMarkers) values.push(markerYForPurchase(pm));
+    for (const d of data) {
+      if (d.markerPrice != null) values.push(d.markerPrice);
+    }
     const currentForView = isNativeView ? currentPriceNative : currentPrice;
     if (currentForView != null) values.push(Number(currentForView));
 
@@ -358,7 +384,7 @@ export default function AssetDetailCharts({
       windowEnd: end.getTime(),
       yDomain: domain,
     };
-  }, [priceHistory, purchases, ticker, isNativeView, currentPrice, currentPriceNative]);
+  }, [priceHistory, purchases, ticker, range, isNativeView, currentPrice, currentPriceNative]);
 
   // Average price calculation — in display currency.
   const averagePrice = useMemo(
@@ -451,6 +477,27 @@ export default function AssetDetailCharts({
           </div>
         )}
       </div>
+
+      {effectiveView === "cotacao" && (
+        <div className="mb-3 flex w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 md:w-fit">
+          {PRICE_RANGES.map((item) => (
+            <button
+              key={item.key}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRange(item.key);
+              }}
+              className={`min-h-8 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                range === item.key
+                  ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Price history chart with purchase markers */}
       {effectiveView === "cotacao" && hasPriceHistory && (

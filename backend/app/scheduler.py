@@ -9,7 +9,8 @@ from sqlalchemy import func, select, text
 from decimal import Decimal
 
 from app.database import AsyncSessionLocal, engine
-from app.models.asset import Asset
+from app.models.asset import Asset, AssetClass, resolve_asset_metadata
+from app.models.asset_price_history import AssetPriceHistory
 from app.models.fixed_income import FixedIncomePosition
 from app.models.purchase import Purchase
 from app.models.user import User
@@ -36,6 +37,7 @@ scheduler = AsyncIOScheduler()
 PRICE_UPDATE_LOCK_NAME = "daily_price_update_job"
 INVESTING_DIVIDEND_LOCK_NAME = "investing_dividend_scan_job"
 INVESTIDOR10_DIVIDEND_LOCK_NAME = "investidor10_dividend_scan_job"
+PRICE_HISTORY_BACKFILL_LOCK_NAME = "price_history_backfill_job"
 
 
 def is_last_business_day_of_month(day: date) -> bool:
@@ -473,6 +475,97 @@ async def run_investidor10_dividend_scan() -> dict | None:
                 logger.exception("Failed to release Investidor10 dividend scan lock")
 
 
+async def _execute_price_history_backfill(db) -> dict:
+    """Backfill a few assets with missing long-range price history."""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=365 * 10)
+    rows = await db.execute(
+        select(Asset, func.min(AssetPriceHistory.date).label("first_cached"))
+        .outerjoin(AssetPriceHistory, AssetPriceHistory.asset_id == Asset.id)
+        .group_by(Asset.id)
+        .order_by(func.min(AssetPriceHistory.date).is_not(None), Asset.ticker)
+    )
+    candidates: list[Asset] = []
+    for asset, first_cached in rows.all():
+        asset_class, _market, _quote_currency = resolve_asset_metadata(
+            legacy_type=asset.type,
+            asset_class=asset.asset_class,
+            market=asset.market,
+            quote_currency=asset.quote_currency,
+        )
+        if asset_class == AssetClass.RF:
+            continue
+        if asset.description.strip().endswith(" Demo"):
+            continue
+        if first_cached is None or first_cached > start_date:
+            candidates.append(asset)
+        if len(candidates) >= 3:
+            break
+
+    service = PriceService(db)
+    results = {"updated": [], "failed": []}
+    for asset in candidates:
+        before_result = await db.execute(
+            select(func.count()).where(
+                AssetPriceHistory.asset_id == asset.id,
+                AssetPriceHistory.date >= start_date,
+                AssetPriceHistory.date <= end_date,
+            )
+        )
+        before_count = before_result.scalar() or 0
+        try:
+            cached = await service.ensure_asset_price_history_range(
+                asset, start_date, end_date, require_ohlc=False
+            )
+            await db.commit()
+            results["updated"].append(
+                {
+                    "ticker": asset.ticker,
+                    "rows": len(cached),
+                    "new_rows": max(0, len(cached) - before_count),
+                }
+            )
+        except Exception as exc:
+            await db.rollback()
+            logger.warning(
+                "Failed to backfill price history for %s", asset.ticker, exc_info=True
+            )
+            results["failed"].append({"ticker": asset.ticker, "error": str(exc)})
+
+    logger.info(
+        "Price history backfill finished: updated=%s failed=%s",
+        len(results["updated"]),
+        len(results["failed"]),
+    )
+    return results
+
+
+async def run_price_history_backfill() -> dict | None:
+    """Run a small long-range price history backfill, skipping when locked."""
+    async with engine.connect() as lock_conn:
+        acquired = await lock_conn.scalar(
+            text("SELECT GET_LOCK(:lock_name, 0)"),
+            {"lock_name": PRICE_HISTORY_BACKFILL_LOCK_NAME},
+        )
+        if acquired != 1:
+            logger.info(
+                "Skipping price history backfill because another worker holds the lock"
+            )
+            return None
+
+        try:
+            async with AsyncSessionLocal() as db:
+                return await _execute_price_history_backfill(db)
+        finally:
+            try:
+                await lock_conn.execute(
+                    text("SELECT RELEASE_LOCK(:lock_name)"),
+                    {"lock_name": PRICE_HISTORY_BACKFILL_LOCK_NAME},
+                )
+            except Exception:
+                logger.exception("Failed to release price history backfill lock")
+
+
 async def investing_dividend_scan_job():
     """Entry point used by APScheduler for distributed Investing scans."""
     await run_investing_dividend_scan()
@@ -481,6 +574,11 @@ async def investing_dividend_scan_job():
 async def investidor10_dividend_scan_job():
     """Entry point used by APScheduler for distributed Investidor10 scans."""
     await run_investidor10_dividend_scan()
+
+
+async def price_history_backfill_job():
+    """Entry point used by APScheduler for incremental price history backfills."""
+    await run_price_history_backfill()
 
 
 def setup_scheduler():
@@ -506,6 +604,15 @@ def setup_scheduler():
         IntervalTrigger(minutes=30),
         id="investidor10_dividend_scan",
         name="Distributed Investidor10 Dividend Scan",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        price_history_backfill_job,
+        CronTrigger(day_of_week="sun", hour=3, minute=30, timezone="UTC"),
+        id="price_history_backfill",
+        name="Incremental Price History Backfill",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
