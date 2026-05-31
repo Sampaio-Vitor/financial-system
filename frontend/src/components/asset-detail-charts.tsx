@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 import { apiFetch } from "@/lib/api";
 import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
@@ -64,6 +65,27 @@ interface PurchaseMarker {
   fxRate: number;
   ticker: string;
   kind: "buy" | "sell";
+}
+
+interface PriceSelection {
+  startTimestamp: number;
+  endTimestamp: number;
+}
+
+interface PriceSelectionSummary {
+  start: ChartDataPoint;
+  end: ChartDataPoint;
+  startTimestamp: number;
+  endTimestamp: number;
+  delta: number;
+  percent: number;
+  days: number;
+}
+
+interface ChartPointerState {
+  activePayload?: Array<{
+    payload?: ChartDataPoint;
+  }>;
 }
 
 function calculateAveragePrice(purchases: Purchase[], native = false): number | null {
@@ -239,6 +261,38 @@ function getRangeDays(range: RangeKey): number {
   return Math.max(1, Math.ceil(diffMs / 86_400_000));
 }
 
+function getPointerPoint(state: unknown): ChartDataPoint | null {
+  const payload = (state as ChartPointerState | null)?.activePayload;
+  return payload?.[0]?.payload ?? null;
+}
+
+function formatDate(date: string): string {
+  return new Date(date + "T00:00:00").toLocaleDateString("pt-BR");
+}
+
+function findSelectionPoint(
+  chartData: ChartDataPoint[],
+  timestamp: number,
+): ChartDataPoint | null {
+  const exact = chartData.find(
+    (point) => point.timestamp === timestamp && point.displayPrice != null,
+  );
+  if (exact) return exact;
+
+  let nearest: ChartDataPoint | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const point of chartData) {
+    if (point.displayPrice == null) continue;
+    const distance = Math.abs(point.timestamp - timestamp);
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}
+
 export default function AssetDetailCharts({
   ticker,
   assetId,
@@ -259,10 +313,16 @@ export default function AssetDetailCharts({
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ChartView>("cotacao");
   const [range, setRange] = useState<RangeKey>("YTD");
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setSelectionStart(null);
+    setSelectionEnd(null);
+    setIsSelecting(false);
 
     async function fetchData() {
       try {
@@ -393,6 +453,69 @@ export default function AssetDetailCharts({
   );
   const currentPriceForView = isNativeView ? currentPriceNative ?? null : currentPrice;
 
+  const selectionSummary = useMemo<PriceSelectionSummary | null>(() => {
+    if (selectionStart == null || selectionEnd == null) return null;
+    if (selectionStart === selectionEnd) return null;
+
+    const [startTimestamp, endTimestamp] =
+      selectionStart < selectionEnd
+        ? [selectionStart, selectionEnd]
+        : [selectionEnd, selectionStart];
+    const start = findSelectionPoint(chartData, startTimestamp);
+    const end = findSelectionPoint(chartData, endTimestamp);
+    if (!start || !end || start.displayPrice == null || end.displayPrice == null) {
+      return null;
+    }
+    if (start.timestamp === end.timestamp || start.displayPrice === 0) return null;
+
+    const delta = end.displayPrice - start.displayPrice;
+    return {
+      start,
+      end,
+      startTimestamp: start.timestamp,
+      endTimestamp: end.timestamp,
+      delta,
+      percent: (delta / start.displayPrice) * 100,
+      days: Math.max(
+        1,
+        Math.round((end.timestamp - start.timestamp) / 86_400_000),
+      ),
+    };
+  }, [chartData, selectionStart, selectionEnd]);
+
+  const activeSelection: PriceSelection | null = useMemo(() => {
+    if (selectionStart == null || selectionEnd == null) return null;
+    return {
+      startTimestamp: Math.min(selectionStart, selectionEnd),
+      endTimestamp: Math.max(selectionStart, selectionEnd),
+    };
+  }, [selectionStart, selectionEnd]);
+
+  const handleSelectionStart = (state: unknown) => {
+    const point = getPointerPoint(state);
+    if (!point || point.displayPrice == null) return;
+    setSelectionStart(point.timestamp);
+    setSelectionEnd(point.timestamp);
+    setIsSelecting(true);
+  };
+
+  const handleSelectionMove = (state: unknown) => {
+    if (!isSelecting) return;
+    const point = getPointerPoint(state);
+    if (!point || point.displayPrice == null) return;
+    setSelectionEnd(point.timestamp);
+  };
+
+  const finishSelection = () => {
+    setIsSelecting(false);
+  };
+
+  const clearSelection = () => {
+    setSelectionStart(null);
+    setSelectionEnd(null);
+    setIsSelecting(false);
+  };
+
   if (loading) {
     return (
       <div className="p-4">
@@ -499,10 +622,55 @@ export default function AssetDetailCharts({
         </div>
       )}
 
+      {effectiveView === "cotacao" && selectionSummary && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-medium text-[var(--color-text-primary)]">
+              {formatDate(selectionSummary.start.date)} - {formatDate(selectionSummary.end.date)}
+            </span>
+            <span className="text-[var(--color-text-muted)]">
+              {fmt(selectionSummary.start.displayPrice)}{" -> "}
+              {fmt(selectionSummary.end.displayPrice)}
+            </span>
+            <span
+              className={`font-semibold ${
+                selectionSummary.delta >= 0
+                  ? "text-[var(--color-positive)]"
+                  : "text-[var(--color-negative)]"
+              }`}
+            >
+              {selectionSummary.delta >= 0 ? "+" : ""}
+              {fmt(selectionSummary.delta)} ({selectionSummary.percent >= 0 ? "+" : ""}
+              {selectionSummary.percent.toFixed(2)}%)
+            </span>
+            <span className="text-[var(--color-text-muted)]">
+              {selectionSummary.days} dias
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              clearSelection();
+            }}
+            className="rounded-md px-2 py-1 font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]"
+          >
+            Limpar
+          </button>
+        </div>
+      )}
+
       {/* Price history chart with purchase markers */}
       {effectiveView === "cotacao" && hasPriceHistory && (
         <ResponsiveContainer width="100%" height={220}>
-          <ComposedChart data={chartData}>
+          <ComposedChart
+            data={chartData}
+            onMouseDown={handleSelectionStart}
+            onMouseMove={handleSelectionMove}
+            onMouseUp={finishSelection}
+            onMouseLeave={finishSelection}
+            style={{ cursor: "crosshair", userSelect: "none" }}
+          >
             <defs>
               <linearGradient id={`grad-hist-${assetId}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3} />
@@ -535,6 +703,17 @@ export default function AssetDetailCharts({
               domain={yDomain}
             />
             <Tooltip content={<CustomCotacaoTooltip displayCurrency={displayCurrency} />} />
+            {activeSelection && activeSelection.startTimestamp !== activeSelection.endTimestamp && (
+              <ReferenceArea
+                x1={activeSelection.startTimestamp}
+                x2={activeSelection.endTimestamp}
+                stroke="var(--color-accent)"
+                strokeOpacity={0.35}
+                fill="var(--color-accent)"
+                fillOpacity={0.12}
+                ifOverflow="extendDomain"
+              />
+            )}
             <Area
               type="monotone"
               dataKey="price"
