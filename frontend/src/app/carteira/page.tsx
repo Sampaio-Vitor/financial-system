@@ -7,7 +7,6 @@ import { MonthlyOverview } from "@/types";
 import AllocationBreakdown from "@/components/allocation-breakdown";
 import ChartTabs from "@/components/chart-tabs";
 import NotificationBell from "@/components/notification-bell";
-import PatrimonioDailyEvolutionChart from "@/components/patrimonio-daily-evolution-chart";
 
 export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
@@ -82,21 +81,18 @@ export default function VisaoGeralPage() {
         </p>
       </div>
 
-      <PatrimonioDailyEvolutionChart />
+      <ChartTabs
+        allocationItems={data.allocation_breakdown}
+        patrimonioTotal={data.patrimonio_total}
+        reservaFinanceira={data.reserva_financeira}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AllocationBreakdown
-          items={data.allocation_breakdown}
-          patrimonioTotal={data.patrimonio_total}
-          reservaFinanceira={data.reserva_financeira}
-          reservaTarget={data.reserva_target}
-        />
-        <ChartTabs
-          allocationItems={data.allocation_breakdown}
-          patrimonioTotal={data.patrimonio_total}
-          reservaFinanceira={data.reserva_financeira}
-        />
-      </div>
+      <AllocationBreakdown
+        items={data.allocation_breakdown}
+        patrimonioTotal={data.patrimonio_total}
+        reservaFinanceira={data.reserva_financeira}
+        reservaTarget={data.reserva_target}
+      />
     </div>
   );
 }
