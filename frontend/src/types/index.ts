@@ -280,6 +280,8 @@ export interface RebalancingResponse {
   total_planned: number;
 }
 
+export type RebalancingPriority = "class_first" | "asset_first";
+
 export interface PriceContextResponse {
   usd_brl_rate: number | null;
   eur_brl_rate?: number | null;

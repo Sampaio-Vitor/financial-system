@@ -3,7 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
-import { AllocationBucket, AllocationTarget, CurrencyCode, RebalancingResponse } from "@/types";
+import {
+  AllocationBucket,
+  AllocationTarget,
+  CurrencyCode,
+  RebalancingPriority,
+  RebalancingResponse,
+} from "@/types";
 import { formatBRL, formatCurrency } from "@/lib/format";
 import { Calculator, Info, ShieldCheck, Save, FolderOpen, FileText } from "lucide-react";
 import TickerLogo from "@/components/ticker-logo";
@@ -30,6 +36,7 @@ export default function PlanejadorAportePage() {
   const [targets, setTargets] = useState<AllocationTarget[]>([]);
   const [contribution, setContribution] = useState("50.000,00");
   const [topN, setTopN] = useState("10");
+  const [priority, setPriority] = useState<RebalancingPriority>("class_first");
   const [rebalancing, setRebalancing] = useState<RebalancingResponse | null>(
     null
   );
@@ -156,7 +163,7 @@ export default function PlanejadorAportePage() {
     try {
       const raw = parseBRL(contribution);
       const data = await apiFetch<RebalancingResponse>(
-        `/rebalancing?contribution=${raw}&top_n=${topN}`
+        `/rebalancing?contribution=${raw}&top_n=${topN}&priority=${priority}`
       );
       setRebalancing(data);
       setMemoryOpen(false);
@@ -321,6 +328,30 @@ export default function PlanejadorAportePage() {
               onChange={(e) => setTopN(e.target.value)}
               className="w-full md:w-24 px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-xs text-[var(--color-text-muted)] mb-1">
+              Prioridade
+            </label>
+            <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1">
+              {[
+                { value: "class_first" as const, label: "Classe" },
+                { value: "asset_first" as const, label: "Ativo" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setPriority(option.value)}
+                  className={`min-h-8 px-3 text-xs font-medium rounded-md transition-colors ${
+                    priority === option.value
+                      ? "bg-[var(--color-accent)] text-white"
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-end">
             <button
