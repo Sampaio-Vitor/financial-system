@@ -90,7 +90,14 @@ export default function AllocationBreakdown({ items, patrimonioTotal, reservaFin
               </div>
 
               <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
-                <span className="truncate">{formatBRL(item.value)}</span>
+                <span className="truncate">
+                  {formatBRL(item.value)}
+                  {targetPct > 0 && (
+                    <span className="ml-1 text-[var(--color-text-secondary)]">
+                      / meta {formatBRL(targetValue)}
+                    </span>
+                  )}
+                </span>
                 <span className={`shrink-0 tabular-nums ${
                   Math.abs(diffPct) < 0.1
                     ? "text-[var(--color-text-muted)]"

@@ -11,6 +11,7 @@ import NotificationBell from "@/components/notification-bell";
 export default function VisaoGeralPage() {
   const [data, setData] = useState<MonthlyOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mainPanel, setMainPanel] = useState<"allocation" | "charts">("allocation");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -81,18 +82,59 @@ export default function VisaoGeralPage() {
         </p>
       </div>
 
-      <ChartTabs
-        allocationItems={data.allocation_breakdown}
-        patrimonioTotal={data.patrimonio_total}
-        reservaFinanceira={data.reserva_financeira}
-      />
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 shadow-sm md:p-4">
+          <label className="block md:hidden">
+            <span className="sr-only">Selecionar painel</span>
+            <select
+              value={mainPanel}
+              onChange={(event) => setMainPanel(event.target.value as "charts" | "allocation")}
+              className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] px-3 text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              <option value="allocation">Alocação por Classe</option>
+              <option value="charts">Gráficos</option>
+            </select>
+          </label>
 
-      <AllocationBreakdown
-        items={data.allocation_breakdown}
-        patrimonioTotal={data.patrimonio_total}
-        reservaFinanceira={data.reserva_financeira}
-        reservaTarget={data.reserva_target}
-      />
+          <div className="hidden overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 md:grid md:grid-cols-2 md:gap-1">
+            <button
+              onClick={() => setMainPanel("allocation")}
+              className={`min-h-10 rounded-md px-3 py-2 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
+                mainPanel === "allocation"
+                  ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              }`}
+            >
+              Alocação por Classe
+            </button>
+            <button
+              onClick={() => setMainPanel("charts")}
+              className={`min-h-10 rounded-md px-3 py-2 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
+                mainPanel === "charts"
+                  ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              }`}
+            >
+              Gráficos
+            </button>
+          </div>
+        </div>
+
+        {mainPanel === "charts" ? (
+          <ChartTabs
+            allocationItems={data.allocation_breakdown}
+            patrimonioTotal={data.patrimonio_total}
+            reservaFinanceira={data.reserva_financeira}
+          />
+        ) : (
+          <AllocationBreakdown
+            items={data.allocation_breakdown}
+            patrimonioTotal={data.patrimonio_total}
+            reservaFinanceira={data.reserva_financeira}
+            reservaTarget={data.reserva_target}
+          />
+        )}
+      </div>
     </div>
   );
 }

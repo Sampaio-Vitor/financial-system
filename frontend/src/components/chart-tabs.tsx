@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -14,7 +14,6 @@ import {
 import { apiFetch } from "@/lib/api";
 import { formatBRL, formatPercent, getMonthLabel } from "@/lib/format";
 import { DailyEvolutionPoint, PatrimonioEvolutionPoint, ClassSummary } from "@/types";
-import AporteVsPatrimonioChart from "@/components/aporte-vs-patrimonio-chart";
 import AllocationDonutChart from "@/components/allocation-donut-chart";
 import GeographyDonutChart from "@/components/geography-donut-chart";
 
@@ -26,7 +25,6 @@ const TABS = [
 ] as const;
 
 const GRANULARITIES = [
-  { key: "daily", label: "Diário" },
   { key: "monthly", label: "Mensal" },
   { key: "quarterly", label: "Trimestral" },
   { key: "yearly", label: "Anual" },
@@ -61,6 +59,16 @@ interface EvolutionChartPoint {
   pnlPct: number;
 }
 
+interface AporteChartPoint {
+  key: string;
+  label: string;
+  tooltipLabel: string;
+  aportes: number;
+  netAportes: number;
+  jaExistente: number;
+  patrimonio: number;
+}
+
 function getRangeDays(range: RangeKey): number {
   if (range !== "YTD") {
     return RANGES.find((item) => item.key === range)?.days ?? 365;
@@ -86,10 +94,7 @@ function getQuarter(month: string): string {
   return `${year}-T${quarter}`;
 }
 
-function aggregateMonthlyData(
-  data: PatrimonioEvolutionPoint[],
-  granularity: Exclude<GranularityKey, "daily">
-): EvolutionChartPoint[] {
+function groupMonthlyData(data: PatrimonioEvolutionPoint[], granularity: GranularityKey) {
   const grouped = new Map<string, PatrimonioEvolutionPoint[]>();
 
   for (const point of data) {
@@ -102,32 +107,55 @@ function aggregateMonthlyData(
     grouped.set(key, [...(grouped.get(key) ?? []), point]);
   }
 
-  return Array.from(grouped.entries()).map(([key, points]) => {
+  return Array.from(grouped.entries());
+}
+
+function getPeriodLabels(
+  key: string,
+  last: PatrimonioEvolutionPoint,
+  granularity: GranularityKey
+) {
+  const label =
+    granularity === "monthly"
+      ? `${last.month.slice(5)}/${last.month.slice(2, 4)}`
+      : granularity === "quarterly"
+        ? key.replace("-T", " T")
+        : key;
+  const tooltipLabel =
+    granularity === "monthly"
+      ? getMonthLabel(last.month)
+      : granularity === "quarterly"
+        ? key.replace("-T", " T")
+        : key;
+
+  return { label, tooltipLabel };
+}
+
+function aggregateAporteData(
+  data: PatrimonioEvolutionPoint[],
+  granularity: GranularityKey
+): AporteChartPoint[] {
+  return groupMonthlyData(data, granularity).map(([key, points]) => {
     const last = points[points.length - 1];
-    const invested = Number(last.total_invested);
     const patrimonio = Number(last.total_patrimonio);
-    const pnl = Number(last.total_pnl);
-    const label =
-      granularity === "monthly"
-        ? `${last.month.slice(5)}/${last.month.slice(2, 4)}`
-        : granularity === "quarterly"
-          ? key.replace("-T", " T")
-          : key;
-    const tooltipLabel =
-      granularity === "monthly"
-        ? getMonthLabel(last.month)
-        : granularity === "quarterly"
-          ? key.replace("-T", " T")
-          : key;
+    const netAportes = points.reduce((sum, point, index) => {
+      const fallbackInvested =
+        index > 0
+          ? Number(point.total_invested) - Number(points[index - 1].total_invested)
+          : Number(point.aportes_do_mes ?? point.total_invested);
+      return sum + Number(point.aportes_do_mes ?? fallbackInvested);
+    }, 0);
+    const aportes = Math.max(0, netAportes);
+    const { label, tooltipLabel } = getPeriodLabels(key, last, granularity);
 
     return {
       key,
       label,
       tooltipLabel,
+      aportes,
+      netAportes,
+      jaExistente: Math.max(0, patrimonio - aportes),
       patrimonio,
-      investido: invested,
-      pnl,
-      pnlPct: invested > 0 ? (pnl / invested) * 100 : Number(last.pnl_pct),
     };
   });
 }
@@ -138,7 +166,7 @@ export default function ChartTabs({
   reservaFinanceira,
 }: ChartTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("evolucao");
-  const [granularity, setGranularity] = useState<GranularityKey>("daily");
+  const [aporteGranularity, setAporteGranularity] = useState<GranularityKey>("monthly");
   const [range, setRange] = useState<RangeKey>("YTD");
   const [dailyData, setDailyData] = useState<DailyEvolutionPoint[]>([]);
   const [monthlyData, setMonthlyData] = useState<PatrimonioEvolutionPoint[]>([]);
@@ -216,22 +244,18 @@ export default function ChartTabs({
     [dailyData]
   );
 
-  const periodChartData = useMemo<EvolutionChartPoint[]>(
-    () =>
-      granularity === "daily"
-        ? dailyChartData
-        : aggregateMonthlyData(monthlyData, granularity),
-    [dailyChartData, granularity, monthlyData]
+  const aporteChartData = useMemo<AporteChartPoint[]>(
+    () => aggregateAporteData(monthlyData, aporteGranularity),
+    [aporteGranularity, monthlyData]
   );
 
-  const latestPoint = periodChartData.at(-1);
-  const firstPoint = periodChartData[0];
+  const latestPoint = dailyChartData.at(-1);
+  const firstPoint = dailyChartData[0];
   const periodChange =
     latestPoint && firstPoint && firstPoint.patrimonio > 0
       ? ((latestPoint.patrimonio - firstPoint.patrimonio) / firstPoint.patrimonio) * 100
       : null;
   const isPositive = (latestPoint?.pnl ?? 0) >= 0;
-  const isEvolutionLoading = granularity === "daily" ? dailyLoading : monthlyLoading;
 
   const renderEmptyState = () => (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -254,7 +278,7 @@ export default function ChartTabs({
   );
 
   const renderEvolutionChart = () => {
-    if (isEvolutionLoading) {
+    if (dailyLoading) {
       return (
         <div className="flex flex-1 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-emerald-500" />
@@ -262,8 +286,8 @@ export default function ChartTabs({
       );
     }
 
-    if (periodChartData.length === 0) {
-      return granularity === "daily" ? (
+    if (dailyChartData.length === 0) {
+      return (
         <div className="flex flex-1 items-center justify-center text-center">
           <div>
             <p className="text-sm font-medium text-[var(--color-text-muted)]">
@@ -274,8 +298,6 @@ export default function ChartTabs({
             </p>
           </div>
         </div>
-      ) : (
-        renderEmptyState()
       );
     }
 
@@ -305,51 +327,8 @@ export default function ChartTabs({
       />
     );
 
-    if (granularity === "daily") {
-      return (
-        <LineChart data={periodChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <XAxis
-            dataKey="label"
-            {...commonAxis}
-            axisLine={{ stroke: "#2a2d3a" }}
-            interval="preserveStartEnd"
-            minTickGap={18}
-          />
-          <YAxis
-            {...commonAxis}
-            tickFormatter={formatAxisValue}
-            width={42}
-          />
-          {tooltip}
-          <Line
-            type="monotone"
-            dataKey="patrimonio"
-            stroke="#10b981"
-            strokeWidth={2.5}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="investido"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={false}
-            strokeDasharray="5 5"
-            activeDot={{ r: 4 }}
-          />
-        </LineChart>
-      );
-    }
-
     return (
-      <AreaChart data={periodChartData} margin={{ top: 8, right: 8, bottom: 0, left: -10 }}>
-        <defs>
-          <linearGradient id="gradPatrimonioUnified" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-          </linearGradient>
-        </defs>
+      <LineChart data={dailyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <XAxis
           dataKey="label"
           {...commonAxis}
@@ -360,30 +339,32 @@ export default function ChartTabs({
         <YAxis
           {...commonAxis}
           tickFormatter={formatAxisValue}
-          width={44}
+          width={42}
         />
         {tooltip}
-        <Area
+        <Line
           type="monotone"
           dataKey="patrimonio"
           stroke="#10b981"
           strokeWidth={2.5}
-          fill="url(#gradPatrimonioUnified)"
+          dot={false}
+          activeDot={{ r: 4 }}
         />
-        <Area
+        <Line
           type="monotone"
           dataKey="investido"
-          stroke="#8b5cf6"
-          strokeWidth={2.5}
+          stroke="#3b82f6"
+          strokeWidth={2}
+          dot={false}
           strokeDasharray="5 5"
-          fill="none"
+          activeDot={{ r: 4 }}
         />
-      </AreaChart>
+      </LineChart>
     );
   };
 
   const renderEvolutionArea = () => {
-    if (isEvolutionLoading || periodChartData.length === 0) {
+    if (dailyLoading || dailyChartData.length === 0) {
       return renderEvolutionChart();
     }
 
@@ -391,6 +372,109 @@ export default function ChartTabs({
       <ResponsiveContainer width="100%" height="100%">
         {renderEvolutionChart()}
       </ResponsiveContainer>
+    );
+  };
+
+  const renderAporteChart = () => {
+    if (monthlyLoading) {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-emerald-500" />
+        </div>
+      );
+    }
+
+    if (aporteChartData.length === 0) {
+      return renderEmptyState();
+    }
+
+    return (
+      <>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
+              Aporte vs Patrimônio
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              Patrimônio existente e aporte líquido por período
+            </p>
+          </div>
+
+          <div className="flex w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 sm:w-auto">
+            {GRANULARITIES.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setAporteGranularity(item.key)}
+                className={`min-h-8 min-w-20 rounded-md px-2.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
+                  aporteGranularity === item.key
+                    ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={aporteChartData}
+              margin={{ top: 8, right: 8, bottom: 0, left: -10 }}
+              barCategoryGap="28%"
+            >
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "#64748b" }}
+                axisLine={{ stroke: "#2a2d3a" }}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={18}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#64748b" }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={formatAxisValue}
+                width={44}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#1e2130",
+                  border: "1px solid #2a2d3a",
+                  borderRadius: "8px",
+                  color: "#f8fafc",
+                  fontSize: "12px",
+                }}
+                formatter={(value: number, name: string) => [
+                  formatBRL(value),
+                  name === "aportes" ? "Aporte Líquido" : "Patrimônio Existente",
+                ]}
+                labelFormatter={(_label: string, payload: unknown) => {
+                  const items = payload as Array<{ payload: AporteChartPoint }>;
+                  const point = items?.[0]?.payload;
+                  if (!point) return _label;
+                  return `${point.tooltipLabel} - Total: ${formatBRL(point.patrimonio)} - Aporte líquido: ${formatBRL(point.netAportes)}`;
+                }}
+              />
+              <Bar dataKey="jaExistente" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="aportes" stackId="a" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-sm bg-emerald-500" />
+            <span className="text-xs text-[var(--color-text-muted)]">Patrimônio Existente</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-sm bg-violet-500" />
+            <span className="text-xs text-[var(--color-text-muted)]">Aporte Líquido</span>
+          </div>
+        </div>
+      </>
     );
   };
 
@@ -415,15 +499,7 @@ export default function ChartTabs({
     }
 
     if (activeTab === "aporte-vs-patrimonio") {
-      if (monthlyLoading) {
-        return (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-emerald-500" />
-          </div>
-        );
-      }
-
-      return monthlyData.length === 0 ? renderEmptyState() : <AporteVsPatrimonioChart data={monthlyData} />;
+      return renderAporteChart();
     }
 
     return (
@@ -454,40 +530,20 @@ export default function ChartTabs({
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 sm:w-auto">
-              {GRANULARITIES.map((item) => (
-                <button
-                  key={item.key}
-                  onClick={() => setGranularity(item.key)}
-                  className={`min-h-8 min-w-20 rounded-md px-2.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
-                    granularity === item.key
-                      ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {granularity === "daily" && (
-              <div className="flex w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 sm:w-auto">
-                {RANGES.map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => setRange(item.key)}
-                    className={`min-h-8 min-w-10 rounded-md px-2.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
-                      range === item.key
-                        ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
-                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1 sm:w-auto">
+            {RANGES.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setRange(item.key)}
+                className={`min-h-8 min-w-10 rounded-md px-2.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-inset ${
+                  range === item.key
+                    ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -497,9 +553,7 @@ export default function ChartTabs({
         <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
           <div className="flex items-center gap-1.5">
             <div className="h-0.5 w-4 rounded bg-emerald-500" />
-            <span className="text-xs text-[var(--color-text-muted)]">
-              {granularity === "daily" ? "Atual" : "Patrimônio"}
-            </span>
+            <span className="text-xs text-[var(--color-text-muted)]">Atual</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-0 w-4 border-t-2 border-dashed border-blue-500" />
