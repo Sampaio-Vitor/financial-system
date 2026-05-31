@@ -1,8 +1,14 @@
 from decimal import Decimal
+from enum import Enum
 
 from pydantic import BaseModel
 
 from app.models.asset import AllocationBucket, AssetClass, CurrencyCode, Market
+
+
+class RebalancingPriority(str, Enum):
+    CLASS_FIRST = "class_first"
+    ASSET_FIRST = "asset_first"
 
 
 class ClassRebalancing(BaseModel):

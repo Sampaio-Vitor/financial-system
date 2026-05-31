@@ -25,6 +25,7 @@ from app.models.user_asset import UserAsset
 from app.schemas.rebalancing import (
     AssetRebalancing,
     ClassRebalancing,
+    RebalancingPriority,
     RebalancingResponse,
 )
 from app.services.portfolio_service import get_bucket_values, get_reserve_for_month
@@ -46,7 +47,12 @@ class RebalancingService:
         self.db = db
         self.user = user
 
-    async def calculate(self, contribution: Decimal, top_n: int) -> RebalancingResponse:
+    async def calculate(
+        self,
+        contribution: Decimal,
+        top_n: int,
+        priority: RebalancingPriority = RebalancingPriority.CLASS_FIRST,
+    ) -> RebalancingResponse:
         bucket_values = await get_bucket_values(self.db, self.user)
         investable_total = sum(bucket_values.values())
 
@@ -112,13 +118,18 @@ class RebalancingService:
             AllocationBucket.FII,
         )
         for allocation_bucket in candidate_buckets:
-            if class_gaps.get(allocation_bucket, Decimal("0")) <= 0:
+            if (
+                priority == RebalancingPriority.CLASS_FIRST
+                and class_gaps.get(allocation_bucket, Decimal("0")) <= 0
+            ):
                 continue
             assets_in_bucket = await self._get_assets_with_values(allocation_bucket)
             if not assets_in_bucket:
                 continue
 
             bucket_target_value = investable_pos_aporte * targets.get(allocation_bucket, Decimal("0"))
+            if bucket_target_value <= 0:
+                continue
 
             explicit = [c for c in assets_in_bucket if c[6] is not None]
             implicit = [c for c in assets_in_bucket if c[6] is None]
@@ -166,27 +177,12 @@ class RebalancingService:
                 (rf_candidate, rf_current_value, rf_target_value, rf_gap_pct)
             ]
 
-        bucket_order = sorted(
-            candidates_by_bucket.keys(),
-            key=lambda bucket: class_gaps.get(bucket, Decimal("0")),
-            reverse=True,
+        top_assets = self._select_top_assets(
+            candidates_by_bucket,
+            class_gaps,
+            top_n,
+            priority,
         )
-        top_assets: list[tuple[AssetCandidate, Decimal, Decimal, Decimal]] = []
-        bucket_idx = {bucket: 0 for bucket in bucket_order}
-        while len(top_assets) < top_n and bucket_order:
-            picked_this_round = False
-            for bucket in list(bucket_order):
-                if len(top_assets) >= top_n:
-                    break
-                idx = bucket_idx[bucket]
-                if idx < len(candidates_by_bucket[bucket]):
-                    top_assets.append(candidates_by_bucket[bucket][idx])
-                    bucket_idx[bucket] = idx + 1
-                    picked_this_round = True
-                else:
-                    bucket_order.remove(bucket)
-            if not picked_this_round:
-                break
 
         asset_plan: list[AssetRebalancing] = []
         total_gap_top = sum(target_val - current_val for _candidate, current_val, target_val, _gap_pct in top_assets)
@@ -247,6 +243,54 @@ class RebalancingService:
             asset_plan=asset_plan,
             total_planned=round(total_planned, 2),
         )
+
+    def _select_top_assets(
+        self,
+        candidates_by_bucket: dict[
+            AllocationBucket,
+            list[tuple[AssetCandidate, Decimal, Decimal, Decimal]],
+        ],
+        class_gaps: dict[AllocationBucket, Decimal],
+        top_n: int,
+        priority: RebalancingPriority,
+    ) -> list[tuple[AssetCandidate, Decimal, Decimal, Decimal]]:
+        if priority == RebalancingPriority.ASSET_FIRST:
+            candidates = [
+                item
+                for bucket_candidates in candidates_by_bucket.values()
+                for item in bucket_candidates
+            ]
+            candidates.sort(
+                key=lambda item: (
+                    item[2] - item[1],
+                    class_gaps.get(item[0][4], Decimal("0")),
+                ),
+                reverse=True,
+            )
+            return candidates[:top_n]
+
+        bucket_order = sorted(
+            candidates_by_bucket.keys(),
+            key=lambda bucket: class_gaps.get(bucket, Decimal("0")),
+            reverse=True,
+        )
+        top_assets: list[tuple[AssetCandidate, Decimal, Decimal, Decimal]] = []
+        bucket_idx = {bucket: 0 for bucket in bucket_order}
+        while len(top_assets) < top_n and bucket_order:
+            picked_this_round = False
+            for bucket in list(bucket_order):
+                if len(top_assets) >= top_n:
+                    break
+                idx = bucket_idx[bucket]
+                if idx < len(candidates_by_bucket[bucket]):
+                    top_assets.append(candidates_by_bucket[bucket][idx])
+                    bucket_idx[bucket] = idx + 1
+                    picked_this_round = True
+                else:
+                    bucket_order.remove(bucket)
+            if not picked_this_round:
+                break
+        return top_assets
 
     async def _get_reserve_value(self) -> Decimal:
         now = datetime.now(timezone.utc)
