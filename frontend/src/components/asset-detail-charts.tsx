@@ -241,9 +241,11 @@ function CustomCotacaoTooltip({ active, payload, displayCurrency = "BRL" }: Cust
 }
 
 type ChartView = "cotacao" | "dividendos";
-type RangeKey = "YTD" | "1Y" | "5Y" | "ALL";
+type RangeKey = "1W" | "1M" | "YTD" | "1Y" | "5Y" | "ALL";
 
 const PRICE_RANGES: { key: RangeKey; label: string; days: number }[] = [
+  { key: "1W", label: "1S", days: 7 },
+  { key: "1M", label: "1M", days: 30 },
   { key: "YTD", label: "YTD", days: 0 },
   { key: "1Y", label: "1A", days: 365 },
   { key: "5Y", label: "5A", days: 365 * 5 },
