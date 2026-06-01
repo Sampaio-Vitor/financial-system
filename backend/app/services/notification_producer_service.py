@@ -6,10 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ALLOCATION_BUCKET_LABELS
-from app.models.allocation_target import AllocationTarget
 from app.models.asset import (
-    AllocationBucket,
     Asset,
     CurrencyCode,
 )
@@ -21,7 +18,6 @@ from app.models.retirement_goal import RetirementGoal
 from app.models.user import User
 from app.models.user_asset import UserAsset
 from app.notification_types import (
-    ALLOCATION_DRIFT,
     BANK_CONNECTION_ACTION_REQUIRED,
     BANK_SYNC_NEW_TRANSACTIONS,
     DIVIDEND_DETECTED,
@@ -34,7 +30,7 @@ from app.notification_types import (
     RETIREMENT_PROGRESS_MILESTONE,
 )
 from app.services.notification_service import create_notification
-from app.services.portfolio_service import get_bucket_values, get_class_values
+from app.services.portfolio_service import get_class_values
 
 
 def _money(value: Decimal | int | float | None) -> str:
@@ -521,58 +517,6 @@ async def scan_retirement_milestones(db: AsyncSession, user: User) -> int:
                 "progress": _decimal_str(round(progress, 2)),
                 "patrimonio_atual": _decimal_str(patrimonio_atual),
                 "patrimonio_meta": _decimal_str(goal.patrimonio_meta),
-            },
-        )
-        created += 1
-    return created
-
-
-async def scan_allocation_drift(
-    db: AsyncSession,
-    user: User,
-    *,
-    today: date | None = None,
-    threshold_pct_points: Decimal = Decimal("5"),
-) -> int:
-    today = today or date.today()
-    bucket_values = await get_bucket_values(db, user)
-    investable_total = sum(bucket_values.values())
-    if investable_total <= 0:
-        return 0
-
-    target_result = await db.execute(
-        select(AllocationTarget).where(AllocationTarget.user_id == user.id)
-    )
-    targets = {
-        row.allocation_bucket: row.target_pct for row in target_result.scalars().all()
-    }
-    created = 0
-    for bucket in AllocationBucket:
-        target_pct = targets.get(bucket, Decimal("0")) * Decimal("100")
-        if target_pct <= 0:
-            continue
-        current_pct = bucket_values[bucket] / investable_total * Decimal("100")
-        drift = current_pct - target_pct
-        if abs(drift) < threshold_pct_points:
-            continue
-        label = ALLOCATION_BUCKET_LABELS[bucket]
-        dedupe_key = f"allocation_drift:{bucket.value}:{today:%Y-%m}"
-        if await notification_exists(db, user_id=user.id, dedupe_key=dedupe_key):
-            continue
-        await create_notification(
-            db,
-            user_id=user.id,
-            notification_type=ALLOCATION_DRIFT,
-            title="Alocação fora da meta",
-            message=f"{label} está {abs(drift):.2f} p.p. fora da meta.",
-            severity="warning",
-            link="/desejados",
-            dedupe_key=dedupe_key,
-            metadata={
-                "bucket": bucket.value,
-                "target_pct": _decimal_str(round(target_pct, 2)),
-                "current_pct": _decimal_str(round(current_pct, 2)),
-                "drift_pct_points": _decimal_str(round(drift, 2)),
             },
         )
         created += 1

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.models.asset import AllocationBucket, AssetType, CurrencyCode
+from app.models.asset import AssetType, CurrencyCode
 from app.models.asset_price_history import AssetPriceHistory
 from app.models.daily_snapshot import DailySnapshot
 from app.models.fixed_income import FixedIncomePosition
@@ -12,7 +12,6 @@ from app.models.notification import Notification
 from app.models.purchase_price_anomaly_ignore import PurchasePriceAnomalyIgnore
 from app.models.retirement_goal import RetirementGoal
 from app.notification_types import (
-    ALLOCATION_DRIFT,
     FIXED_INCOME_MATURITY,
     PRICE_UPDATE_COMPLETED,
     PURCHASE_PRICE_ANOMALY,
@@ -20,14 +19,12 @@ from app.notification_types import (
 )
 from app.services.notification_producer_service import (
     notify_price_update_results_for_users,
-    scan_allocation_drift,
     scan_fixed_income_maturities,
     scan_retirement_milestones,
 )
 from app.services.price_anomaly_service import scan_and_notify_purchase_price_anomalies
 from tests.factories import (
     link_user_asset,
-    make_allocation_target,
     make_asset,
     make_fi_position,
     make_purchase,
@@ -175,33 +172,3 @@ async def test_retirement_milestones_every_five_percent(db, user):
         if n.type == RETIREMENT_PROGRESS_MILESTONE
     ]
     assert milestones == [5, 10, 15, 20, 25, 30]
-
-
-async def test_allocation_drift_monthly_dedupe(db, user):
-    asset = await make_asset(db, ticker="ITUB4", current_price=Decimal("100"))
-    await link_user_asset(db, user_id=user.id, asset_id=asset.id)
-    await make_purchase(
-        db,
-        user_id=user.id,
-        asset_id=asset.id,
-        purchase_date=date(2026, 1, 1),
-        quantity=Decimal("1"),
-        unit_price=Decimal("100"),
-    )
-    await make_allocation_target(
-        db,
-        user_id=user.id,
-        bucket=AllocationBucket.STOCK_BR,
-        target_pct=Decimal("0.50"),
-    )
-
-    assert await scan_allocation_drift(db, user, today=date(2026, 5, 28)) == 1
-    await db.commit()
-    assert await scan_allocation_drift(db, user, today=date(2026, 5, 28)) == 0
-    await db.commit()
-
-    notifications = [
-        n for n in await _notifications(db, user.id) if n.type == ALLOCATION_DRIFT
-    ]
-    assert len(notifications) == 1
-    assert notifications[0].dedupe_key == "allocation_drift:STOCK_BR:2026-05"

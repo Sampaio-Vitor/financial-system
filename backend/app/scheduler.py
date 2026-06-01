@@ -23,7 +23,6 @@ from app.services.notification_producer_service import (
     notify_investing_dividend_fetch_failed,
     notify_price_update_results_for_users,
     notification_exists,
-    scan_allocation_drift,
     scan_fixed_income_maturities,
     scan_retirement_milestones,
 )
@@ -274,9 +273,6 @@ async def _execute_price_update_cycle(db) -> dict:
                     db, user
                 )
                 notifications_created += await scan_retirement_milestones(db, user)
-                notifications_created += await scan_allocation_drift(
-                    db, user, today=today
-                )
                 await db.commit()
             except Exception:
                 await db.rollback()
