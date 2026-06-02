@@ -299,8 +299,8 @@ export default function AportesPage() {
         />
       )}
 
-      {/* Filters */}
-      {!loading && (totalCount > 0 || hasActiveFilters) && (
+      {/* Filters — stay mounted during refetch so inputs don't lose focus */}
+      {(totalCount > 0 || hasActiveFilters) && (
         <div className="mb-2 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 md:mb-3 md:p-4">
           <button
             type="button"
@@ -387,7 +387,7 @@ export default function AportesPage() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 md:p-4">
-        {loading ? (
+        {loading && purchases.length === 0 ? (
           <div className="animate-pulse h-64" />
         ) : totalCount === 0 && !hasActiveFilters ? (
           <p className="text-[var(--color-text-muted)] text-center py-8">

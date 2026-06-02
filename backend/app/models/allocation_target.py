@@ -7,7 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.models.asset import AllocationBucket
 
-
 class AllocationTarget(Base):
     __tablename__ = "allocation_targets"
 

@@ -70,6 +70,26 @@ export default function ProventosPage() {
   const [loading, setLoading] = useState(true);
   const [tickerFilter, setTickerFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  // Per-column table filters
+  const [paymentFilter, setPaymentFilter] = useState("");
+  const [exDateFilter, setExDateFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [grossMin, setGrossMin] = useState("");
+  const [taxMin, setTaxMin] = useState("");
+  const [netMin, setNetMin] = useState("");
+  const [sortKey, setSortKey] = useState<
+    "payment_date" | "ex_date" | "ticker" | "status" | "gross" | "tax" | "net" | null
+  >(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (key: NonNullable<typeof sortKey>) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
   const [donutExpanded, setDonutExpanded] = useState(false);
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [expandedPanel, setExpandedPanel] = useState<"calendario" | "barras" | "donut" | null>(null);
@@ -251,6 +271,55 @@ export default function ProventosPage() {
     const filter = tickerFilter.toUpperCase();
     return scopedEvents.filter((e) => e.ticker?.includes(filter));
   }, [scopedEvents, tickerFilter]);
+
+  // Distinct status values for the status dropdown
+  const statusOptions = useMemo(
+    () => Array.from(new Set(scopedEvents.map((e) => e.status).filter(Boolean))).sort(),
+    [scopedEvents]
+  );
+
+  const grossOf = (e: DividendEvent) => Number(e.gross_amount ?? e.credited_amount);
+  const taxOf = (e: DividendEvent) => Number(e.withholding_tax ?? 0);
+  const netOf = (e: DividendEvent) => Number(e.credited_amount);
+
+  // Table view: filteredEvents + per-column filters + sorting (charts/calendar untouched)
+  const tableEvents = useMemo(() => {
+    const gMin = parseFloat(grossMin);
+    const tMin = parseFloat(taxMin);
+    const nMin = parseFloat(netMin);
+    const fmtDate = (d?: string | null) =>
+      d ? new Date(d + "T00:00:00").toLocaleDateString("pt-BR") : "";
+
+    const filtered = filteredEvents.filter((e) => {
+      if (paymentFilter && !fmtDate(e.payment_date).includes(paymentFilter)) return false;
+      if (exDateFilter && !fmtDate(e.ex_date).includes(exDateFilter)) return false;
+      if (statusFilter && e.status !== statusFilter) return false;
+      if (!Number.isNaN(gMin) && grossOf(e) < gMin) return false;
+      if (!Number.isNaN(tMin) && taxOf(e) < tMin) return false;
+      if (!Number.isNaN(nMin) && netOf(e) < nMin) return false;
+      return true;
+    });
+
+    if (!sortKey) return filtered;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const valueOf = (e: DividendEvent): string | number => {
+      switch (sortKey) {
+        case "payment_date": return e.payment_date || "";
+        case "ex_date": return e.ex_date || "";
+        case "ticker": return e.ticker || "";
+        case "status": return e.status || "";
+        case "gross": return grossOf(e);
+        case "tax": return taxOf(e);
+        case "net": return netOf(e);
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+  }, [filteredEvents, paymentFilter, exDateFilter, statusFilter, grossMin, taxMin, netMin, sortKey, sortDir]);
 
   // Calendar: events grouped by payment day, plus the month grid + month total
   const eventsByDay = useMemo(() => {
@@ -804,20 +873,21 @@ export default function ProventosPage() {
           <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center justify-between gap-3 p-4 border-b border-[var(--color-border)]">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide shrink-0">
-                Eventos ({filteredEvents.length})
+                Eventos ({tableEvents.length})
               </h3>
+              {/* Mobile-only ticker filter (desktop uses per-column filters) */}
               <input
                 type="text"
                 placeholder="Filtrar por ticker..."
                 value={tickerFilter}
                 onChange={(e) => setTickerFilter(e.target.value)}
-                className="bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)] w-32 sm:w-48"
+                className="md:hidden bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)] w-32 sm:w-48"
               />
             </div>
 
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-[var(--color-border)] max-h-[312px] overflow-y-auto">
-              {filteredEvents.map((e) => (
+              {tableEvents.map((e) => (
                 <div key={e.id} className="p-4 space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-sm text-[var(--color-text-primary)]">
@@ -839,17 +909,103 @@ export default function ProventosPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[var(--color-bg-card)] sticky top-0 z-10">
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Pagamento</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Ex-data</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Ticker</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Status</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Bruto</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Imposto</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)]">Líquido</th>
+                    {([
+                      { key: "payment_date", label: "Pagamento", align: "left" },
+                      { key: "ex_date", label: "Ex-data", align: "left" },
+                      { key: "ticker", label: "Ticker", align: "left" },
+                      { key: "status", label: "Status", align: "left" },
+                      { key: "gross", label: "Bruto", align: "right" },
+                      { key: "tax", label: "Imposto", align: "right" },
+                      { key: "net", label: "Líquido", align: "right" },
+                    ] as const).map((col) => (
+                      <th
+                        key={col.key}
+                        onClick={() => toggleSort(col.key)}
+                        className={`px-4 py-2.5 text-xs font-medium text-[var(--color-text-muted)] cursor-pointer select-none hover:text-[var(--color-text-primary)] ${
+                          col.align === "right" ? "text-right" : "text-left"
+                        }`}
+                      >
+                        <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "flex-row-reverse" : ""}`}>
+                          {col.label}
+                          <span className="text-[10px] w-2">
+                            {sortKey === col.key ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                          </span>
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                  {/* Per-column filter row */}
+                  <tr className="bg-[var(--color-bg-card)] sticky top-[37px] z-10">
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="text"
+                        placeholder="dd/mm/aaaa"
+                        value={paymentFilter}
+                        onChange={(e) => setPaymentFilter(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="text"
+                        placeholder="dd/mm/aaaa"
+                        value={exDateFilter}
+                        onChange={(e) => setExDateFilter(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="text"
+                        placeholder="Ticker..."
+                        value={tickerFilter}
+                        onChange={(e) => setTickerFilter(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-[var(--color-text-secondary)]"
+                      >
+                        <option value="">Todos</option>
+                        {statusOptions.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        placeholder="≥ mín"
+                        value={grossMin}
+                        onChange={(e) => setGrossMin(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-right text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        placeholder="≥ mín"
+                        value={taxMin}
+                        onChange={(e) => setTaxMin(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-right text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        placeholder="≥ mín"
+                        value={netMin}
+                        onChange={(e) => setNetMin(e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded px-2 py-1 text-xs font-normal text-right text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-muted)]"
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEvents.map((e) => (
+                  {tableEvents.map((e) => (
                     <tr key={e.id} className="border-t border-[var(--color-border)]/50 hover:bg-[var(--color-bg-card)]/50">
                       <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
                         {new Date(e.payment_date + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -874,7 +1030,7 @@ export default function ProventosPage() {
               </table>
             </div>
 
-            {filteredEvents.length === 0 && (
+            {tableEvents.length === 0 && (
               <div className="p-6 text-center text-sm text-[var(--color-text-muted)]">
                 Nenhum evento encontrado.
               </div>
