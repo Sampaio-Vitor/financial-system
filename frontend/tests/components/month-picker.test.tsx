@@ -60,14 +60,12 @@ describe("MonthPicker", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("ignores clicks on disabled months", async () => {
+  it("ignores clicks on disabled months", () => {
     const onChange = vi.fn();
-    vi.useRealTimers();
-    const user = userEvent.setup();
     render(
       <MonthPicker month="2026-05" onChange={onChange} onClose={() => {}} />,
     );
-    await user.click(screen.getByText("Jun"));
+    fireEvent.click(screen.getByText("Jun"));
     expect(onChange).not.toHaveBeenCalled();
   });
 
