@@ -62,6 +62,9 @@ def _validate_asset_shape(
         AssetClass.RF: {
             Market.BR: {CurrencyCode.BRL},
         },
+        AssetClass.CRYPTO: {
+            Market.CRYPTO: {CurrencyCode.BRL},
+        },
     }
     if quote_currency not in valid.get(asset_class, {}).get(market, set()):
         raise HTTPException(

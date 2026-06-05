@@ -23,7 +23,10 @@ def last_trading_day(market: Market | None, on_or_before: date) -> date:
 
     Uses exchange calendars when available and falls back to weekends-only logic
     so price fetching never targets Saturday/Sunday even in degraded environments.
+    Crypto assets trade every calendar day, so the input date is returned as-is.
     """
+    if market == Market.CRYPTO:
+        return on_or_before
     calendar_name = MARKET_CALENDARS.get(market) if market is not None else None
     if not calendar_name:
         return _previous_weekday(on_or_before)

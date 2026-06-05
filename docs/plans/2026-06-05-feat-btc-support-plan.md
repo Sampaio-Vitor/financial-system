@@ -76,6 +76,18 @@ source.
   - Verification run: `git diff --check -- backend/alembic/versions/030_add_crypto_enums.py`.
   - Verification run: `PYTHONPATH=. ../venv/bin/alembic upgrade 029_add_investidor10_dividend_fetch_schedule:030_add_crypto_enums --sql`.
   - Local DB observation: `alembic_version = 030_add_crypto_enums`.
+- [x] Step 3 - Backend Asset Create/Update Validation.
+  - Review result: approved.
+  - Verification run: `docker compose run --rm backend python -m compileall app`.
+  - Verification run: `git diff --check`.
+  - Narrow check: `CRYPTO/CRYPTO/BRL` accepted, invalid crypto shapes rejected.
+- [x] Step 4 - Backend Price Service For BTC.
+  - Review result: approved after rework.
+  - Provider: CoinGecko BRL prices using `asset.price_symbol` as coin ID.
+  - Verification run: `docker compose run --rm backend python -m compileall app`.
+  - Verification run: `git diff --check`.
+  - Verification run: `venv/bin/ruff check backend/app/services/crypto_price_service.py backend/app/services/price_service.py backend/app/routers/assets.py backend/app/services/trading_calendar.py`.
+  - Provider check: current and historical `bitcoin` BRL prices returned valid data.
 
 ## Step 0 - Baseline Inventory
 
@@ -210,9 +222,12 @@ Review gate:
 - Student reports whether migration applied locally.
 - Reviewer checks every affected enum column was included.
 
-## Step 3 - Backend Asset Create/Update Validation
+## Step 3 - Backend Asset Create/Update Validation - Completed
 
 Purpose: allow BTC assets to exist in the catalog and user asset list.
+
+Status: completed and reviewed. The backend now accepts the narrow first-version
+crypto shape `AssetClass.CRYPTO / Market.CRYPTO / CurrencyCode.BRL`.
 
 Edit:
 
@@ -261,10 +276,14 @@ Review gate:
 - Reviewer checks validation is explicit and narrow.
 - Reviewer confirms non-crypto asset validation still behaves as before.
 
-## Step 4 - Backend Price Service For BTC
+## Step 4 - Backend Price Service For BTC - Completed
 
 Purpose: make "Atualizar Cotações" work for BTC without breaking stocks, FIIs,
 ETFs, RF, or FX.
+
+Status: completed and reviewed. yfinance does not provide a usable BRL BTC
+symbol, so the implementation uses CoinGecko for current and historical BRL
+crypto prices while keeping stock/FII/ETF/FX paths on the existing yfinance flow.
 
 Edit:
 
