@@ -124,6 +124,12 @@ source.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
   - Behavior covered: Aportes filter includes Crypto, buy mode already includes non-RF BTC assets, and sell mode now loads crypto owned positions.
+- [x] Step 11 - Frontend Dashboard, History, Snapshots, And Planner.
+  - Review result: approved.
+  - Verification run: `cd frontend && npm run build`.
+  - Verification run: `git diff --check`.
+  - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
+  - Behavior covered: movers has a Crypto segment, planner/saved plans render crypto buckets, and snapshot asset quantities use 8-decimal formatting.
 
 ## Step 0 - Baseline Inventory
 
@@ -657,9 +663,14 @@ Review gate:
 - Student reports buy and sell manual results.
 - Reviewer checks decimal precision and currency handling.
 
-## Step 11 - Frontend Dashboard, History, Snapshots, And Planner
+## Step 11 - Frontend Dashboard, History, Snapshots, And Planner - Completed
 
 Purpose: make BTC visible in aggregate views.
+
+Status: completed and reviewed. Dashboard chart maps already had crypto from
+Step 7, and this step completed the remaining aggregate surfaces: movers crypto
+filtering, planner bucket ordering, saved-plan crypto labels/logos, and snapshot
+asset quantity precision.
 
 Edit dashboard/history:
 

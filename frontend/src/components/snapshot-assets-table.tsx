@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatBRL, formatCurrency } from "@/lib/format";
+import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import { AllocationBucket, AssetClass, CurrencyCode, Market, SnapshotAssetItem } from "@/types";
 import MobileCard from "@/components/mobile-card";
 import TickerLogo from "@/components/ticker-logo";
@@ -146,7 +146,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
             }
             bodyItems={[
               { label: "Valor", value: row.market_value != null ? formatBRL(row.market_value) : "\u2014" },
-              { label: "Qtd", value: row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) },
+              { label: "Qtd", value: row.type === "RF" ? "\u2014" : formatQuantity(row.quantity) },
             ]}
             expandedItems={[
               { label: "Preco Medio", value: formatBRL(row.avg_price) },
@@ -238,7 +238,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
+                    {row.type === "RF" ? "\u2014" : formatQuantity(row.quantity)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
                     {formatBRL(row.avg_price)}

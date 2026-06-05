@@ -514,7 +514,7 @@ export default function PlanejadorAportePage() {
                     (acc[a.allocation_bucket] ??= []).push(a);
                     return acc;
                   }, {} as Record<AllocationBucket, typeof rebalancing.asset_plan>);
-                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "RF"];
+                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "CRYPTO", "RF"];
                   const activeBuckets = bucketOrder.filter((b) => grouped[b]?.length > 0);
 
                   return (
