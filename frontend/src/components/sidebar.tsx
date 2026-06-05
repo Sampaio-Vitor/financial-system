@@ -59,7 +59,7 @@ export const navItems: NavItem[] = [
       { label: "Ações (Brasil)", href: "/carteira/acoes", icon: Building2 },
       { label: "ETFs", href: "/carteira/etfs", icon: TrendingUp },
       { label: "FIIs", href: "/carteira/fiis", icon: Landmark },
-      { label: "Crypto", href: "/carteira/cripto", icon: Bitcoin },
+      { label: "BTC", href: "/carteira/btc", icon: Bitcoin },
       { label: "Renda Fixa", href: "/carteira/renda-fixa", icon: PiggyBank },
       { label: "Reserva", href: "/carteira/reserva", icon: ShieldCheck },
     ],

@@ -13,7 +13,7 @@ const BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs Exterior",
   FII: "FIIs",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "BTC",
 };
 
 const BUCKET_COLORS: Record<AllocationBucket, string> = {
@@ -30,7 +30,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETF",
   FII: "FII",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -38,7 +38,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {

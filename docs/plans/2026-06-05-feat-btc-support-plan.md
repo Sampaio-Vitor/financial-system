@@ -1,11 +1,11 @@
 ---
-title: BTC / Crypto Asset Support
+title: BTC Asset Support
 type: feat
 status: planned
 date: 2026-06-05
 ---
 
-# BTC / Crypto Asset Support
+# BTC Asset Support
 
 ## Goal
 
@@ -42,7 +42,7 @@ AssetClass.CRYPTO
 Market.CRYPTO
 AllocationBucket.CRYPTO
 quote_currency = BRL
-price_symbol = BTC-BRL or another provider-specific BRL quote symbol
+price_symbol = bitcoin
 ```
 
 Do not add `BTC` as a `CurrencyCode` in the first version. BTC is the asset, not
@@ -50,9 +50,11 @@ the accounting currency. Keeping `quote_currency = BRL` lets the existing
 purchase flow store "I bought 0.001 BTC for R$ X" without forcing fake USD trades
 or new FX logic.
 
-If price provider testing shows that `BTC-BRL` is unreliable, add a dedicated
-crypto price provider before shipping. Do not ship a silently unreliable price
-source.
+Only BTC is supported. `CRYPTO` remains the internal enum/bucket name for
+database compatibility, but catalog creation/import must not allow other crypto
+assets. BTC price fetches must use CoinGecko id `bitcoin`; do not use ticker
+fallbacks like `btc`, yfinance symbols like `BTC-BRL`, or arbitrary CoinGecko
+ids.
 
 ## Out Of Scope For First Version
 
@@ -117,7 +119,7 @@ source.
   - Verification run: `cd frontend && npm run build`.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
-  - Build observation: `/carteira/cripto` is included in the generated route list.
+  - Build observation: `/carteira/btc` is included in the generated route list.
 - [x] Step 10 - Frontend Purchases And Sells.
   - Review result: approved.
   - Verification run: `cd frontend && npm run build`.
@@ -129,7 +131,13 @@ source.
   - Verification run: `cd frontend && npm run build`.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
-  - Behavior covered: movers has a Crypto segment, planner/saved plans render crypto buckets, and snapshot asset quantities use 8-decimal formatting.
+  - Behavior covered: movers has a BTC segment, planner/saved plans render BTC bucket labels, and snapshot asset quantities use 8-decimal formatting.
+- [x] BTC-only rework.
+  - Review result: implemented after local log showed CoinGecko calls to `/coins/btc/...`.
+  - Backend now normalizes BTC crypto assets to `ticker=BTC` and `price_symbol=bitcoin`.
+  - Backend rejects non-BTC crypto asset creation/update/import payloads.
+  - Alembic migration `031_normalize_btc_price_symbol` fixes existing BTC crypto rows.
+  - Frontend catalog add/import flows expose BTC only, and `/carteira/btc` replaces the generic crypto page.
 
 ## Step 0 - Baseline Inventory
 
@@ -334,7 +342,7 @@ Edit:
 
 Required behavior:
 
-- A crypto asset with `price_symbol = BTC-BRL` should fetch a BRL price.
+- A BTC asset with `price_symbol = bitcoin` should fetch a BRL price.
 - The service must not try to append `.SA` to BTC.
 - The service must not try to fetch USD/EUR/GBP FX for BTC when
   `quote_currency = BRL`.
@@ -343,10 +351,10 @@ Required behavior:
 
 Implementation guidance:
 
-- Prefer using `asset.price_symbol` exactly for crypto.
-- If using yfinance, test `BTC-BRL` manually before coding around it.
-- If yfinance is unreliable, introduce a small provider-specific function for
-  BTC instead of hacking stock logic.
+- Use CoinGecko id `bitcoin` for BTC. Do not pass ticker fallback `btc` to
+  CoinGecko.
+- Do not use yfinance for BTC pricing.
+- Keep BTC provider logic isolated instead of hacking stock logic.
 - Treat crypto as trading every calendar day unless the provider lacks data for
   a date.
 
@@ -358,7 +366,7 @@ docker compose run --rm backend python -m compileall app
 
 Manual validation:
 
-- Create or use a BTC asset with `price_symbol = BTC-BRL`.
+- Create or use a BTC asset with `price_symbol = bitcoin`.
 - Trigger price refresh.
 - Confirm `current_price` is populated in BRL.
 - Confirm existing BR stock/FII/US stock refresh still works.
@@ -515,9 +523,9 @@ Review gate:
 
 Purpose: allow viewing, creating, linking, and importing BTC assets.
 
-Status: completed and reviewed. Catalog bucket mapping/filtering now recognizes
-`CRYPTO`, the asset form can select `CRYPTO/CRYPTO/BRL`, CSV/Excel validation
-accepts the crypto shape, and the import template includes a BTC example.
+Status: completed and reviewed, then reworked to BTC-only. Catalog bucket
+mapping/filtering still uses internal `CRYPTO`, but asset creation/import only
+allows BTC and normalizes it to `ticker=BTC`, `price_symbol=bitcoin`.
 
 Edit:
 
@@ -529,10 +537,10 @@ Edit:
 
 Required behavior:
 
-- Catalog filter includes `Crypto`.
+- Catalog filter includes `BTC`.
 - Catalog bucket target editor includes `CRYPTO`.
 - Bucket totals still validate to 100%.
-- Asset form allows:
+- Asset form creates BTC with:
 
 ```text
 asset_class = CRYPTO
@@ -542,7 +550,8 @@ allocation_bucket = CRYPTO
 price_symbol = bitcoin
 ```
 
-- CSV import validation accepts the crypto shape.
+- CSV import validation accepts the BTC crypto shape and rejects non-BTC crypto
+  assets.
 - CSV sample/template includes a BTC example if templates are user-facing.
 
 Rules:
@@ -565,17 +574,19 @@ Review gate:
 - Reviewer checks invalid shapes are still rejected.
 - Reviewer checks allocation target UI still sums correctly.
 
-## Step 9 - Frontend New Crypto Portfolio Page And Navigation - Completed
+## Step 9 - Frontend New BTC Portfolio Page And Navigation - Completed
 
 Purpose: give BTC its own page under Ativos.
 
-Status: completed and reviewed. Added `/carteira/cripto`, wired it into desktop
+Status: completed and reviewed, then reworked to BTC-only. Added
+`/carteira/btc`, kept `/carteira/cripto` as a redirect, wired BTC into desktop
 and mobile asset navigation, and added a crypto-specific logo fallback while
 leaving existing Stocks/Ações/ETFs/FIIs page filters unchanged.
 
 Add:
 
-- `frontend/src/app/carteira/cripto/page.tsx`
+- `frontend/src/app/carteira/btc/page.tsx`
+- `frontend/src/app/carteira/cripto/page.tsx` as a backward-compatible redirect
 
 Edit:
 
@@ -588,8 +599,8 @@ Edit:
 
 Required behavior:
 
-- Sidebar includes a Crypto/BTC entry under Ativos.
-- Mobile navigation recognizes `/carteira/cripto` as an Ativos route.
+- Sidebar includes a BTC entry under Ativos.
+- Mobile navigation recognizes `/carteira/btc` as an Ativos route.
 - Page reuses `AssetListPage` with `assetClass="CRYPTO"` and `market="CRYPTO"`,
   unless the component API makes a different narrow filter cleaner.
 - BTC quantity displays with enough decimals. Four decimals is not enough for
@@ -605,7 +616,7 @@ npm run build
 
 Manual validation:
 
-- Open `/carteira/cripto`.
+- Open `/carteira/btc`.
 - Confirm BTC position appears.
 - Confirm native/BRL display is coherent.
 
@@ -630,7 +641,7 @@ Edit:
 
 Required behavior:
 
-- Purchase filter includes Crypto or filters by modern `asset_class`.
+- Purchase filter includes BTC or filters by modern `asset_class`.
 - Buy mode can select BTC.
 - Sell mode fetches BTC owned positions.
 - Quantity input allows 8 decimal places.
@@ -656,7 +667,7 @@ Manual validation:
 - Edit BTC buy if supported.
 - Create BTC sell.
 - Confirm BTC sell appears in the transaction list.
-- Confirm filtering by Crypto works.
+- Confirm filtering by BTC works.
 
 Review gate:
 
@@ -694,7 +705,7 @@ Required behavior:
 - Dashboard allocation shows `CRYPTO`.
 - Donut/geography charts do not crash on `CRYPTO`.
 - Snapshot asset table shows BTC with 8-decimal quantity support.
-- History movers has a Crypto segment if crypto movers are supported.
+- History movers has a BTC segment if BTC movers are supported.
 - Desired allocation planner includes crypto target and crypto suggested aportes.
 - Saved plans render crypto labels/colors correctly.
 
@@ -816,13 +827,13 @@ asset_class = CRYPTO
 market = CRYPTO
 quote_currency = BRL
 allocation_bucket = CRYPTO
-price_symbol = BTC-BRL
+price_symbol = bitcoin
 ```
 
 3. Set crypto allocation target.
 4. Refresh prices.
 5. Buy `0.001` BTC in BRL.
-6. Open `/carteira/cripto` and confirm position.
+6. Open `/carteira/btc` and confirm position.
 7. Open `/carteira` and confirm total/allocation includes BTC.
 8. Open `/desejados` and confirm BTC can appear in the plan.
 9. Sell part of BTC and confirm quantity changes.
@@ -863,7 +874,7 @@ High impact:
 
 - `/carteira/catalogo`
 - `/carteira/aportes`
-- new `/carteira/cripto`
+- new `/carteira/btc`
 - `/carteira`
 - `/desejados`
 
@@ -919,7 +930,7 @@ Existing purchase precision is acceptable for BTC:
 - User can create/link BTC in catalog.
 - User can refresh BTC price in BRL.
 - User can buy and sell fractional BTC.
-- `/carteira/cripto` shows BTC position.
+- `/carteira/btc` shows BTC position.
 - Main dashboard includes BTC in totals and allocation.
 - Allocation targets support `CRYPTO`.
 - Rebalancing can suggest BTC when crypto is under target.

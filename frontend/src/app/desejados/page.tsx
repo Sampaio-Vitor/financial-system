@@ -31,7 +31,7 @@ const BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "BTC",
 };
 
 export default function PlanejadorAportePage() {

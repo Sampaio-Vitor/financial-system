@@ -30,7 +30,7 @@ const TYPE_LABELS: Record<string, string> = {
   FII: "FII",
   STOCK: "STOCK",
   RF: "RF",
-  CRYPTO: "CRYPTO",
+  CRYPTO: "BTC",
 };
 
 export default function AportesPage() {
@@ -328,7 +328,7 @@ export default function AportesPage() {
                 <option value="ACAO">Acoes</option>
                 <option value="STOCK">Stocks</option>
                 <option value="FII">FIIs</option>
-                <option value="CRYPTO">Crypto</option>
+                <option value="CRYPTO">BTC</option>
               </select>
             </div>
             <div className="flex flex-col gap-1">

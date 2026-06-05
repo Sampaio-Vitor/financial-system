@@ -48,7 +48,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
 
   const marketOptions = useMemo(() => {
     if (assetClass === "CRYPTO") {
-      return [{ value: "CRYPTO" as Market, label: "Crypto" }];
+      return [{ value: "CRYPTO" as Market, label: "Cripto" }];
     }
     if (assetClass === "RF" || assetClass === "FII") {
       return [{ value: "BR" as Market, label: "Brasil" }];
@@ -84,6 +84,11 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
     if (!allowedCurrencies.includes(quoteCurrency)) {
       setQuoteCurrency(allowedCurrencies[0]);
     }
+    if (value === "CRYPTO") {
+      setTicker("BTC");
+      setPriceSymbol("bitcoin");
+      setDescription((current) => current || "Bitcoin");
+    }
   };
 
   const handleMarketChange = (value: Market) => {
@@ -102,18 +107,19 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
     try {
       const tdMaturityNum = tdMaturityYear ? Number(tdMaturityYear) : null;
       const isTesouro = assetClass === "RF";
+      const isBtc = assetClass === "CRYPTO";
       if (isTesouro && (!tdMaturityNum || tdMaturityNum < 2025)) {
         throw new Error("Informe um ano de vencimento válido");
       }
       const asset = await apiFetch<Asset>("/assets", {
         method: "POST",
         body: JSON.stringify({
-          ticker: isTesouro ? null : ticker.toUpperCase(),
+          ticker: isTesouro ? null : isBtc ? "BTC" : ticker.toUpperCase(),
           asset_class: assetClass,
-          market: assetClass === "RF" ? "BR" : market,
-          quote_currency: assetClass === "RF" ? "BRL" : quoteCurrency,
-          price_symbol: assetClass === "RF" ? null : priceSymbol || null,
-          description,
+          market: assetClass === "RF" ? "BR" : isBtc ? "CRYPTO" : market,
+          quote_currency: assetClass === "RF" || isBtc ? "BRL" : quoteCurrency,
+          price_symbol: assetClass === "RF" ? null : isBtc ? "bitcoin" : priceSymbol || null,
+          description: isBtc ? description || "Bitcoin" : description,
           td_kind: isTesouro ? tdKind : null,
           td_maturity_year: isTesouro ? tdMaturityNum : null,
         }),
@@ -143,7 +149,9 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
               {createdAsset.ticker} adicionado!
             </p>
             <p className="text-sm text-[var(--color-text-secondary)]">
-              {createdAsset.asset_class} · {createdAsset.market} · {createdAsset.quote_currency}
+              {createdAsset.asset_class === "CRYPTO"
+                ? "BTC · BRL"
+                : `${createdAsset.asset_class} · ${createdAsset.market} · ${createdAsset.quote_currency}`}
             </p>
           </div>
         ) : (
@@ -162,16 +170,17 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Ticker</label>
                 <input
                   type="text"
-                  value={ticker}
+                  value={assetClass === "CRYPTO" ? "BTC" : ticker}
                   onChange={(e) => setTicker(e.target.value)}
-                  placeholder="Ex: BOVA11, VOO, VWCE, BTC"
+                  placeholder={assetClass === "CRYPTO" ? "BTC" : "Ex: BOVA11, VOO, VWCE"}
+                  disabled={assetClass === "CRYPTO"}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                   required
                 />
               </div>
             )}
 
-            <div className={assetClass === "RF" ? "" : "grid grid-cols-2 gap-4"}>
+            <div className={assetClass === "RF" || assetClass === "CRYPTO" ? "" : "grid grid-cols-2 gap-4"}>
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Classe</label>
                 <select
@@ -183,11 +192,11 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                   <option value="ETF">ETF</option>
                   <option value="FII">FII</option>
                   <option value="RF">Renda Fixa</option>
-                  <option value="CRYPTO">Crypto</option>
+                  <option value="CRYPTO">Cripto</option>
                 </select>
               </div>
 
-              {assetClass !== "RF" && (
+              {assetClass !== "RF" && assetClass !== "CRYPTO" && (
                 <div>
                   <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Mercado</label>
                   <select
@@ -205,7 +214,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
               )}
             </div>
 
-            {assetClass !== "RF" && (
+            {assetClass !== "RF" && assetClass !== "CRYPTO" && (
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Moeda</label>
                 <select
@@ -251,14 +260,14 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
               </div>
             )}
 
-            {assetClass !== "RF" && (
+            {assetClass !== "RF" && assetClass !== "CRYPTO" && (
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Price Symbol</label>
                 <input
                   type="text"
                   value={priceSymbol}
                   onChange={(e) => setPriceSymbol(e.target.value)}
-                  placeholder={assetClass === "CRYPTO" ? "Ex: bitcoin" : "Opcional. Ex: BOVA11.SA, VOO, VWCE"}
+                  placeholder="Opcional. Ex: BOVA11.SA, VOO, VWCE"
                   disabled={!isAdmin}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                 />

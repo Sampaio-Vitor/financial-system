@@ -21,7 +21,7 @@ const SEGMENTS: { key: SegmentKey; label: string }[] = [
   { key: "STOCK_BR", label: "Ações BR" },
   { key: "STOCK_US", label: "Stocks US" },
   { key: "FII", label: "FIIs" },
-  { key: "CRYPTO", label: "Crypto" },
+  { key: "CRYPTO", label: "BTC" },
   { key: "RF", label: "RF" },
 ];
 

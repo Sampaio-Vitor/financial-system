@@ -37,7 +37,7 @@ const CLASS_LABELS: Record<string, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "BTC",
   RESERVA: "Prioridade",
 };
 

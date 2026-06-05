@@ -5,7 +5,7 @@ CLASS_LABELS = {
     AssetType.ACAO: "Ações (Brasil)",
     AssetType.FII: "FIIs",
     AssetType.RF: "Renda Fixa",
-    AssetType.CRYPTO: "Cripto",
+    AssetType.CRYPTO: "BTC",
 }
 
 ASSET_CLASS_LABELS = {
@@ -37,5 +37,5 @@ ALLOCATION_BUCKET_LABELS = {
     AllocationBucket.ETF_INTL: "ETFs (Exterior)",
     AllocationBucket.FII: "FIIs",
     AllocationBucket.RF: "Renda Fixa",
-    AllocationBucket.CRYPTO: "Cripto",
+    AllocationBucket.CRYPTO: "BTC",
 }

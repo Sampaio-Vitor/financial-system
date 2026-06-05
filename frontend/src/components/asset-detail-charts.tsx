@@ -38,6 +38,7 @@ interface HistoricalPricePoint {
   date: string;
   price: number;
   price_native?: number | null;
+  price_usd?: number | null;
 }
 
 interface ChartDataPoint {
@@ -303,21 +304,36 @@ export default function AssetDetailCharts({
   displayCurrency = "BRL",
   onPriceHistoryLoaded,
 }: AssetDetailChartsProps) {
-  const isNativeView = displayCurrency !== "BRL";
-  const fmt = (v: number | null | undefined) => formatCurrency(v, displayCurrency);
-  const yTickFormatter = (v: number) => {
-    const s = fmt(v);
-    return isNativeView ? s : s.replace("R$ ", "R$");
-  };
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [dividends, setDividends] = useState<DividendEventListResponse["events"]>([]);
   const [priceHistory, setPriceHistory] = useState<HistoricalPricePoint[]>([]);
+  const [chartCurrency, setChartCurrency] = useState<CurrencyCode>(displayCurrency);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ChartView>("cotacao");
   const [range, setRange] = useState<RangeKey>("YTD");
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const hasBtcUsdPrice =
+    ticker.toUpperCase() === "BTC" && priceHistory.some((point) => point.price_usd != null);
+  const effectiveCurrency = hasBtcUsdPrice ? chartCurrency : displayCurrency;
+  const isBtcUsdView = hasBtcUsdPrice && effectiveCurrency === "USD";
+  const isNativeView = effectiveCurrency !== "BRL";
+  const fmt = (v: number | null | undefined) => formatCurrency(v, effectiveCurrency);
+  const yTickFormatter = (v: number) => {
+    const s = fmt(v);
+    return isNativeView ? s : s.replace("R$ ", "R$");
+  };
+
+  useEffect(() => {
+    setChartCurrency(displayCurrency);
+  }, [assetId, displayCurrency]);
+
+  useEffect(() => {
+    if (!hasBtcUsdPrice && chartCurrency !== displayCurrency) {
+      setChartCurrency(displayCurrency);
+    }
+  }, [hasBtcUsdPrice, chartCurrency, displayCurrency]);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,9 +402,17 @@ export default function AssetDetailCharts({
     // Index price history by date string for O(1) lookup.
     const priceByDate = new Map<string, number>();
     for (const p of priceHistory) {
-      const value = isNativeView ? p.price_native : p.price;
+      const value = isBtcUsdView
+        ? p.price_usd
+        : isNativeView
+          ? p.price_native
+          : p.price;
       if (value != null) priceByDate.set(p.date, Number(value));
     }
+
+    const canShowTradeOverlays =
+      effectiveCurrency === "BRL" ||
+      purchaseMarkers.every((marker) => marker.tradeCurrency === effectiveCurrency);
 
     // Marker Y position: native trade price when in native view, otherwise BRL unit_price.
     const markerYForPurchase = (m: PurchaseMarker) =>
@@ -405,7 +429,7 @@ export default function AssetDetailCharts({
       if (price != null) lastKnownPrice = price;
       const dayPurchases = purchasesByDate.get(iso);
       const markerPrice =
-        dayPurchases && dayPurchases.length > 0
+        canShowTradeOverlays && dayPurchases && dayPurchases.length > 0
           ? dayPurchases.reduce((sum, m) => sum + markerYForPurchase(m), 0) /
             dayPurchases.length
           : null;
@@ -428,7 +452,11 @@ export default function AssetDetailCharts({
     for (const d of data) {
       if (d.markerPrice != null) values.push(d.markerPrice);
     }
-    const currentForView = isNativeView ? currentPriceNative : currentPrice;
+    const currentForView = isBtcUsdView
+      ? [...priceHistory].reverse().find((point) => point.price_usd != null)?.price_usd
+      : isNativeView
+        ? currentPriceNative
+        : currentPrice;
     if (currentForView != null) values.push(Number(currentForView));
 
     let domain: [number | string, number | string] = ["auto", "auto"];
@@ -446,14 +474,31 @@ export default function AssetDetailCharts({
       windowEnd: end.getTime(),
       yDomain: domain,
     };
-  }, [priceHistory, purchases, ticker, range, isNativeView, currentPrice, currentPriceNative]);
+  }, [
+    priceHistory,
+    purchases,
+    ticker,
+    range,
+    effectiveCurrency,
+    isBtcUsdView,
+    isNativeView,
+    currentPrice,
+    currentPriceNative,
+  ]);
 
   // Average price calculation — in display currency.
+  const canShowAveragePrice =
+    effectiveCurrency === "BRL" ||
+    purchases.every((purchase) => purchase.trade_currency === effectiveCurrency);
   const averagePrice = useMemo(
-    () => calculateAveragePrice(purchases, isNativeView),
-    [purchases, isNativeView],
+    () => (canShowAveragePrice ? calculateAveragePrice(purchases, isNativeView) : null),
+    [purchases, isNativeView, canShowAveragePrice],
   );
-  const currentPriceForView = isNativeView ? currentPriceNative ?? null : currentPrice;
+  const currentPriceForView = isBtcUsdView
+    ? [...priceHistory].reverse().find((point) => point.price_usd != null)?.price_usd ?? null
+    : isNativeView
+      ? currentPriceNative ?? null
+      : currentPrice;
 
   const selectionSummary = useMemo<PriceSelectionSummary | null>(() => {
     if (selectionStart == null || selectionEnd == null) return null;
@@ -557,9 +602,7 @@ export default function AssetDetailCharts({
   };
 
   // Scatter data for purchase markers (one marker per transaction date).
-  const hasPurchaseMarkers = chartData.some(
-    (d) => d.purchases != null && d.purchases.length > 0,
-  );
+  const hasPurchaseMarkers = chartData.some((d) => d.markerPrice != null);
 
   return (
     <div className="p-4">
@@ -579,6 +622,26 @@ export default function AssetDetailCharts({
                 }`}
               >
                 {viewLabels[v]}
+              </button>
+            ))}
+          </div>
+        )}
+        {effectiveView === "cotacao" && hasBtcUsdPrice && (
+          <div className="flex items-center gap-1 bg-[var(--color-bg-main)] rounded-lg p-1">
+            {(["BRL", "USD"] as CurrencyCode[]).map((currency) => (
+              <button
+                key={currency}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setChartCurrency(currency);
+                }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  effectiveCurrency === currency
+                    ? "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] shadow-sm"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                }`}
+              >
+                {currency}
               </button>
             ))}
           </div>
@@ -704,7 +767,7 @@ export default function AssetDetailCharts({
               width={80}
               domain={yDomain}
             />
-            <Tooltip content={<CustomCotacaoTooltip displayCurrency={displayCurrency} />} />
+            <Tooltip content={<CustomCotacaoTooltip displayCurrency={effectiveCurrency} />} />
             {activeSelection && activeSelection.startTimestamp !== activeSelection.endTimestamp && (
               <ReferenceArea
                 x1={activeSelection.startTimestamp}

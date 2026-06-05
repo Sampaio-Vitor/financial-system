@@ -72,6 +72,8 @@ async def test_crypto_positions_and_overview_use_crypto_bucket(auth_client, db, 
         ticker="BTC",
         asset_type=AssetType.CRYPTO,
         current_price=Decimal("320000"),
+        current_price_native=Decimal("60000"),
+        fx_rate_to_brl=Decimal("5.333333"),
         price_symbol="bitcoin",
     )
     await link_user_asset(db, user_id=user.id, asset_id=btc.id)
@@ -104,7 +106,11 @@ async def test_crypto_positions_and_overview_use_crypto_bucket(auth_client, db, 
     assert positions_body["asset_class"] == "CRYPTO"
     assert positions_body["asset_class_v2"] == "CRYPTO"
     assert positions_body["allocation_bucket"] == "CRYPTO"
+    assert positions_body["native_currency"] == "USD"
     assert Decimal(positions_body["total_market_value"]) == Decimal("240.00000000")
+    assert Decimal(positions_body["total_market_value_native"]) == Decimal(
+        "45.00000000"
+    )
 
     position = positions_body["positions"][0]
     assert position["ticker"] == "BTC"
@@ -112,6 +118,8 @@ async def test_crypto_positions_and_overview_use_crypto_bucket(auth_client, db, 
     assert position["asset_class"] == "CRYPTO"
     assert position["market"] == "CRYPTO"
     assert Decimal(position["quantity"]) == Decimal("0.00075000")
+    assert Decimal(position["current_price_native"]) == Decimal("60000.000000")
+    assert Decimal(position["market_value_native"]) == Decimal("45.00000000")
 
     overview = await auth_client.get("/api/portfolio/overview?month=2026-06")
     assert overview.status_code == 200

@@ -48,7 +48,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 const CURRENCY_LABELS: Record<CurrencyCode, string> = {

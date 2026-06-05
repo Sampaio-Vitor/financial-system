@@ -35,7 +35,7 @@ const LEGACY_TYPE_LABELS: Record<AssetType, string> = {
   ACAO: "Ações (Brasil)",
   FII: "FIIs",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "BTC",
 };
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -43,7 +43,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETF",
   FII: "FII",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -51,7 +51,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow; error?: string } {
@@ -66,6 +66,12 @@ function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow
 
   const second = cols[1].toUpperCase();
   if (VALID_TYPES.includes(second as AssetType)) {
+    if (second === "CRYPTO") {
+      if (ticker !== "BTC") {
+        return { error: `Linha ${lineNum}: apenas BTC é suportado para CRYPTO` };
+      }
+      return { row: { ticker: "BTC", type: "CRYPTO", price_symbol: "bitcoin" } };
+    }
     return { row: { ticker, type: second as AssetType } };
   }
 
@@ -114,6 +120,29 @@ function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow
   if (!validShapes.has(`${assetClass}|${market}|${quoteCurrency}`)) {
     return {
       error: `Linha ${lineNum}: combinação inválida de asset_class, market e quote_currency`,
+    };
+  }
+
+  if (assetClass === "CRYPTO") {
+    const normalizedPriceSymbol = (priceSymbol || "").toLowerCase();
+    if (ticker !== "BTC") {
+      return { error: `Linha ${lineNum}: apenas BTC é suportado para CRYPTO` };
+    }
+    if (
+      normalizedPriceSymbol &&
+      normalizedPriceSymbol !== "btc" &&
+      normalizedPriceSymbol !== "bitcoin"
+    ) {
+      return { error: `Linha ${lineNum}: BTC deve usar price_symbol bitcoin` };
+    }
+    return {
+      row: {
+        ticker: "BTC",
+        asset_class: "CRYPTO",
+        market: "CRYPTO",
+        quote_currency: "BRL",
+        price_symbol: "bitcoin",
+      },
     };
   }
 
@@ -241,6 +270,9 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
   const validRows = parsedRows.filter((r) => !r.error);
 
   const classificationLabel = (row: ParsedRow) => {
+    if (row.ticker === "BTC" && (row.asset_class === "CRYPTO" || row.type === "CRYPTO")) {
+      return "BTC • BRL";
+    }
     if (row.asset_class && row.market && row.quote_currency) {
       return `${ASSET_CLASS_LABELS[row.asset_class]} • ${MARKET_LABELS[row.market]} • ${row.quote_currency}`;
     }
@@ -310,6 +342,13 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                   quote_currency: r.quote_currency,
                   price_symbol: r.price_symbol || null,
                 }
+              : r.type === "CRYPTO"
+                ? {
+                    asset_class: "CRYPTO",
+                    market: "CRYPTO",
+                    quote_currency: "BRL",
+                    price_symbol: "bitcoin",
+                  }
               : { type: r.type }),
           })),
         }),
@@ -376,7 +415,7 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                 Arraste um arquivo ou clique para selecionar
               </p>
               <p className="text-xs text-[var(--color-text-muted)]">
-                CSV ou Excel — Use `ticker,tipo` ou `ticker,asset_class,market,quote_currency[,price_symbol]`
+                CSV ou Excel — Para BTC use `BTC,CRYPTO,CRYPTO,BRL,bitcoin`
               </p>
               <input
                 ref={fileInputRef}
@@ -545,7 +584,9 @@ export default function CsvImportModal({ onClose, onSaved }: CsvImportModalProps
                         {item.ticker}
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {item.asset_class && item.market && item.quote_currency
+                        {item.ticker === "BTC" && item.asset_class === "CRYPTO"
+                          ? "BTC • BRL"
+                          : item.asset_class && item.market && item.quote_currency
                           ? `${ASSET_CLASS_LABELS[item.asset_class]} • ${MARKET_LABELS[item.market]} • ${item.quote_currency}`
                           : item.type
                             ? LEGACY_TYPE_LABELS[item.type]

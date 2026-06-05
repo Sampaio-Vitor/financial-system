@@ -1,12 +1,5 @@
-import AssetListPage from "@/components/asset-list-page";
+import { redirect } from "next/navigation";
 
 export default function CriptoPage() {
-  return (
-    <AssetListPage
-      assetClass="CRYPTO"
-      market="CRYPTO"
-      title="Crypto"
-      emptyMessage="Nenhuma posicao em Crypto. Registre aportes para ver suas posicoes."
-    />
-  );
+  redirect("/carteira/btc");
 }

@@ -19,8 +19,11 @@ from app.models.asset_price_history import AssetPriceHistory
 from app.models.system_setting import SystemSetting
 from app.models.user import User
 from app.services.crypto_price_service import (
-    fetch_current_price_brl,
+    UnsupportedCryptoAsset,
+    coingecko_id_for_btc,
+    fetch_current_prices,
     fetch_historical_prices_brl,
+    fetch_historical_prices_usd,
 )
 from app.services.tesouro_price_service import fetch_tesouro_price
 from app.services.trading_calendar import last_trading_day
@@ -63,6 +66,20 @@ def _is_crypto(asset: Asset) -> bool:
         quote_currency=asset.quote_currency,
     )
     return asset_class == AssetClass.CRYPTO
+
+
+def _btc_coingecko_id_for(asset: Asset) -> str | None:
+    try:
+        return coingecko_id_for_btc(asset.ticker, asset.price_symbol)
+    except UnsupportedCryptoAsset as exc:
+        logger.warning("Unsupported crypto asset %s: %s", asset.ticker, exc)
+        return None
+
+
+def _crypto_usd_fx_rate(price_brl: Decimal, price_usd: Decimal | None) -> Decimal:
+    if price_usd and price_usd > 0:
+        return price_brl / price_usd
+    return Decimal("1")
 
 
 def _extract_close(data, yf_ticker: str) -> float | None:
@@ -250,8 +267,14 @@ class PriceService:
             return results
         now = datetime.now(timezone.utc)
         for asset in assets:
-            coingecko_id = asset.price_symbol or asset.ticker
-            price_brl = await fetch_current_price_brl(coingecko_id.lower())
+            coingecko_id = _btc_coingecko_id_for(asset)
+            if coingecko_id is None:
+                results["failed"].append(
+                    {"ticker": asset.ticker, "error": "Only BTC is supported"}
+                )
+                continue
+            current_prices = await fetch_current_prices(coingecko_id, ("brl", "usd"))
+            price_brl = current_prices.get("brl")
             if price_brl is None:
                 results["failed"].append(
                     {
@@ -260,13 +283,14 @@ class PriceService:
                     }
                 )
                 continue
-            asset.current_price_native = price_brl
-            asset.fx_rate_to_brl = Decimal("1")
+            price_usd = current_prices.get("usd")
+            asset.current_price_native = price_usd or price_brl
+            asset.fx_rate_to_brl = _crypto_usd_fx_rate(price_brl, price_usd)
             asset.current_price = round(price_brl, 4)
             asset.price_updated_at = now
             await self._upsert_asset_price_history(
                 asset=asset,
-                yf_ticker=coingecko_id.lower(),
+                yf_ticker=coingecko_id,
                 quote_date=now.date(),
                 native_price=price_brl,
                 fx_rate=Decimal("1"),
@@ -478,7 +502,9 @@ class PriceService:
 
         # Crypto: fetch from CoinGecko for the target date (BRL, fx_rate=1)
         for asset in crypto_assets:
-            coingecko_id = (asset.price_symbol or asset.ticker).lower()
+            coingecko_id = _btc_coingecko_id_for(asset)
+            if coingecko_id is None:
+                continue
             historical = await fetch_historical_prices_brl(
                 coingecko_id, target_date, target_date
             )
@@ -654,9 +680,12 @@ class PriceService:
         fetch_end_date = max(start_date, end_date - timedelta(days=1))
 
         if _is_crypto(asset):
+            coingecko_id = _btc_coingecko_id_for(asset)
+            if coingecko_id is None:
+                return []
             return await self._get_crypto_price_history(
                 asset=asset,
-                coingecko_id=(asset.price_symbol or asset.ticker).lower(),
+                coingecko_id=coingecko_id,
                 start_date=start_date,
                 end_date=end_date,
                 fetch_end_date=fetch_end_date,
@@ -728,13 +757,31 @@ class PriceService:
             )
             await self.db.commit()
 
+        usd_prices = await fetch_historical_prices_usd(
+            coingecko_id, start_date, end_date
+        )
+        sorted_rows = sorted(cached, key=lambda item: item.date)
+        if sorted_rows:
+            latest = sorted_rows[-1]
+            latest_usd = usd_prices.get(latest.date)
+            asset.current_price = round(latest.price_brl, 4)
+            asset.current_price_native = latest_usd or latest.price_brl
+            asset.fx_rate_to_brl = _crypto_usd_fx_rate(latest.price_brl, latest_usd)
+            asset.price_updated_at = datetime.now(timezone.utc)
+            await self.db.flush()
+
         return [
             {
                 "date": row.date.isoformat(),
                 "price": float(round(row.price_brl, 2)),
                 "price_native": float(round(row.price_native, 4)),
+                "price_usd": (
+                    float(round(usd_prices[row.date], 2))
+                    if row.date in usd_prices
+                    else None
+                ),
             }
-            for row in sorted(cached, key=lambda item: item.date)
+            for row in sorted_rows
         ]
 
     async def _fetch_and_cache_crypto_history(
@@ -887,7 +934,9 @@ class PriceService:
             cached, start_date, end_date, require_ohlc=require_ohlc
         )
         if _is_crypto(asset):
-            coingecko_id = (asset.price_symbol or asset.ticker).lower()
+            coingecko_id = _btc_coingecko_id_for(asset)
+            if coingecko_id is None:
+                return cached
             for missing_start, missing_end in missing_ranges:
                 await self._fetch_and_cache_crypto_history(
                     asset=asset,

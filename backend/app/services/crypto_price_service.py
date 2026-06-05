@@ -1,11 +1,11 @@
-"""Crypto price fetching via CoinGecko free API (no key required).
+"""BTC price fetching via CoinGecko free API (no key required).
 
 Supports:
 - Current price: simple/price endpoint
 - Historical daily closes: market_chart/range endpoint
 
-CoinGecko identifies assets by coingecko_id (e.g. 'bitcoin'), not by ticker.
-The mapping is stored on the Asset's price_symbol field.
+This product only supports BTC. CoinGecko identifies BTC by the coin id
+``bitcoin``, not by the ticker ``BTC``.
 """
 
 import logging
@@ -18,16 +18,51 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.coingecko.com/api/v3"
 _TIMEOUT = 10.0
+BTC_TICKER = "BTC"
+BTC_COINGECKO_ID = "bitcoin"
+_BTC_PRICE_SYMBOL_ALIASES = {
+    "",
+    "btc",
+    "btc-brl",
+    "btcbrl",
+    "btcbrl=x",
+    BTC_COINGECKO_ID,
+}
+
 _MIN_INTER_CALL_SLEEP = 1.5  # CoinGecko free API rate limit
 
 
-def _datetime_to_unix_millis(dt: datetime | date) -> int:
-    """Convert datetime or date to Unix timestamp in milliseconds."""
+class UnsupportedCryptoAsset(ValueError):
+    """Raised when a crypto payload is not the product-supported BTC asset."""
+
+
+def normalize_btc_asset_fields(
+    ticker: str | None, price_symbol: str | None = None
+) -> tuple[str, str]:
+    """Validate BTC-only crypto input and return normalized ticker/provider id."""
+    normalized_ticker = (ticker or "").strip().upper()
+    if normalized_ticker != BTC_TICKER:
+        raise UnsupportedCryptoAsset("Somente BTC é suportado para ativos cripto")
+
+    normalized_price_symbol = (price_symbol or "").strip().lower()
+    if normalized_price_symbol not in _BTC_PRICE_SYMBOL_ALIASES:
+        raise UnsupportedCryptoAsset("BTC deve usar price_symbol=bitcoin")
+
+    return BTC_TICKER, BTC_COINGECKO_ID
+
+
+def coingecko_id_for_btc(ticker: str | None, price_symbol: str | None = None) -> str:
+    """Return the CoinGecko id for a supported BTC asset."""
+    return normalize_btc_asset_fields(ticker, price_symbol)[1]
+
+
+def _datetime_to_unix_seconds(dt: datetime | date) -> int:
+    """Convert datetime or date to Unix timestamp in seconds."""
     if isinstance(dt, date) and not isinstance(dt, datetime):
         dt = datetime.combine(dt, datetime.min.time(), tzinfo=timezone.utc)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return int(dt.timestamp() * 1000)
+    return int(dt.timestamp())
 
 
 async def _fetch_json(client: httpx.AsyncClient, url: str) -> dict | None:
@@ -42,26 +77,59 @@ async def _fetch_json(client: httpx.AsyncClient, url: str) -> dict | None:
 
 async def fetch_current_price_brl(coingecko_id: str) -> Decimal | None:
     """Fetch the current BTC/BRL price from CoinGecko. Returns None on failure."""
-    url = f"{_BASE_URL}/simple/price?ids={coingecko_id}&vs_currencies=brl"
+    prices = await fetch_current_prices(coingecko_id, ("brl",))
+    return prices.get("brl")
+
+
+async def fetch_current_prices(
+    coingecko_id: str, vs_currencies: tuple[str, ...] = ("brl", "usd")
+) -> dict[str, Decimal]:
+    """Fetch current BTC prices keyed by lowercase fiat code."""
+    currencies = ",".join(vs_currencies)
+    url = f"{_BASE_URL}/simple/price?ids={coingecko_id}&vs_currencies={currencies}"
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         data = await _fetch_json(client, url)
     if not data:
-        return None
-    price = data.get(coingecko_id, {}).get("brl")
-    if price is None:
-        logger.warning("CoinGecko returned no brl price for %s", coingecko_id)
-        return None
-    try:
-        return Decimal(str(price))
-    except (ValueError, ArithmeticError) as exc:
-        logger.warning("CoinGecko invalid price for %s: %r (%s)", coingecko_id, price, exc)
-        return None
+        return {}
+
+    result: dict[str, Decimal] = {}
+    coin_prices = data.get(coingecko_id, {})
+    for currency in vs_currencies:
+        price = coin_prices.get(currency)
+        if price is None:
+            logger.warning(
+                "CoinGecko returned no %s price for %s", currency, coingecko_id
+            )
+            continue
+        try:
+            result[currency] = Decimal(str(price))
+        except (ValueError, ArithmeticError) as exc:
+            logger.warning(
+                "CoinGecko invalid %s price for %s: %r (%s)",
+                currency,
+                coingecko_id,
+                price,
+                exc,
+            )
+    return result
 
 
 async def fetch_historical_prices_brl(
     coingecko_id: str, start_date: date, end_date: date
 ) -> dict[date, Decimal]:
-    """Fetch daily BRL close prices for a date range from CoinGecko.
+    return await fetch_historical_prices(coingecko_id, "brl", start_date, end_date)
+
+
+async def fetch_historical_prices_usd(
+    coingecko_id: str, start_date: date, end_date: date
+) -> dict[date, Decimal]:
+    return await fetch_historical_prices(coingecko_id, "usd", start_date, end_date)
+
+
+async def fetch_historical_prices(
+    coingecko_id: str, vs_currency: str, start_date: date, end_date: date
+) -> dict[date, Decimal]:
+    """Fetch daily close prices for a date range from CoinGecko.
 
     Returns a dict of date → closing price (Decimal). Missing dates were not
     returned by the API. The free API returns hourly granularity for short ranges
@@ -73,9 +141,9 @@ async def fetch_historical_prices_brl(
     query_end = end_date + timedelta(days=1)
     url = (
         f"{_BASE_URL}/coins/{coingecko_id}/market_chart/range"
-        f"?vs_currency=brl"
-        f"&from={_datetime_to_unix_millis(start_date)}"
-        f"&to={_datetime_to_unix_millis(query_end)}"
+        f"?vs_currency={vs_currency}"
+        f"&from={_datetime_to_unix_seconds(start_date)}"
+        f"&to={_datetime_to_unix_seconds(query_end)}"
     )
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         data = await _fetch_json(client, url)

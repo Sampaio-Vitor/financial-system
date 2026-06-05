@@ -23,7 +23,7 @@ const ALLOCATION_BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
-  CRYPTO: "Crypto",
+  CRYPTO: "BTC",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -31,7 +31,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
-  CRYPTO: "Crypto",
+  CRYPTO: "Cripto",
 };
 
 const CURRENCY_LABELS: Record<CurrencyCode, string> = {
