@@ -53,11 +53,13 @@ export default function PurchaseForm({ mode = "compra", onClose, onSaved }: Purc
         apiFetch<PositionsResponse>("/portfolio/positions?asset_class=STOCK").catch(() => null),
         apiFetch<PositionsResponse>("/portfolio/positions?asset_class=ETF").catch(() => null),
         apiFetch<PositionsResponse>("/portfolio/FII").catch(() => null),
-      ]).then(([stocks, etfs, fiis]) => {
+        apiFetch<PositionsResponse>("/portfolio/positions?asset_class=CRYPTO").catch(() => null),
+      ]).then(([stocks, etfs, fiis, crypto]) => {
         const all: PositionItem[] = [];
         if (stocks) all.push(...stocks.positions);
         if (etfs) all.push(...etfs.positions);
         if (fiis) all.push(...fiis.positions);
+        if (crypto) all.push(...crypto.positions);
         setOwnedPositions(all);
         const assetList: Asset[] = all.map((p) => ({
           id: p.asset_id,

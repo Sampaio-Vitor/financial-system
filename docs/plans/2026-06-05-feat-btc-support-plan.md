@@ -118,6 +118,12 @@ source.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
   - Build observation: `/carteira/cripto` is included in the generated route list.
+- [x] Step 10 - Frontend Purchases And Sells.
+  - Review result: approved.
+  - Verification run: `cd frontend && npm run build`.
+  - Verification run: `git diff --check`.
+  - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
+  - Behavior covered: Aportes filter includes Crypto, buy mode already includes non-RF BTC assets, and sell mode now loads crypto owned positions.
 
 ## Step 0 - Baseline Inventory
 
@@ -602,9 +608,13 @@ Review gate:
 - Student shows changed route/nav files.
 - Reviewer checks no existing Stocks/Acoes/ETFs/FIIs pages changed behavior.
 
-## Step 10 - Frontend Purchases And Sells
+## Step 10 - Frontend Purchases And Sells - Completed
 
 Purpose: make BTC usable from `/carteira/aportes`.
+
+Status: completed and reviewed. `/carteira/aportes` now labels and filters
+`CRYPTO`, and the sell form fetches crypto positions alongside stocks, ETFs, and
+FIIs. Existing BRL amount flow and 8-decimal quantity formatting remain in use.
 
 Edit:
 
