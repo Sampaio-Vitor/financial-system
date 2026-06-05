@@ -46,8 +46,10 @@ function getBucket(asset: Asset): AllocationBucket {
     if (asset.type === "STOCK") return "STOCK_US";
     if (asset.type === "ACAO") return "STOCK_BR";
     if (asset.type === "FII") return "FII";
+    if (asset.type === "CRYPTO") return "CRYPTO";
     return "RF";
   }
+  if (asset.asset_class === "CRYPTO") return "CRYPTO";
   if (asset.asset_class === "STOCK" && asset.market === "BR") return "STOCK_BR";
   if (asset.asset_class === "STOCK" && asset.market === "US") return "STOCK_US";
   if (asset.asset_class === "ETF" && asset.market === "BR") return "STOCK_BR";
@@ -745,7 +747,7 @@ function CatalogoContent() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             {Object.keys(ALLOCATION_BUCKET_LABELS).map((cls) => (
               <div key={cls}>
                 <label className="block text-xs text-[var(--color-text-muted)] mb-1.5">

@@ -106,6 +106,12 @@ source.
   - Verification run: `cd frontend && npm run build`.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
+- [x] Step 8 - Frontend Catalog And Asset Forms.
+  - Review result: approved.
+  - Verification run: `cd frontend && npm run build`.
+  - Verification run: `git diff --check`.
+  - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
+  - Template check: `frontend/public/modelo-importacao.xlsx` contains a BTC row using `CRYPTO/CRYPTO/BRL/bitcoin`.
 
 ## Step 0 - Baseline Inventory
 
@@ -487,9 +493,13 @@ Review gate:
 - Student lists every exhaustive frontend map changed.
 - Reviewer checks colors/labels are consistent and not copied from stock/FII.
 
-## Step 8 - Frontend Catalog And Asset Forms
+## Step 8 - Frontend Catalog And Asset Forms - Completed
 
 Purpose: allow viewing, creating, linking, and importing BTC assets.
+
+Status: completed and reviewed. Catalog bucket mapping/filtering now recognizes
+`CRYPTO`, the asset form can select `CRYPTO/CRYPTO/BRL`, CSV/Excel validation
+accepts the crypto shape, and the import template includes a BTC example.
 
 Edit:
 
@@ -511,7 +521,7 @@ asset_class = CRYPTO
 market = CRYPTO
 quote_currency = BRL
 allocation_bucket = CRYPTO
-price_symbol = BTC-BRL
+price_symbol = bitcoin
 ```
 
 - CSV import validation accepts the crypto shape.

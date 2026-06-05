@@ -12,6 +12,7 @@ interface AssetFormProps {
 }
 
 function allowedCurrenciesFor(assetClass: AssetClass, market: Market): CurrencyCode[] {
+  if (assetClass === "CRYPTO") return ["BRL"];
   if (assetClass === "RF" || assetClass === "FII") return ["BRL"];
   if (assetClass === "STOCK") return market === "BR" ? ["BRL"] : ["USD"];
   if (assetClass === "ETF") {
@@ -46,6 +47,9 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
   );
 
   const marketOptions = useMemo(() => {
+    if (assetClass === "CRYPTO") {
+      return [{ value: "CRYPTO" as Market, label: "Crypto" }];
+    }
     if (assetClass === "RF" || assetClass === "FII") {
       return [{ value: "BR" as Market, label: "Brasil" }];
     }
@@ -65,11 +69,13 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
 
   const handleClassChange = (value: AssetClass) => {
     setAssetClass(value);
-    const allowedMarkets = value === "ETF"
-      ? ["BR", "US", "EU", "UK"]
-      : value === "STOCK"
-        ? ["BR", "US"]
-        : ["BR"];
+    const allowedMarkets = value === "CRYPTO"
+      ? ["CRYPTO"]
+      : value === "ETF"
+        ? ["BR", "US", "EU", "UK"]
+        : value === "STOCK"
+          ? ["BR", "US"]
+          : ["BR"];
     const nextMarket = allowedMarkets.includes(market) ? market : (allowedMarkets[0] as Market);
     if (nextMarket !== market) {
       setMarket(nextMarket);
@@ -158,7 +164,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                   type="text"
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value)}
-                  placeholder="Ex: BOVA11, VOO, VWCE, VUKG"
+                  placeholder="Ex: BOVA11, VOO, VWCE, BTC"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                   required
                 />
@@ -177,6 +183,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                   <option value="ETF">ETF</option>
                   <option value="FII">FII</option>
                   <option value="RF">Renda Fixa</option>
+                  <option value="CRYPTO">Crypto</option>
                 </select>
               </div>
 
@@ -251,7 +258,7 @@ export default function AssetForm({ onClose, onSaved }: AssetFormProps) {
                   type="text"
                   value={priceSymbol}
                   onChange={(e) => setPriceSymbol(e.target.value)}
-                  placeholder="Opcional. Ex: BOVA11.SA, VOO, VWCE"
+                  placeholder={assetClass === "CRYPTO" ? "Ex: bitcoin" : "Opcional. Ex: BOVA11.SA, VOO, VWCE"}
                   disabled={!isAdmin}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-main)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] text-sm"
                 />

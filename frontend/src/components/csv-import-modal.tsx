@@ -25,9 +25,9 @@ interface ParsedRow {
   error?: string;
 }
 
-const VALID_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF"];
-const VALID_ASSET_CLASSES: AssetClass[] = ["STOCK", "ETF", "FII", "RF"];
-const VALID_MARKETS: Market[] = ["BR", "US", "EU", "UK"];
+const VALID_TYPES: AssetType[] = ["STOCK", "ACAO", "FII", "RF", "CRYPTO"];
+const VALID_ASSET_CLASSES: AssetClass[] = ["STOCK", "ETF", "FII", "RF", "CRYPTO"];
+const VALID_MARKETS: Market[] = ["BR", "US", "EU", "UK", "CRYPTO"];
 const VALID_CURRENCIES: CurrencyCode[] = ["BRL", "USD", "EUR", "GBP"];
 
 const LEGACY_TYPE_LABELS: Record<AssetType, string> = {
@@ -82,12 +82,12 @@ function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow
 
   if (!VALID_ASSET_CLASSES.includes(assetClass)) {
     return {
-      error: `Linha ${lineNum}: asset_class "${cols[1]}" inválido (use: STOCK, ETF, FII, RF)`,
+      error: `Linha ${lineNum}: asset_class "${cols[1]}" inválido (use: STOCK, ETF, FII, RF, CRYPTO)`,
     };
   }
   if (!VALID_MARKETS.includes(market)) {
     return {
-      error: `Linha ${lineNum}: market "${cols[2]}" inválido (use: BR, US, EU, UK)`,
+      error: `Linha ${lineNum}: market "${cols[2]}" inválido (use: BR, US, EU, UK, CRYPTO)`,
     };
   }
   if (!VALID_CURRENCIES.includes(quoteCurrency)) {
@@ -109,6 +109,7 @@ function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow
     "ETF|UK|GBP",
     "FII|BR|BRL",
     "RF|BR|BRL",
+    "CRYPTO|CRYPTO|BRL",
   ]);
   if (!validShapes.has(`${assetClass}|${market}|${quoteCurrency}`)) {
     return {
