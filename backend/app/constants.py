@@ -1,4 +1,10 @@
-from app.models.asset import AllocationBucket, AssetClass, AssetType, CurrencyCode, Market
+from app.models.asset import (
+    AllocationBucket,
+    AssetClass,
+    AssetType,
+    CurrencyCode,
+    Market,
+)
 
 CLASS_LABELS = {
     AssetType.STOCK: "Stocks (EUA)",

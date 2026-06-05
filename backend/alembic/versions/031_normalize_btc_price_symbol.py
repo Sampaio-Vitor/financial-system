@@ -4,6 +4,7 @@ Revision ID: 031_normalize_btc_price_symbol
 Revises: 030_add_crypto_enums
 Create Date: 2026-06-05
 """
+
 from typing import Sequence, Union
 
 from alembic import op

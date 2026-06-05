@@ -84,7 +84,9 @@ class RebalancingService:
             target_pct = targets.get(allocation_bucket, Decimal("0"))
             target_value = investable_pos_aporte * target_pct
             current_value = bucket_values[allocation_bucket]
-            current_pct = (current_value / investable_total) if investable_total else Decimal("0")
+            current_pct = (
+                (current_value / investable_total) if investable_total else Decimal("0")
+            )
             gap = target_value - current_value
             gap_pct = (gap / target_value) if target_value else Decimal("0")
             class_gaps[allocation_bucket] = gap
@@ -110,7 +112,9 @@ class RebalancingService:
                 )
             )
 
-        candidates_by_bucket: dict[AllocationBucket, list[tuple[AssetCandidate, Decimal, Decimal, Decimal]]] = {}
+        candidates_by_bucket: dict[
+            AllocationBucket, list[tuple[AssetCandidate, Decimal, Decimal, Decimal]]
+        ] = {}
         candidate_buckets = (
             AllocationBucket.STOCK_BR,
             AllocationBucket.STOCK_US,
@@ -128,7 +132,9 @@ class RebalancingService:
             if not assets_in_bucket:
                 continue
 
-            bucket_target_value = investable_pos_aporte * targets.get(allocation_bucket, Decimal("0"))
+            bucket_target_value = investable_pos_aporte * targets.get(
+                allocation_bucket, Decimal("0")
+            )
             if bucket_target_value <= 0:
                 continue
 
@@ -142,7 +148,9 @@ class RebalancingService:
                 else Decimal("0")
             )
 
-            bucket_candidates: list[tuple[AssetCandidate, Decimal, Decimal, Decimal]] = []
+            bucket_candidates: list[
+                tuple[AssetCandidate, Decimal, Decimal, Decimal]
+            ] = []
             for candidate in assets_in_bucket:
                 current_val = candidate[5]
                 asset_target_pct = candidate[6]
@@ -153,7 +161,9 @@ class RebalancingService:
                 gap = target_value - current_val
                 gap_pct = (gap / target_value * 100) if target_value else Decimal("0")
                 if gap > 0:
-                    bucket_candidates.append((candidate, current_val, target_value, gap_pct))
+                    bucket_candidates.append(
+                        (candidate, current_val, target_value, gap_pct)
+                    )
 
             if bucket_candidates:
                 random.shuffle(bucket_candidates)
@@ -163,8 +173,12 @@ class RebalancingService:
         rf_gap = class_gaps.get(AllocationBucket.RF, Decimal("0"))
         if rf_gap > 0:
             rf_current_value = bucket_values[AllocationBucket.RF]
-            rf_target_value = investable_pos_aporte * targets.get(AllocationBucket.RF, Decimal("0"))
-            rf_gap_pct = (rf_gap / rf_target_value * 100) if rf_target_value else Decimal("0")
+            rf_target_value = investable_pos_aporte * targets.get(
+                AllocationBucket.RF, Decimal("0")
+            )
+            rf_gap_pct = (
+                (rf_gap / rf_target_value * 100) if rf_target_value else Decimal("0")
+            )
             rf_candidate: AssetCandidate = (
                 "RENDA FIXA",
                 AssetClass.RF,
@@ -186,10 +200,21 @@ class RebalancingService:
         )
 
         asset_plan: list[AssetRebalancing] = []
-        total_gap_top = sum(target_val - current_val for _candidate, current_val, target_val, _gap_pct in top_assets)
+        total_gap_top = sum(
+            target_val - current_val
+            for _candidate, current_val, target_val, _gap_pct in top_assets
+        )
         if top_assets and total_gap_top > 0:
             for candidate, current_val, target_val, gap_pct in top_assets:
-                ticker, asset_class, market, quote_currency, allocation_bucket, _current_value, _target_pct = candidate
+                (
+                    ticker,
+                    asset_class,
+                    market,
+                    quote_currency,
+                    allocation_bucket,
+                    _current_value,
+                    _target_pct,
+                ) = candidate
                 gap = target_val - current_val
                 amount = remaining_contribution * gap / total_gap_top
                 amount_native = None
@@ -213,8 +238,12 @@ class RebalancingService:
                         gap=round(gap, 2),
                         gap_pct=round(gap_pct, 2),
                         amount_to_invest=round(amount, 2),
-                        amount_to_invest_usd=round(amount_usd, 2) if amount_usd else None,
-                        amount_to_invest_native=round(amount_native, 2) if amount_native else None,
+                        amount_to_invest_usd=round(amount_usd, 2)
+                        if amount_usd
+                        else None,
+                        amount_to_invest_native=round(amount_native, 2)
+                        if amount_native
+                        else None,
                     )
                 )
 
@@ -225,10 +254,15 @@ class RebalancingService:
         if asset_plan and rounding_diff != 0:
             largest = max(asset_plan, key=lambda a: a.amount_to_invest)
             largest.amount_to_invest += rounding_diff
-            if largest.amount_to_invest_native is not None and largest.quote_currency != CurrencyCode.BRL:
+            if (
+                largest.amount_to_invest_native is not None
+                and largest.quote_currency != CurrencyCode.BRL
+            ):
                 fx_rate = fx_rates.get(largest.quote_currency)
                 if fx_rate:
-                    largest.amount_to_invest_native = round(largest.amount_to_invest / fx_rate, 2)
+                    largest.amount_to_invest_native = round(
+                        largest.amount_to_invest / fx_rate, 2
+                    )
                     if largest.quote_currency == CurrencyCode.USD:
                         largest.amount_to_invest_usd = largest.amount_to_invest_native
             total_planned = sum(a.amount_to_invest for a in asset_plan)
@@ -300,7 +334,9 @@ class RebalancingService:
 
     async def _get_reserve_target(self) -> Decimal | None:
         result = await self.db.execute(
-            select(FinancialReserveTarget).where(FinancialReserveTarget.user_id == self.user.id)
+            select(FinancialReserveTarget).where(
+                FinancialReserveTarget.user_id == self.user.id
+            )
         )
         target = result.scalar_one_or_none()
         return target.target_amount if target else None
@@ -381,7 +417,15 @@ class RebalancingService:
                 Asset.current_price,
             )
         )
-        for ticker, legacy_type, asset_class, market, quote_currency, price, qty in positions.all():
+        for (
+            ticker,
+            legacy_type,
+            asset_class,
+            market,
+            quote_currency,
+            price,
+            qty,
+        ) in positions.all():
             if not price or not qty:
                 continue
             resolved_class, resolved_market, resolved_currency = resolve_asset_metadata(

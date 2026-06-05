@@ -4,6 +4,7 @@ Revision ID: 030_add_crypto_enums
 Revises: 029_add_investidor10_dividend_fetch_schedule
 Create Date: 2026-06-05
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -72,10 +73,7 @@ def downgrade() -> None:
         "ENUM('STOCK','ETF','FII','RF') NULL"
     )
 
-    op.execute(
-        "ALTER TABLE assets MODIFY COLUMN market "
-        "ENUM('BR','US','EU','UK') NULL"
-    )
+    op.execute("ALTER TABLE assets MODIFY COLUMN market ENUM('BR','US','EU','UK') NULL")
 
     op.execute(
         "ALTER TABLE allocation_targets MODIFY COLUMN allocation_bucket "

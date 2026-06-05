@@ -244,7 +244,10 @@ async def list_assets(
     if type:
         query = query.where(Asset.type == type)
     result = await db.execute(query)
-    return [_to_response(asset, paused, target_pct) for asset, paused, target_pct in result.all()]
+    return [
+        _to_response(asset, paused, target_pct)
+        for asset, paused, target_pct in result.all()
+    ]
 
 
 @router.post("/bulk", response_model=BulkAssetResponse)
@@ -486,7 +489,9 @@ async def get_rebalancing_info(
         )
         bucket = asset_bucket_for(asset_class, market)
         if ua_target_pct is not None:
-            bucket_explicit_sum[bucket] = bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
+            bucket_explicit_sum[bucket] = (
+                bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
+            )
         else:
             bucket_implicit_count[bucket] = bucket_implicit_count.get(bucket, 0) + 1
 
@@ -506,7 +511,10 @@ async def get_rebalancing_info(
             target_value = bucket_target_value * ua_target_pct
         else:
             implicit_n = bucket_implicit_count.get(bucket, 0) or 1
-            leftover_pct = max(Decimal("0"), Decimal("1") - bucket_explicit_sum.get(bucket, Decimal("0")))
+            leftover_pct = max(
+                Decimal("0"),
+                Decimal("1") - bucket_explicit_sum.get(bucket, Decimal("0")),
+            )
             target_value = bucket_target_value * leftover_pct / implicit_n
         current_value = asset_values.get(asset.id, Decimal("0"))
         gap = target_value - current_value

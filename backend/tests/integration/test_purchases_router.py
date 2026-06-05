@@ -82,7 +82,12 @@ async def test_create_purchase_no_link_to_user(auth_client, db, user):
     a = await make_asset(db, ticker="X")
     r = await auth_client.post(
         "/api/purchases",
-        json={"asset_id": a.id, "purchase_date": "2026-01-10", "quantity": "1", "unit_price": "10"},
+        json={
+            "asset_id": a.id,
+            "purchase_date": "2026-01-10",
+            "quantity": "1",
+            "unit_price": "10",
+        },
     )
     assert r.status_code == 400
 
@@ -134,7 +139,13 @@ async def test_create_purchase_currency_mismatch(auth_client, db, user):
 async def test_create_purchase_sale_exceeds_position(auth_client, db, user):
     a = await make_asset(db, ticker="ITUB4")
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
-    await make_purchase(db, user_id=user.id, asset_id=a.id, quantity=Decimal("3"), unit_price=Decimal("10"))
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=a.id,
+        quantity=Decimal("3"),
+        unit_price=Decimal("10"),
+    )
     r = await auth_client.post(
         "/api/purchases",
         json={
@@ -194,7 +205,13 @@ async def test_create_crypto_sale_validates_available_decimal_quantity(
 async def test_update_purchase(auth_client, db, user):
     a = await make_asset(db, ticker="ITUB4")
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
-    p = await make_purchase(db, user_id=user.id, asset_id=a.id, quantity=Decimal("5"), unit_price=Decimal("10"))
+    p = await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=a.id,
+        quantity=Decimal("5"),
+        unit_price=Decimal("10"),
+    )
     r = await auth_client.put(f"/api/purchases/{p.id}", json={"quantity": "10"})
     assert r.status_code == 200
     assert Decimal(r.json()["quantity"]) == Decimal("10")
@@ -226,8 +243,12 @@ async def test_list_purchases_filters(auth_client, db, user):
     b = await make_asset(db, ticker="PETR4")
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
     await link_user_asset(db, user_id=user.id, asset_id=b.id)
-    await make_purchase(db, user_id=user.id, asset_id=a.id, purchase_date=date(2026, 1, 1))
-    await make_purchase(db, user_id=user.id, asset_id=b.id, purchase_date=date(2026, 5, 1))
+    await make_purchase(
+        db, user_id=user.id, asset_id=a.id, purchase_date=date(2026, 1, 1)
+    )
+    await make_purchase(
+        db, user_id=user.id, asset_id=b.id, purchase_date=date(2026, 5, 1)
+    )
 
     r1 = await auth_client.get(f"/api/purchases?asset_id={a.id}")
     assert {p["asset_id"] for p in r1.json()} == {a.id}
@@ -242,8 +263,11 @@ async def test_list_rv_paginated(auth_client, db, user):
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
     for i in range(3):
         await make_purchase(
-            db, user_id=user.id, asset_id=a.id,
-            purchase_date=date(2026, 1, i + 1), quantity=Decimal("1"),
+            db,
+            user_id=user.id,
+            asset_id=a.id,
+            purchase_date=date(2026, 1, i + 1),
+            quantity=Decimal("1"),
         )
     r = await auth_client.get("/api/purchases/rv?page=1&page_size=2")
     body = r.json()
