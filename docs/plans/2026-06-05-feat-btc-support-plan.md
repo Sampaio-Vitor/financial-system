@@ -112,6 +112,12 @@ source.
   - Verification run: `git diff --check`.
   - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
   - Template check: `frontend/public/modelo-importacao.xlsx` contains a BTC row using `CRYPTO/CRYPTO/BRL/bitcoin`.
+- [x] Step 9 - Frontend New Crypto Portfolio Page And Navigation.
+  - Review result: approved.
+  - Verification run: `cd frontend && npm run build`.
+  - Verification run: `git diff --check`.
+  - Lint caveat: `cd frontend && CI=1 npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
+  - Build observation: `/carteira/cripto` is included in the generated route list.
 
 ## Step 0 - Baseline Inventory
 
@@ -547,9 +553,13 @@ Review gate:
 - Reviewer checks invalid shapes are still rejected.
 - Reviewer checks allocation target UI still sums correctly.
 
-## Step 9 - Frontend New Crypto Portfolio Page And Navigation
+## Step 9 - Frontend New Crypto Portfolio Page And Navigation - Completed
 
 Purpose: give BTC its own page under Ativos.
+
+Status: completed and reviewed. Added `/carteira/cripto`, wired it into desktop
+and mobile asset navigation, and added a crypto-specific logo fallback while
+leaving existing Stocks/Ações/ETFs/FIIs page filters unchanged.
 
 Add:
 
