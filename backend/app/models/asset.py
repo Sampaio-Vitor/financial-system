@@ -19,6 +19,7 @@ class AssetType(str, PyEnum):
     ACAO = "ACAO"
     FII = "FII"
     RF = "RF"
+    CRYPTO = "CRYPTO"
 
 
 class AssetClass(str, PyEnum):
@@ -26,6 +27,7 @@ class AssetClass(str, PyEnum):
     ETF = "ETF"
     FII = "FII"
     RF = "RF"
+    CRYPTO = "CRYPTO"
 
 
 class Market(str, PyEnum):
@@ -33,6 +35,7 @@ class Market(str, PyEnum):
     US = "US"
     EU = "EU"
     UK = "UK"
+    CRYPTO = "CRYPTO"
 
 
 class CurrencyCode(str, PyEnum):
@@ -48,6 +51,7 @@ class AllocationBucket(str, PyEnum):
     ETF_INTL = "ETF_INTL"
     FII = "FII"
     RF = "RF"
+    CRYPTO = "CRYPTO"
 
 
 LEGACY_TYPE_TO_METADATA: dict[AssetType, tuple[AssetClass, Market, CurrencyCode]] = {
@@ -55,6 +59,7 @@ LEGACY_TYPE_TO_METADATA: dict[AssetType, tuple[AssetClass, Market, CurrencyCode]
     AssetType.ACAO: (AssetClass.STOCK, Market.BR, CurrencyCode.BRL),
     AssetType.FII: (AssetClass.FII, Market.BR, CurrencyCode.BRL),
     AssetType.RF: (AssetClass.RF, Market.BR, CurrencyCode.BRL),
+    AssetType.CRYPTO: (AssetClass.CRYPTO, Market.CRYPTO, CurrencyCode.BRL),
 }
 
 
@@ -63,6 +68,8 @@ def asset_bucket_for(asset_class: AssetClass, market: Market) -> AllocationBucke
         return AllocationBucket.RF
     if asset_class == AssetClass.FII:
         return AllocationBucket.FII
+    if asset_class == AssetClass.CRYPTO:
+        return AllocationBucket.CRYPTO
     if asset_class == AssetClass.STOCK:
         return (
             AllocationBucket.STOCK_BR
@@ -90,6 +97,8 @@ def legacy_type_for(asset_class: AssetClass, market: Market) -> AssetType:
         return AssetType.RF
     if asset_class == AssetClass.FII:
         return AssetType.FII
+    if asset_class == AssetClass.CRYPTO:
+        return AssetType.CRYPTO
     if market == Market.BR:
         return AssetType.ACAO
     return AssetType.STOCK

@@ -5,6 +5,7 @@ CLASS_LABELS = {
     AssetType.ACAO: "Ações (Brasil)",
     AssetType.FII: "FIIs",
     AssetType.RF: "Renda Fixa",
+    AssetType.CRYPTO: "Cripto",
 }
 
 ASSET_CLASS_LABELS = {
@@ -12,6 +13,7 @@ ASSET_CLASS_LABELS = {
     AssetClass.ETF: "ETFs",
     AssetClass.FII: "FIIs",
     AssetClass.RF: "Renda Fixa",
+    AssetClass.CRYPTO: "Cripto",
 }
 
 MARKET_LABELS = {
@@ -19,6 +21,7 @@ MARKET_LABELS = {
     Market.US: "Estados Unidos",
     Market.EU: "Europa",
     Market.UK: "Reino Unido",
+    Market.CRYPTO: "Cripto",
 }
 
 CURRENCY_LABELS = {
@@ -34,4 +37,5 @@ ALLOCATION_BUCKET_LABELS = {
     AllocationBucket.ETF_INTL: "ETFs (Exterior)",
     AllocationBucket.FII: "FIIs",
     AllocationBucket.RF: "Renda Fixa",
+    AllocationBucket.CRYPTO: "Cripto",
 }
