@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import (
     Asset,
     AssetClass,
+    AssetType,
     CurrencyCode,
     Market,
+    TesouroKind,
     resolve_asset_metadata,
 )
 from app.models.asset_price_history import AssetPriceHistory
@@ -44,18 +46,50 @@ def _is_demo_asset(asset: Asset) -> bool:
     return asset.description.strip().endswith(" Demo")
 
 
+def _parse_tesouro_ticker(ticker: str) -> tuple[TesouroKind, int] | None:
+    parts = ticker.strip().upper().split("-")
+    if len(parts) != 3 or parts[0] != "TD":
+        return None
+
+    kind_slug = parts[1]
+    if kind_slug == "SELIC":
+        kind = TesouroKind.SELIC
+    elif kind_slug in {"IPCA", "IPCA+"}:
+        kind = TesouroKind.IPCA
+    else:
+        return None
+
+    try:
+        maturity_year = int(parts[2])
+    except ValueError:
+        return None
+    if not 2025 <= maturity_year <= 2100:
+        return None
+    return kind, maturity_year
+
+
+def _tesouro_details_for(asset: Asset) -> tuple[TesouroKind, int] | None:
+    if asset.td_kind and asset.td_maturity_year:
+        return asset.td_kind, asset.td_maturity_year
+    return _parse_tesouro_ticker(asset.ticker)
+
+
 def _is_tesouro_asset(asset: Asset) -> bool:
-    return bool(asset.td_kind and asset.td_maturity_year)
+    return _tesouro_details_for(asset) is not None
 
 
-def _is_non_tesouro_fixed_income(asset: Asset) -> bool:
+def _is_fixed_income_asset(asset: Asset) -> bool:
     asset_class, _market, _quote_currency = resolve_asset_metadata(
         legacy_type=asset.type,
         asset_class=asset.asset_class,
         market=asset.market,
         quote_currency=asset.quote_currency,
     )
-    return asset_class == AssetClass.RF and not _is_tesouro_asset(asset)
+    return asset_class == AssetClass.RF or _is_tesouro_asset(asset)
+
+
+def _is_non_tesouro_fixed_income(asset: Asset) -> bool:
+    return _is_fixed_income_asset(asset) and not _is_tesouro_asset(asset)
 
 
 def _is_crypto(asset: Asset) -> bool:
@@ -211,7 +245,9 @@ class PriceService:
 
         tesouro_assets = [a for a in assets if _is_tesouro_asset(a)]
         non_tesouro_rf_assets = [a for a in assets if _is_non_tesouro_fixed_income(a)]
-        crypto_assets = [a for a in assets if _is_crypto(a)]
+        crypto_assets = [
+            a for a in assets if not _is_tesouro_asset(a) and _is_crypto(a)
+        ]
         results["skipped"].extend(
             {"ticker": asset.ticker, "reason": "non-Tesouro fixed income"}
             for asset in non_tesouro_rf_assets
@@ -245,16 +281,39 @@ class PriceService:
             return results
         now = datetime.now(timezone.utc)
         for asset in assets:
-            price = await fetch_tesouro_price(asset.td_kind, asset.td_maturity_year)
+            details = _tesouro_details_for(asset)
+            if details is None:
+                results["failed"].append(
+                    {"ticker": asset.ticker, "error": "Tesouro metadata unavailable"}
+                )
+                continue
+            td_kind, td_maturity_year = details
+            price = await fetch_tesouro_price(td_kind, td_maturity_year)
             if price is None:
                 results["failed"].append(
                     {"ticker": asset.ticker, "error": "Tesouro price unavailable"}
                 )
                 continue
+            asset.type = AssetType.RF
+            asset.asset_class = AssetClass.RF
+            asset.market = Market.BR
+            asset.quote_currency = CurrencyCode.BRL
+            asset.price_symbol = None
+            asset.td_kind = td_kind
+            asset.td_maturity_year = td_maturity_year
             asset.current_price_native = price
             asset.fx_rate_to_brl = Decimal("1")
             asset.current_price = round(price, 4)
             asset.price_updated_at = now
+            await self._upsert_asset_price_history(
+                asset=asset,
+                yf_ticker=asset.ticker,
+                quote_date=now.date(),
+                native_price=price,
+                fx_rate=Decimal("1"),
+                quote_currency=CurrencyCode.BRL,
+                source="tesouro",
+            )
             results["updated"].append(
                 {"ticker": asset.ticker, "price": float(asset.current_price)}
             )
@@ -497,8 +556,26 @@ class PriceService:
         if not assets:
             return prices
 
-        crypto_assets = [a for a in assets if _is_crypto(a)]
-        yf_assets = [a for a in assets if not _is_crypto(a)]
+        tesouro_assets = [a for a in assets if _is_tesouro_asset(a)]
+        crypto_assets = [
+            a for a in assets if not _is_tesouro_asset(a) and _is_crypto(a)
+        ]
+        yf_assets = [
+            a
+            for a in assets
+            if not _is_tesouro_asset(a)
+            and not _is_non_tesouro_fixed_income(a)
+            and not _is_crypto(a)
+        ]
+
+        # Historical Tesouro curves are not available from yfinance. Use the latest
+        # cached/current PU as a conservative fallback for snapshot calculations.
+        for asset in tesouro_assets:
+            if asset.current_price is None:
+                continue
+            native_price = asset.current_price_native or asset.current_price
+            fx_rate = asset.fx_rate_to_brl or Decimal("1")
+            prices[asset.id] = (native_price, fx_rate, asset.current_price)
 
         # Crypto: fetch from CoinGecko for the target date (BRL, fx_rate=1)
         for asset in crypto_assets:
@@ -690,6 +767,19 @@ class PriceService:
                 end_date=end_date,
                 fetch_end_date=fetch_end_date,
             )
+
+        if _is_fixed_income_asset(asset):
+            cached = await self._get_cached_asset_price_history(
+                asset.id, start_date, end_date
+            )
+            return [
+                {
+                    "date": row.date.isoformat(),
+                    "price": float(round(row.price_brl, 2)),
+                    "price_native": float(round(row.price_native, 4)),
+                }
+                for row in sorted(cached, key=lambda item: item.date)
+            ]
 
         yf_ticker = self._price_symbol_for(asset)
         cached = await self._get_cached_asset_price_history(
@@ -933,6 +1023,8 @@ class PriceService:
         missing_ranges = self._missing_cache_ranges(
             cached, start_date, end_date, require_ohlc=require_ohlc
         )
+        if _is_fixed_income_asset(asset):
+            return cached
         if _is_crypto(asset):
             coingecko_id = _btc_coingecko_id_for(asset)
             if coingecko_id is None:

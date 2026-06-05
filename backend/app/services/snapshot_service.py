@@ -30,7 +30,7 @@ from app.services.portfolio_service import (
     get_reserve_for_date,
     get_reserve_for_month,
 )
-from app.services.price_service import PriceService
+from app.services.price_service import PriceService, _is_tesouro_asset
 
 
 class SnapshotService:
@@ -601,6 +601,8 @@ class SnapshotService:
             asset_currency[asset.id] = currency
             if asset_class == AssetClass.CRYPTO:
                 crypto_assets.append(asset)
+                continue
+            if asset_class == AssetClass.RF or _is_tesouro_asset(asset):
                 continue
             ticker_to_asset[price_service._price_symbol_for(asset)] = asset
 

@@ -6,7 +6,7 @@ import pytest
 from freezegun import freeze_time
 from sqlalchemy import select
 
-from app.models.asset import AssetClass, AssetType, CurrencyCode, Market
+from app.models.asset import AssetClass, AssetType, CurrencyCode, Market, TesouroKind
 from app.models.asset_price_history import AssetPriceHistory
 from app.models.system_setting import SystemSetting
 from app.services.price_service import PriceService
@@ -142,6 +142,49 @@ async def test_price_history_cache_second_request_uses_database(db, user, monkey
             "date": today.isoformat(),
             "price": 32.12,
             "price_native": 32.1235,
+        }
+    ]
+
+
+@freeze_time("2026-05-29 12:00:00+00:00")
+async def test_price_history_does_not_fetch_yfinance_for_tesouro_ticker(
+    db, user, monkeypatch
+):
+    today = datetime.now(timezone.utc).date()
+    asset = await make_asset(
+        db,
+        ticker="TD-IPCA-2050",
+        asset_type=AssetType.STOCK,
+        asset_class=AssetClass.STOCK,
+        market=Market.BR,
+        quote_currency=CurrencyCode.BRL,
+    )
+    db.add(
+        AssetPriceHistory(
+            asset_id=asset.id,
+            yf_ticker="TD-IPCA-2050",
+            date=today,
+            price_native=Decimal("4123.456700"),
+            fx_rate_to_brl=Decimal("1"),
+            price_brl=Decimal("4123.4567"),
+            quote_currency=CurrencyCode.BRL,
+            source="tesouro",
+        )
+    )
+    await db.commit()
+
+    async def fail_download(self, tickers, **kwargs):
+        raise AssertionError("tesouro history should not call yfinance")
+
+    monkeypatch.setattr(PriceService, "_download_yf", fail_download)
+
+    points = await PriceService(db, user).get_asset_price_history(asset, days=0)
+
+    assert points == [
+        {
+            "date": today.isoformat(),
+            "price": 4123.46,
+            "price_native": 4123.4567,
         }
     ]
 
@@ -292,3 +335,60 @@ async def test_update_all_prices_skips_non_tesouro_fixed_income(db, user, monkey
     assert {"ticker": rf_asset.ticker, "reason": "non-Tesouro fixed income"} in results[
         "skipped"
     ]
+
+
+async def test_update_all_prices_routes_tesouro_ticker_to_tesouro_provider(
+    db, user, monkeypatch
+):
+    asset = await make_asset(
+        db,
+        ticker="TD-IPCA-2050",
+        asset_type=AssetType.STOCK,
+        asset_class=AssetClass.STOCK,
+        market=Market.BR,
+        quote_currency=CurrencyCode.BRL,
+        current_price=None,
+    )
+
+    async def fake_refresh_fx_rates(self, results):
+        return {CurrencyCode.BRL: Decimal("1")}
+
+    async def fake_fetch_yf_prices(self, assets, fx_rates):
+        assert assets == []
+        return {"updated": [], "failed": []}
+
+    async def fake_fetch_tesouro_price(kind, maturity_year):
+        assert kind == TesouroKind.IPCA
+        assert maturity_year == 2050
+        return Decimal("4123.4567")
+
+    monkeypatch.setattr(PriceService, "_refresh_fx_rates", fake_refresh_fx_rates)
+    monkeypatch.setattr(PriceService, "_fetch_yf_prices", fake_fetch_yf_prices)
+    monkeypatch.setattr(
+        "app.services.price_service.fetch_tesouro_price", fake_fetch_tesouro_price
+    )
+
+    results = await PriceService(db, user).update_all_prices()
+    await db.refresh(asset)
+
+    assert results["updated"] == [{"ticker": "TD-IPCA-2050", "price": 4123.4567}]
+    assert results["failed"] == []
+    assert asset.type == AssetType.RF
+    assert asset.asset_class == AssetClass.RF
+    assert asset.market == Market.BR
+    assert asset.quote_currency == CurrencyCode.BRL
+    assert asset.td_kind == TesouroKind.IPCA
+    assert asset.td_maturity_year == 2050
+    assert asset.current_price == Decimal("4123.4567")
+
+    row = (
+        (
+            await db.execute(
+                select(AssetPriceHistory).where(AssetPriceHistory.asset_id == asset.id)
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert row.yf_ticker == "TD-IPCA-2050"
+    assert row.source == "tesouro"
