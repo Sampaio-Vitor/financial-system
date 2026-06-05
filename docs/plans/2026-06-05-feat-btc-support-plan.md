@@ -63,6 +63,20 @@ source.
 - Adding BTC as a portfolio currency.
 - Tax reporting.
 
+## Progress
+
+- [x] Step 1 - Backend Classification Enums And Labels.
+  - Review result: approved.
+  - Commit: `70ad50a Add BTC support experiment plan`.
+  - Verification run: `python -m compileall backend/app`.
+  - Verification run: `git diff --check`.
+- [x] Step 2 - Alembic Migration For MySQL Enums.
+  - Review result: approved.
+  - Verification run: `python -m py_compile backend/alembic/versions/030_add_crypto_enums.py`.
+  - Verification run: `git diff --check -- backend/alembic/versions/030_add_crypto_enums.py`.
+  - Verification run: `PYTHONPATH=. ../venv/bin/alembic upgrade 029_add_investidor10_dividend_fetch_schedule:030_add_crypto_enums --sql`.
+  - Local DB observation: `alembic_version = 030_add_crypto_enums`.
+
 ## Step 0 - Baseline Inventory
 
 Purpose: confirm the repo state and avoid building on a dirty surprise.
@@ -91,10 +105,14 @@ Review gate:
 - Student lists the enum/map locations that will need edits.
 - Reviewer confirms the plan still matches the current codebase.
 
-## Step 1 - Backend Classification Enums And Labels
+## Step 1 - Backend Classification Enums And Labels - Completed
 
 Purpose: add the backend vocabulary for crypto without changing business flows
 yet.
+
+Status: completed and reviewed. The implementation added `CRYPTO` to backend
+asset vocabulary, labels, legacy metadata, bucket resolution, and legacy type
+resolution. It did not add `BTC` as a `CurrencyCode`.
 
 Edit:
 
@@ -141,9 +159,13 @@ Review gate:
 - Reviewer verifies no crypto was mapped to stocks, ETFs, FIIs, or RF.
 - Reviewer verifies `CurrencyCode` did not grow a BTC value.
 
-## Step 2 - Alembic Migration For MySQL Enums
+## Step 2 - Alembic Migration For MySQL Enums - Completed
 
 Purpose: make the database accept the new enum values.
+
+Status: completed and reviewed. The migration adds `CRYPTO` to the MySQL enum
+columns needed for assets, allocation targets, and asset daily snapshots while
+leaving `CurrencyCode` unchanged.
 
 Edit:
 
