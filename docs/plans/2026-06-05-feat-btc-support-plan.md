@@ -95,6 +95,12 @@ source.
   - Verification run: `venv/bin/ruff check backend/app/routers/portfolio.py backend/tests/factories.py backend/tests/integration/test_purchases_router.py backend/tests/integration/test_portfolio_router.py`.
   - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/integration/test_purchases_router.py backend/tests/integration/test_portfolio_router.py -q`.
   - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/unit/test_portfolio_service.py -q`.
+- [x] Step 6 - Backend Rebalancing, Snapshots, Movers, And Exclusions.
+  - Review result: approved.
+  - Verification run: `docker compose run --rm backend python -m compileall app`.
+  - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/integration/test_rebalancing_router.py backend/tests/integration/test_crypto_snapshots_movers.py -q`.
+  - Verification run: `venv/bin/ruff check backend/app/services/rebalancing_service.py backend/app/services/snapshot_service.py backend/tests/integration/test_rebalancing_router.py backend/tests/integration/test_crypto_snapshots_movers.py`.
+  - Verification run: `git diff --check`.
 
 ## Step 0 - Baseline Inventory
 
@@ -385,9 +391,14 @@ Review gate:
 - Reviewer checks decimal handling carefully.
 - Reviewer checks BTC does not leak into RF-only or dividend-only paths.
 
-## Step 6 - Backend Rebalancing, Snapshots, Movers, And Exclusions
+## Step 6 - Backend Rebalancing, Snapshots, Movers, And Exclusions - Completed
 
 Purpose: make BTC participate where appropriate and stay out where inappropriate.
+
+Status: completed and reviewed. Rebalancing now considers `CRYPTO` as an
+intentional candidate bucket, daily snapshot backfill uses the crypto
+price-history cache/CoinGecko path instead of yfinance for BTC, movers can filter
+crypto snapshots, and focused tests cover the Investidor10 crypto exclusion.
 
 Edit:
 

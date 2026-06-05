@@ -35,6 +35,45 @@ async def test_rebalancing_recommends_under_allocated(auth_client, db, user):
     assert Decimal(body["total_planned"]) == Decimal("500")
 
 
+async def test_rebalancing_recommends_under_allocated_crypto(auth_client, db, user):
+    btc = await make_asset(
+        db,
+        ticker="BTC",
+        asset_type=AssetType.CRYPTO,
+        current_price=Decimal("320000"),
+        price_symbol="bitcoin",
+    )
+    await link_user_asset(db, user_id=user.id, asset_id=btc.id)
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=btc.id,
+        quantity=Decimal("0.001"),
+        unit_price=Decimal("300000"),
+    )
+    db.add(
+        AllocationTarget(
+            user_id=user.id,
+            allocation_bucket=AllocationBucket.CRYPTO,
+            target_pct=Decimal("1.0"),
+        )
+    )
+    await db.commit()
+
+    r = await auth_client.get("/api/rebalancing?contribution=500&top_n=5")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["asset_plan"]) == 1
+    plan = body["asset_plan"][0]
+    assert plan["ticker"] == "BTC"
+    assert plan["asset_class"] == "CRYPTO"
+    assert plan["market"] == "CRYPTO"
+    assert plan["quote_currency"] == "BRL"
+    assert plan["allocation_bucket"] == "CRYPTO"
+    assert Decimal(plan["amount_to_invest"]) == Decimal("500")
+
+
 async def test_rebalancing_can_prioritize_individual_asset_before_class(
     auth_client,
     db,

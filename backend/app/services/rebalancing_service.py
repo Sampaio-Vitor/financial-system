@@ -116,6 +116,7 @@ class RebalancingService:
             AllocationBucket.STOCK_US,
             AllocationBucket.ETF_INTL,
             AllocationBucket.FII,
+            AllocationBucket.CRYPTO,
         )
         for allocation_bucket in candidate_buckets:
             if (
@@ -327,7 +328,7 @@ class RebalancingService:
             .join(UserAsset, UserAsset.asset_id == Asset.id)
             .where(
                 UserAsset.user_id == self.user.id,
-                UserAsset.paused == False,
+                UserAsset.paused.is_(False),
             )
         )
         result_map: dict[str, AssetCandidate] = {}
@@ -368,7 +369,7 @@ class RebalancingService:
             .where(
                 Purchase.user_id == self.user.id,
                 UserAsset.user_id == self.user.id,
-                UserAsset.paused == False,
+                UserAsset.paused.is_(False),
             )
             .group_by(
                 Asset.id,
