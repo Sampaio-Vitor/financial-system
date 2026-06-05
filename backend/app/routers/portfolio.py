@@ -41,6 +41,31 @@ from app.schemas.dividend import DividendEventResponse
 router = APIRouter()
 
 
+def _response_asset_type(
+    *,
+    legacy_type: AssetType | None,
+    asset_class: AssetClass | None,
+    market: Market | None,
+    positions: list[PositionItem],
+) -> AssetType:
+    if legacy_type is not None:
+        return legacy_type
+
+    position_types = {p.type for p in positions}
+    if len(position_types) == 1:
+        return next(iter(position_types))
+
+    if asset_class == AssetClass.CRYPTO:
+        return AssetType.CRYPTO
+    if asset_class == AssetClass.FII:
+        return AssetType.FII
+    if asset_class == AssetClass.RF:
+        return AssetType.RF
+    if asset_class == AssetClass.STOCK and market == Market.BR:
+        return AssetType.ACAO
+    return AssetType.STOCK
+
+
 async def _get_targets(db: AsyncSession, user: User) -> dict[AllocationBucket, Decimal]:
     result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
@@ -227,7 +252,12 @@ async def _build_variable_income_positions(
             total_market_native_sum += market_value_native
 
     total_pnl = total_market - total_cost
-    response_type = legacy_type or AssetType.STOCK
+    response_type = _response_asset_type(
+        legacy_type=legacy_type,
+        asset_class=asset_class,
+        market=market,
+        positions=positions,
+    )
 
     unique_native = (
         next(iter(native_currencies)) if len(native_currencies) == 1 else None

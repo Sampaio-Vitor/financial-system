@@ -26,6 +26,7 @@ _LEGACY_DEFAULTS = {
     AssetType.STOCK: (AssetClass.STOCK, Market.US, CurrencyCode.USD),
     AssetType.FII: (AssetClass.FII, Market.BR, CurrencyCode.BRL),
     AssetType.RF: (AssetClass.RF, Market.BR, CurrencyCode.BRL),
+    AssetType.CRYPTO: (AssetClass.CRYPTO, Market.CRYPTO, CurrencyCode.BRL),
 }
 
 

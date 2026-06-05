@@ -88,6 +88,13 @@ source.
   - Verification run: `git diff --check`.
   - Verification run: `venv/bin/ruff check backend/app/services/crypto_price_service.py backend/app/services/price_service.py backend/app/routers/assets.py backend/app/services/trading_calendar.py`.
   - Provider check: current and historical `bitcoin` BRL prices returned valid data.
+- [x] Step 5 - Backend Portfolio, Purchases, And Sells.
+  - Review result: approved.
+  - Verification run: `docker compose run --rm backend python -m compileall app`.
+  - Verification run: `git diff --check`.
+  - Verification run: `venv/bin/ruff check backend/app/routers/portfolio.py backend/tests/factories.py backend/tests/integration/test_purchases_router.py backend/tests/integration/test_portfolio_router.py`.
+  - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/integration/test_purchases_router.py backend/tests/integration/test_portfolio_router.py -q`.
+  - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/unit/test_portfolio_service.py -q`.
 
 ## Step 0 - Baseline Inventory
 
@@ -327,9 +334,13 @@ Review gate:
 - Reviewer checks no stock/FII symbol behavior regressed.
 - Reviewer checks no new BTC currency/FX path was introduced.
 
-## Step 5 - Backend Portfolio, Purchases, And Sells
+## Step 5 - Backend Portfolio, Purchases, And Sells - Completed
 
 Purpose: make BTC positions appear correctly and allow BTC buy/sell records.
+
+Status: completed and reviewed. Backend purchase and portfolio paths now preserve
+`CRYPTO` in position responses, and focused tests cover BTC buy, sell validation,
+purchase filters, positions, and overview allocation.
 
 Edit:
 

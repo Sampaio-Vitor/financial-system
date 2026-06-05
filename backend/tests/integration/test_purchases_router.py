@@ -34,6 +34,37 @@ async def test_create_purchase_brl(auth_client, db, user):
     assert Decimal(body["total_value"]) == Decimal("300.0000")
 
 
+async def test_create_crypto_purchase_brl_with_decimal_quantity(auth_client, db, user):
+    btc = await make_asset(
+        db,
+        ticker="BTC",
+        asset_type=AssetType.CRYPTO,
+        current_price=Decimal("300000"),
+        price_symbol="bitcoin",
+    )
+    await link_user_asset(db, user_id=user.id, asset_id=btc.id)
+
+    r = await auth_client.post(
+        "/api/purchases",
+        json={
+            "asset_id": btc.id,
+            "purchase_date": "2026-06-05",
+            "quantity": "0.001",
+            "unit_price": "300000",
+        },
+    )
+
+    assert r.status_code == 201
+    body = r.json()
+    assert body["asset_type"] == "CRYPTO"
+    assert body["asset_class"] == "CRYPTO"
+    assert body["market"] == "CRYPTO"
+    assert body["quote_currency"] == "BRL"
+    assert body["trade_currency"] == "BRL"
+    assert Decimal(body["quantity"]) == Decimal("0.00100000")
+    assert Decimal(body["total_value"]) == Decimal("300.0000")
+
+
 async def test_create_purchase_unknown_asset(auth_client):
     r = await auth_client.post(
         "/api/purchases",
@@ -116,6 +147,50 @@ async def test_create_purchase_sale_exceeds_position(auth_client, db, user):
     assert r.status_code == 400
 
 
+async def test_create_crypto_sale_validates_available_decimal_quantity(
+    auth_client, db, user
+):
+    btc = await make_asset(
+        db,
+        ticker="BTC",
+        asset_type=AssetType.CRYPTO,
+        current_price=Decimal("320000"),
+        price_symbol="bitcoin",
+    )
+    await link_user_asset(db, user_id=user.id, asset_id=btc.id)
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=btc.id,
+        quantity=Decimal("0.0015"),
+        unit_price=Decimal("300000"),
+    )
+
+    sell = await auth_client.post(
+        "/api/purchases",
+        json={
+            "asset_id": btc.id,
+            "purchase_date": "2026-06-06",
+            "quantity": "-0.0005",
+            "unit_price": "320000",
+        },
+    )
+    assert sell.status_code == 201
+    assert Decimal(sell.json()["quantity"]) == Decimal("-0.00050000")
+    assert Decimal(sell.json()["total_value"]) == Decimal("-160.0000")
+
+    excessive_sell = await auth_client.post(
+        "/api/purchases",
+        json={
+            "asset_id": btc.id,
+            "purchase_date": "2026-06-07",
+            "quantity": "-0.0011",
+            "unit_price": "320000",
+        },
+    )
+    assert excessive_sell.status_code == 400
+
+
 async def test_update_purchase(auth_client, db, user):
     a = await make_asset(db, ticker="ITUB4")
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
@@ -175,6 +250,47 @@ async def test_list_rv_paginated(auth_client, db, user):
     assert body["total_count"] == 3
     assert body["total_pages"] == 2
     assert len(body["items"]) == 2
+
+
+async def test_list_rv_filters_crypto_by_asset_type_and_asset_class(
+    auth_client, db, user
+):
+    btc = await make_asset(
+        db,
+        ticker="BTC",
+        asset_type=AssetType.CRYPTO,
+        current_price=Decimal("320000"),
+        price_symbol="bitcoin",
+    )
+    await link_user_asset(db, user_id=user.id, asset_id=btc.id)
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=btc.id,
+        quantity=Decimal("0.001"),
+        unit_price=Decimal("300000"),
+    )
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=btc.id,
+        quantity=Decimal("-0.0004"),
+        unit_price=Decimal("320000"),
+    )
+
+    by_type = await auth_client.get("/api/purchases/rv?asset_type=CRYPTO")
+    by_class = await auth_client.get("/api/purchases/rv?asset_class=CRYPTO")
+    sales = await auth_client.get(
+        "/api/purchases/rv?asset_class=CRYPTO&operation=vendas"
+    )
+
+    assert by_type.status_code == 200
+    assert by_class.status_code == 200
+    assert sales.status_code == 200
+    assert by_type.json()["total_count"] == 2
+    assert by_class.json()["total_count"] == 2
+    assert sales.json()["total_count"] == 1
+    assert sales.json()["items"][0]["asset_type"] == "CRYPTO"
 
 
 async def test_list_rv_rejects_rf(auth_client):
