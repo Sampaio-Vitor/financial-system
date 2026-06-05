@@ -20,7 +20,7 @@ const bottomNavItems = [
     label: "Ativos",
     href: "/carteira/catalogo",
     icon: Briefcase,
-    match: ["/carteira/catalogo", "/carteira/stocks", "/carteira/acoes", "/carteira/etfs", "/carteira/fiis", "/carteira/renda-fixa", "/carteira/reserva"],
+    match: ["/carteira/catalogo", "/carteira/stocks", "/carteira/acoes", "/carteira/etfs", "/carteira/fiis", "/carteira/btc", "/carteira/cripto", "/carteira/renda-fixa", "/carteira/reserva"],
   },
   {
     label: "Proventos",

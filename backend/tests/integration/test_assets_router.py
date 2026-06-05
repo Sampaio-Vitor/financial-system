@@ -107,6 +107,44 @@ async def test_create_asset_invalid_shape(auth_client):
     assert r.status_code == 422
 
 
+async def test_create_btc_normalizes_coingecko_symbol(admin_client):
+    r = await admin_client.post(
+        "/api/assets",
+        json={
+            "ticker": "btc",
+            "asset_class": "CRYPTO",
+            "market": "CRYPTO",
+            "quote_currency": "BRL",
+            "price_symbol": "btc",
+        },
+    )
+
+    assert r.status_code == 201
+    body = r.json()
+    assert body["ticker"] == "BTC"
+    assert body["type"] == "CRYPTO"
+    assert body["asset_class"] == "CRYPTO"
+    assert body["market"] == "CRYPTO"
+    assert body["quote_currency"] == "BRL"
+    assert body["price_symbol"] == "bitcoin"
+
+
+async def test_create_rejects_non_btc_crypto(admin_client):
+    r = await admin_client.post(
+        "/api/assets",
+        json={
+            "ticker": "ETH",
+            "asset_class": "CRYPTO",
+            "market": "CRYPTO",
+            "quote_currency": "BRL",
+            "price_symbol": "ethereum",
+        },
+    )
+
+    assert r.status_code == 422
+    assert "Somente BTC" in r.json()["detail"]
+
+
 async def test_get_asset(auth_client, db, user):
     a = await make_asset(db, ticker="ITUB4")
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
@@ -200,8 +238,18 @@ async def test_bulk_create_admin_creates_new(admin_client):
         "/api/assets/bulk",
         json={
             "assets": [
-                {"ticker": "abc", "asset_class": "STOCK", "market": "US", "quote_currency": "USD"},
-                {"ticker": "abc", "asset_class": "STOCK", "market": "US", "quote_currency": "USD"},  # dup
+                {
+                    "ticker": "abc",
+                    "asset_class": "STOCK",
+                    "market": "US",
+                    "quote_currency": "USD",
+                },
+                {
+                    "ticker": "abc",
+                    "asset_class": "STOCK",
+                    "market": "US",
+                    "quote_currency": "USD",
+                },  # dup
             ]
         },
     )
@@ -216,7 +264,12 @@ async def test_bulk_create_non_admin_skips_unknown(auth_client):
         "/api/assets/bulk",
         json={
             "assets": [
-                {"ticker": "NEWBIE", "asset_class": "STOCK", "market": "US", "quote_currency": "USD"},
+                {
+                    "ticker": "NEWBIE",
+                    "asset_class": "STOCK",
+                    "market": "US",
+                    "quote_currency": "USD",
+                },
             ]
         },
     )
@@ -236,12 +289,38 @@ async def test_bulk_create_links_existing_global(auth_client, db):
         "/api/assets/bulk",
         json={
             "assets": [
-                {"ticker": "ITUB4", "asset_class": "STOCK", "market": "BR", "quote_currency": "BRL"},
+                {
+                    "ticker": "ITUB4",
+                    "asset_class": "STOCK",
+                    "market": "BR",
+                    "quote_currency": "BRL",
+                },
             ]
         },
     )
     assert r.status_code == 200
     assert len(r.json()["linked"]) == 1
+
+
+async def test_bulk_create_btc_normalizes_symbol(admin_client):
+    r = await admin_client.post(
+        "/api/assets/bulk",
+        json={
+            "assets": [
+                {
+                    "ticker": "btc",
+                    "asset_class": "CRYPTO",
+                    "market": "CRYPTO",
+                    "quote_currency": "BRL",
+                    "price_symbol": "btc",
+                },
+            ]
+        },
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created"][0]["ticker"] == "BTC"
 
 
 async def test_rebalancing_info_basic(auth_client, db, user):
@@ -250,8 +329,20 @@ async def test_rebalancing_info_basic(auth_client, db, user):
 
     a = await make_asset(db, ticker="ITUB4", current_price=Decimal("10"))
     await link_user_asset(db, user_id=user.id, asset_id=a.id)
-    await make_purchase(db, user_id=user.id, asset_id=a.id, quantity=Decimal("5"), unit_price=Decimal("10"))
-    db.add(AllocationTarget(user_id=user.id, allocation_bucket=AllocationBucket.STOCK_BR, target_pct=Decimal("1.0")))
+    await make_purchase(
+        db,
+        user_id=user.id,
+        asset_id=a.id,
+        quantity=Decimal("5"),
+        unit_price=Decimal("10"),
+    )
+    db.add(
+        AllocationTarget(
+            user_id=user.id,
+            allocation_bucket=AllocationBucket.STOCK_BR,
+            target_pct=Decimal("1.0"),
+        )
+    )
     await db.commit()
 
     r = await auth_client.get("/api/assets/rebalancing-info")

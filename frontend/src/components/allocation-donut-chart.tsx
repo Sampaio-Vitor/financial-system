@@ -10,6 +10,7 @@ const CLASS_COLORS: Record<string, string> = {
   ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
+  CRYPTO: "#14b8a6",
 };
 
 interface AllocationDonutChartProps {

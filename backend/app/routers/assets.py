@@ -25,6 +25,10 @@ from app.models.user_asset import UserAsset
 from app.models.user import User
 from app.services.portfolio_service import get_bucket_values
 from app.services.price_service import PriceService
+from app.services.crypto_price_service import (
+    UnsupportedCryptoAsset,
+    normalize_btc_asset_fields,
+)
 from app.schemas.asset import (
     AssetCreate,
     AssetUpdate,
@@ -38,6 +42,19 @@ from app.schemas.asset import (
 )
 
 router = APIRouter()
+
+
+def _normalize_btc_payload(
+    ticker: str,
+    asset_class: AssetClass | None,
+    price_symbol: str | None,
+) -> tuple[str, str | None]:
+    if asset_class != AssetClass.CRYPTO:
+        return ticker, price_symbol
+    try:
+        return normalize_btc_asset_fields(ticker, price_symbol)
+    except UnsupportedCryptoAsset as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _validate_asset_shape(
@@ -61,6 +78,9 @@ def _validate_asset_shape(
         },
         AssetClass.RF: {
             Market.BR: {CurrencyCode.BRL},
+        },
+        AssetClass.CRYPTO: {
+            Market.CRYPTO: {CurrencyCode.BRL},
         },
     }
     if quote_currency not in valid.get(asset_class, {}).get(market, set()):
@@ -224,7 +244,10 @@ async def list_assets(
     if type:
         query = query.where(Asset.type == type)
     result = await db.execute(query)
-    return [_to_response(asset, paused, target_pct) for asset, paused, target_pct in result.all()]
+    return [
+        _to_response(asset, paused, target_pct)
+        for asset, paused, target_pct in result.all()
+    ]
 
 
 @router.post("/bulk", response_model=BulkAssetResponse)
@@ -239,6 +262,9 @@ async def bulk_create_assets(
         asset_type, asset_class, market, quote_currency = (
             _resolve_payload_classification(item)
         )
+        ticker, price_symbol = _normalize_btc_payload(
+            ticker, asset_class, item.price_symbol
+        )
         normalized_items.append(
             (
                 ticker,
@@ -246,7 +272,7 @@ async def bulk_create_assets(
                 asset_class,
                 market,
                 quote_currency,
-                item.price_symbol,
+                price_symbol,
             )
         )
 
@@ -463,7 +489,9 @@ async def get_rebalancing_info(
         )
         bucket = asset_bucket_for(asset_class, market)
         if ua_target_pct is not None:
-            bucket_explicit_sum[bucket] = bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
+            bucket_explicit_sum[bucket] = (
+                bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
+            )
         else:
             bucket_implicit_count[bucket] = bucket_implicit_count.get(bucket, 0) + 1
 
@@ -483,7 +511,10 @@ async def get_rebalancing_info(
             target_value = bucket_target_value * ua_target_pct
         else:
             implicit_n = bucket_implicit_count.get(bucket, 0) or 1
-            leftover_pct = max(Decimal("0"), Decimal("1") - bucket_explicit_sum.get(bucket, Decimal("0")))
+            leftover_pct = max(
+                Decimal("0"),
+                Decimal("1") - bucket_explicit_sum.get(bucket, Decimal("0")),
+            )
             target_value = bucket_target_value * leftover_pct / implicit_n
         current_value = asset_values.get(asset.id, Decimal("0"))
         gap = target_value - current_value
@@ -533,6 +564,8 @@ async def create_asset(
         ticker = f"TD-{slug}-{data.td_maturity_year}"
     else:
         ticker = (data.ticker or "").strip().upper()
+    price_symbol = data.price_symbol
+    ticker, price_symbol = _normalize_btc_payload(ticker, asset_class, price_symbol)
 
     # Check if global asset exists
     result = await db.execute(select(Asset).where(Asset.ticker == ticker))
@@ -575,7 +608,7 @@ async def create_asset(
             asset_class=asset_class,
             market=market,
             quote_currency=quote_currency,
-            price_symbol=data.price_symbol,
+            price_symbol=price_symbol,
             description=data.description,
             td_kind=data.td_kind,
             td_maturity_year=data.td_maturity_year,
@@ -631,8 +664,15 @@ async def update_asset(
             detail="Apenas administradores podem editar dados globais do ativo",
         )
 
+    next_ticker = asset.ticker
+    next_type = asset.type
+    next_asset_class = asset.asset_class
+    next_market = asset.market
+    next_quote_currency = asset.quote_currency
+    next_price_symbol = asset.price_symbol
+
     if data.ticker is not None:
-        asset.ticker = data.ticker.upper()
+        next_ticker = data.ticker.strip().upper()
     if data.description is not None:
         asset.description = data.description
     if (
@@ -640,15 +680,22 @@ async def update_asset(
         or data.market is not None
         or data.quote_currency is not None
     ):
-        asset_type, asset_class, market, quote_currency = (
+        next_type, next_asset_class, next_market, next_quote_currency = (
             _resolve_payload_classification(data)
         )
-        asset.type = asset_type
-        asset.asset_class = asset_class
-        asset.market = market
-        asset.quote_currency = quote_currency
     if data.price_symbol is not None:
-        asset.price_symbol = data.price_symbol
+        next_price_symbol = data.price_symbol
+
+    if wants_global_update:
+        next_ticker, next_price_symbol = _normalize_btc_payload(
+            next_ticker, next_asset_class, next_price_symbol
+        )
+        asset.ticker = next_ticker
+        asset.type = next_type
+        asset.asset_class = next_asset_class
+        asset.market = next_market
+        asset.quote_currency = next_quote_currency
+        asset.price_symbol = next_price_symbol
 
     # Update per-user fields
     paused_changed_to_active = (

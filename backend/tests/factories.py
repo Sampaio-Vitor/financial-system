@@ -1,4 +1,5 @@
 """Lightweight factories to construct DB rows in tests."""
+
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
@@ -26,6 +27,7 @@ _LEGACY_DEFAULTS = {
     AssetType.STOCK: (AssetClass.STOCK, Market.US, CurrencyCode.USD),
     AssetType.FII: (AssetClass.FII, Market.BR, CurrencyCode.BRL),
     AssetType.RF: (AssetClass.RF, Market.BR, CurrencyCode.BRL),
+    AssetType.CRYPTO: (AssetClass.CRYPTO, Market.CRYPTO, CurrencyCode.BRL),
 }
 
 
@@ -119,7 +121,9 @@ async def make_allocation_target(
     bucket: AllocationBucket,
     target_pct: Decimal,
 ) -> AllocationTarget:
-    t = AllocationTarget(user_id=user_id, allocation_bucket=bucket, target_pct=target_pct)
+    t = AllocationTarget(
+        user_id=user_id, allocation_bucket=bucket, target_pct=target_pct
+    )
     db.add(t)
     await db.commit()
     await db.refresh(t)

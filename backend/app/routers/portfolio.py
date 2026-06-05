@@ -41,6 +41,31 @@ from app.schemas.dividend import DividendEventResponse
 router = APIRouter()
 
 
+def _response_asset_type(
+    *,
+    legacy_type: AssetType | None,
+    asset_class: AssetClass | None,
+    market: Market | None,
+    positions: list[PositionItem],
+) -> AssetType:
+    if legacy_type is not None:
+        return legacy_type
+
+    position_types = {p.type for p in positions}
+    if len(position_types) == 1:
+        return next(iter(position_types))
+
+    if asset_class == AssetClass.CRYPTO:
+        return AssetType.CRYPTO
+    if asset_class == AssetClass.FII:
+        return AssetType.FII
+    if asset_class == AssetClass.RF:
+        return AssetType.RF
+    if asset_class == AssetClass.STOCK and market == Market.BR:
+        return AssetType.ACAO
+    return AssetType.STOCK
+
+
 async def _get_targets(db: AsyncSession, user: User) -> dict[AllocationBucket, Decimal]:
     result = await db.execute(
         select(AllocationTarget).where(AllocationTarget.user_id == user.id)
@@ -168,18 +193,43 @@ async def _build_variable_income_positions(
         bucket = asset_bucket_for(resolved_class, resolved_market)
         selected_bucket = selected_bucket or bucket
 
+        is_crypto = resolved_class == AssetClass.CRYPTO
+        response_native_currency = resolved_currency
+        response_native_price = native_price
+        response_cost_native = cost_native
+        if is_crypto:
+            has_usd_reference = (
+                price is not None
+                and native_price is not None
+                and native_price > 0
+                and fx_rate_to_brl is not None
+                and fx_rate_to_brl > Decimal("1")
+            )
+            if has_usd_reference:
+                response_native_currency = CurrencyCode.USD
+                response_native_price = native_price
+                response_cost_native = cost / fx_rate_to_brl if cost else Decimal("0")
+            else:
+                response_native_currency = None
+                response_native_price = None
+                response_cost_native = None
+
         avg_price_native = (
-            (cost_native / qty) if (cost_native is not None and qty) else None
+            (response_cost_native / qty)
+            if (response_cost_native is not None and qty)
+            else None
         )
-        market_value_native = native_price * qty if native_price and qty else None
+        market_value_native = (
+            response_native_price * qty if response_native_price and qty else None
+        )
         pnl_native = (
-            market_value_native - cost_native
-            if market_value_native is not None and cost_native is not None
+            market_value_native - response_cost_native
+            if market_value_native is not None and response_cost_native is not None
             else None
         )
         pnl_pct_native = (
-            (pnl_native / cost_native * 100)
-            if pnl_native is not None and cost_native
+            (pnl_native / response_cost_native * 100)
+            if pnl_native is not None and response_cost_native
             else None
         )
         price_anomalies = anomalies_by_asset.get(asset_id, [])
@@ -198,12 +248,12 @@ async def _build_variable_income_positions(
                 total_cost=cost,
                 avg_price=round(avg_price, 4),
                 current_price=price,
-                current_price_native=native_price,
+                current_price_native=response_native_price,
                 fx_rate_to_brl=fx_rate_to_brl,
                 market_value=market_value,
                 pnl=round(pnl, 4) if pnl else None,
                 pnl_pct=round(pnl_pct, 2) if pnl_pct else None,
-                total_cost_native=cost_native,
+                total_cost_native=response_cost_native,
                 avg_price_native=round(avg_price_native, 4)
                 if avg_price_native is not None
                 else None,
@@ -219,15 +269,20 @@ async def _build_variable_income_positions(
         total_cost += cost
         if market_value:
             total_market += market_value
-        if resolved_currency:
-            native_currencies.add(resolved_currency)
-        if cost_native is not None:
-            total_cost_native_sum += cost_native
+        if response_native_currency:
+            native_currencies.add(response_native_currency)
+        if response_cost_native is not None:
+            total_cost_native_sum += response_cost_native
         if market_value_native is not None:
             total_market_native_sum += market_value_native
 
     total_pnl = total_market - total_cost
-    response_type = legacy_type or AssetType.STOCK
+    response_type = _response_asset_type(
+        legacy_type=legacy_type,
+        asset_class=asset_class,
+        market=market,
+        positions=positions,
+    )
 
     unique_native = (
         next(iter(native_currencies)) if len(native_currencies) == 1 else None

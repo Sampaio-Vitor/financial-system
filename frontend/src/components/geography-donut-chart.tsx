@@ -7,6 +7,7 @@ import { ClassSummary, AllocationBucket } from "@/types";
 const REGION_COLORS: Record<string, string> = {
   Brasil: "#10b981",
   "EUA / Internacional": "#3b82f6",
+  BTC: "#14b8a6",
 };
 
 const BUCKET_TO_REGION: Record<AllocationBucket, string> = {
@@ -15,6 +16,7 @@ const BUCKET_TO_REGION: Record<AllocationBucket, string> = {
   RF: "Brasil",
   STOCK_US: "EUA / Internacional",
   ETF_INTL: "EUA / Internacional",
+  CRYPTO: "BTC",
 };
 
 interface GeographyDonutChartProps {

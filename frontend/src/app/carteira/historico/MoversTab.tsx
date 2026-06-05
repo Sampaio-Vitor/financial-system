@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
 import { MoverItem, MoverPeriod, MoversResponse } from "@/types";
 
-type SegmentKey = "ALL" | "STOCK_BR" | "STOCK_US" | "FII" | "RF";
+type SegmentKey = "ALL" | "STOCK_BR" | "STOCK_US" | "FII" | "CRYPTO" | "RF";
 
 const BACKFILL_ATTEMPT_KEY = "movers-backfill-attempted-v1";
 
@@ -21,6 +21,7 @@ const SEGMENTS: { key: SegmentKey; label: string }[] = [
   { key: "STOCK_BR", label: "Ações BR" },
   { key: "STOCK_US", label: "Stocks US" },
   { key: "FII", label: "FIIs" },
+  { key: "CRYPTO", label: "BTC" },
   { key: "RF", label: "RF" },
 ];
 
@@ -36,6 +37,8 @@ function segmentToParams(seg: SegmentKey): {
       return { asset_class: "STOCK", market: "US", include_rf: false };
     case "FII":
       return { asset_class: "FII", include_rf: false };
+    case "CRYPTO":
+      return { asset_class: "CRYPTO", market: "CRYPTO", include_rf: false };
     case "RF":
       return { asset_class: "RF", include_rf: true };
     default:

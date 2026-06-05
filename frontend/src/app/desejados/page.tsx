@@ -22,6 +22,7 @@ const CLASS_COLORS: Record<AllocationBucket, string> = {
   ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
+  CRYPTO: "#14b8a6",
 };
 
 const BUCKET_LABELS: Record<AllocationBucket, string> = {
@@ -30,6 +31,7 @@ const BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "BTC",
 };
 
 export default function PlanejadorAportePage() {
@@ -79,6 +81,7 @@ export default function PlanejadorAportePage() {
       ETF_INTL: 0,
       FII: 0,
       RF: 0,
+      CRYPTO: 0,
     } as Record<AllocationBucket, number>
   ) ?? {
     STOCK_BR: 0,
@@ -86,6 +89,7 @@ export default function PlanejadorAportePage() {
     ETF_INTL: 0,
     FII: 0,
     RF: 0,
+    CRYPTO: 0,
   };
   const plannedNativeTotals = rebalancing?.asset_plan.reduce(
     (acc, asset) => {
@@ -510,7 +514,7 @@ export default function PlanejadorAportePage() {
                     (acc[a.allocation_bucket] ??= []).push(a);
                     return acc;
                   }, {} as Record<AllocationBucket, typeof rebalancing.asset_plan>);
-                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "RF"];
+                  const bucketOrder: AllocationBucket[] = ["STOCK_BR", "STOCK_US", "ETF_INTL", "FII", "CRYPTO", "RF"];
                   const activeBuckets = bucketOrder.filter((b) => grouped[b]?.length > 0);
 
                   return (

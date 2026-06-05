@@ -1,6 +1,6 @@
 import { formatBRL } from "@/lib/format";
 import { ClassSummary } from "@/types";
-import { TrendingUp, Building2, Landmark, PiggyBank, Shield } from "lucide-react";
+import { TrendingUp, Building2, Landmark, PiggyBank, Shield, Coins } from "lucide-react";
 
 const classIcons: Record<string, typeof TrendingUp> = {
   STOCK_BR: Building2,
@@ -8,6 +8,7 @@ const classIcons: Record<string, typeof TrendingUp> = {
   ETF_INTL: TrendingUp,
   FII: Landmark,
   RF: PiggyBank,
+  CRYPTO: Coins,
 };
 
 const classColors: Record<string, string> = {
@@ -16,6 +17,7 @@ const classColors: Record<string, string> = {
   ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
+  CRYPTO: "#14b8a6",
 };
 
 interface AllocationBreakdownProps {

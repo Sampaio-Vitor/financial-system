@@ -30,6 +30,7 @@ const TYPE_LABELS: Record<string, string> = {
   FII: "FII",
   STOCK: "STOCK",
   RF: "RF",
+  CRYPTO: "BTC",
 };
 
 export default function AportesPage() {
@@ -252,7 +253,7 @@ export default function AportesPage() {
     <div className="flex min-h-0 flex-col md:h-[calc(100dvh-4rem)]">
       <ConfirmDialog />
       <div className="mb-3 flex shrink-0 flex-col gap-2 md:mb-4 md:flex-row md:items-center md:justify-between md:gap-3">
-        <h1 className="text-lg font-bold md:text-xl">Aportes em Renda Variavel</h1>
+        <h1 className="text-lg font-bold md:text-xl">Aportes</h1>
         <div className="grid grid-cols-3 gap-2 md:flex">
           <button
             onClick={() => setShowOcrImport(true)}
@@ -327,6 +328,7 @@ export default function AportesPage() {
                 <option value="ACAO">Acoes</option>
                 <option value="STOCK">Stocks</option>
                 <option value="FII">FIIs</option>
+                <option value="CRYPTO">BTC</option>
               </select>
             </div>
             <div className="flex flex-col gap-1">

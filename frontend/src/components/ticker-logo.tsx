@@ -44,15 +44,23 @@ export default function TickerLogo({
 }: TickerLogoProps) {
   const [failed, setFailed] = useState(false);
   const url = getLogoUrl(ticker, type, assetClass, market);
+  const isCrypto = type === "CRYPTO" || assetClass === "CRYPTO" || market === "CRYPTO";
 
   if (!url || failed) {
     // Fallback: initials circle
     return (
       <div
-        className="shrink-0 rounded-full bg-[var(--color-bg-main)] border border-[var(--color-border)] flex items-center justify-center"
+        className={`shrink-0 rounded-full border flex items-center justify-center ${
+          isCrypto
+            ? "border-teal-500/40 bg-teal-500/15"
+            : "bg-[var(--color-bg-main)] border-[var(--color-border)]"
+        }`}
         style={{ width: size, height: size }}
       >
-        <span className="text-[var(--color-text-muted)] font-semibold" style={{ fontSize: size * 0.4 }}>
+        <span
+          className={`font-semibold ${isCrypto ? "text-teal-300" : "text-[var(--color-text-muted)]"}`}
+          style={{ fontSize: size * 0.4 }}
+        >
           {ticker.slice(0, 2)}
         </span>
       </div>

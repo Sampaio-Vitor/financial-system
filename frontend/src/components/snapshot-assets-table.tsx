@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatBRL, formatCurrency } from "@/lib/format";
+import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
 import { AllocationBucket, AssetClass, CurrencyCode, Market, SnapshotAssetItem } from "@/types";
 import MobileCard from "@/components/mobile-card";
 import TickerLogo from "@/components/ticker-logo";
@@ -13,6 +13,7 @@ const BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs Exterior",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "BTC",
 };
 
 const BUCKET_COLORS: Record<AllocationBucket, string> = {
@@ -21,6 +22,7 @@ const BUCKET_COLORS: Record<AllocationBucket, string> = {
   ETF_INTL: "bg-cyan-500/20 text-cyan-400",
   FII: "bg-amber-500/20 text-amber-400",
   RF: "bg-violet-500/20 text-violet-400",
+  CRYPTO: "bg-teal-500/20 text-teal-400",
 };
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -28,6 +30,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETF",
   FII: "FII",
   RF: "Renda Fixa",
+  CRYPTO: "Cripto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -35,6 +38,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
+  CRYPTO: "Cripto",
 };
 
 const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {
@@ -42,6 +46,7 @@ const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {
   ACAO: "STOCK_BR",
   FII: "FII",
   RF: "RF",
+  CRYPTO: "CRYPTO",
 };
 
 function getBucket(row: SnapshotAssetItem): AllocationBucket {
@@ -141,7 +146,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
             }
             bodyItems={[
               { label: "Valor", value: row.market_value != null ? formatBRL(row.market_value) : "\u2014" },
-              { label: "Qtd", value: row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) },
+              { label: "Qtd", value: row.type === "RF" ? "\u2014" : formatQuantity(row.quantity) },
             ]}
             expandedItems={[
               { label: "Preco Medio", value: formatBRL(row.avg_price) },
@@ -233,7 +238,7 @@ export default function SnapshotAssetsTable({ month }: { month: string }) {
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
-                    {row.type === "RF" ? "\u2014" : row.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
+                    {row.type === "RF" ? "\u2014" : formatQuantity(row.quantity)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-[var(--color-text-secondary)] tabular-nums">
                     {formatBRL(row.avg_price)}

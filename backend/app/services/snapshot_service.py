@@ -587,15 +587,42 @@ class SnapshotService:
         range_start = (start_date - timedelta(days=7)).isoformat()
         range_end = (end_date + timedelta(days=1)).isoformat()
 
-        # FX history — batch all FX tickers in a single yfinance call
+        price_history: dict[int, dict[date, Decimal]] = {}
+        asset_currency: dict[int, CurrencyCode] = {}
+        crypto_assets: list[Asset] = []
+        ticker_to_asset: dict[str, Asset] = {}
+        for asset in assets_by_id.values():
+            asset_class, _mk, currency = resolve_asset_metadata(
+                legacy_type=asset.type,
+                asset_class=asset.asset_class,
+                market=asset.market,
+                quote_currency=asset.quote_currency,
+            )
+            asset_currency[asset.id] = currency
+            if asset_class == AssetClass.CRYPTO:
+                crypto_assets.append(asset)
+                continue
+            ticker_to_asset[price_service._price_symbol_for(asset)] = asset
+
+        # FX history — only fetch currencies needed by non-BRL assets in this backfill.
         fx_history: dict[CurrencyCode, dict[date, Decimal]] = {}
-        fx_yf_tickers = list(FX_TICKERS.values())
+        fx_currencies = {
+            currency
+            for currency in asset_currency.values()
+            if currency != CurrencyCode.BRL
+        }
+        fx_yf_tickers = [
+            yf_ticker
+            for currency, yf_ticker in FX_TICKERS.items()
+            if currency in fx_currencies
+        ]
         if fx_yf_tickers:
             data = await price_service._download_yf(
                 fx_yf_tickers, start=range_start, end=range_end
             )
             for currency, yf_ticker in FX_TICKERS.items():
-                fx_history[currency] = _extract_curve(data, yf_ticker)
+                if currency in fx_currencies:
+                    fx_history[currency] = _extract_curve(data, yf_ticker)
             await asyncio.sleep(YF_BATCH_SLEEP_SECONDS)
 
         def fx_on(currency: CurrencyCode, day: date) -> Decimal | None:
@@ -607,20 +634,16 @@ class SnapshotService:
                     return curve[d]
             return None
 
-        # Asset price history — batch in groups of YF_BATCH_SIZE with sleeps
-        price_history: dict[int, dict[date, Decimal]] = {}
-        asset_currency: dict[int, CurrencyCode] = {}
-        ticker_to_asset: dict[str, Asset] = {}
-        for asset in assets_by_id.values():
-            _ac, _mk, currency = resolve_asset_metadata(
-                legacy_type=asset.type,
-                asset_class=asset.asset_class,
-                market=asset.market,
-                quote_currency=asset.quote_currency,
+        # Crypto history comes from the price-history cache/CoinGecko path, not yfinance.
+        for asset in crypto_assets:
+            cached = await price_service.ensure_asset_price_history_range(
+                asset, start_date, end_date, require_ohlc=False
             )
-            asset_currency[asset.id] = currency
-            ticker_to_asset[price_service._price_symbol_for(asset)] = asset
+            price_history[asset.id] = {
+                row.date: row.price_native for row in cached if row.price_native
+            }
 
+        # Asset price history — batch yfinance assets in groups of YF_BATCH_SIZE with sleeps.
         yf_tickers = list(ticker_to_asset.keys())
         for i in range(0, len(yf_tickers), YF_BATCH_SIZE):
             batch = yf_tickers[i : i + YF_BATCH_SIZE]

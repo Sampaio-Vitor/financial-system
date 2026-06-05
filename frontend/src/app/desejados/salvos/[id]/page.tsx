@@ -25,6 +25,7 @@ const CLASS_COLORS: Record<string, string> = {
   ETF_INTL: "#0ea5e9",
   FII: "#f59e0b",
   RF: "#8b5cf6",
+  CRYPTO: "#14b8a6",
   RESERVA: "#06b6d4",
 };
 
@@ -36,6 +37,7 @@ const CLASS_LABELS: Record<string, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "BTC",
   RESERVA: "Prioridade",
 };
 
@@ -678,6 +680,8 @@ export default function SavedPlanDetailPage() {
                               type={
                                 item.asset_class === "FII"
                                   ? "FII"
+                                  : item.asset_class === "CRYPTO"
+                                    ? "CRYPTO"
                                   : item.asset_class === "STOCK_BR" || item.asset_class === "ACAO"
                                     ? "ACAO"
                                     : item.asset_class === "STOCK_US" || item.asset_class === "STOCK"
@@ -685,12 +689,16 @@ export default function SavedPlanDetailPage() {
                                       : undefined
                               }
                               assetClass={
-                                item.asset_class === "ETF_INTL" || item.asset_class === "ETF"
+                                item.asset_class === "CRYPTO"
+                                  ? "CRYPTO"
+                                  : item.asset_class === "ETF_INTL" || item.asset_class === "ETF"
                                   ? "ETF"
                                   : undefined
                               }
                               market={
-                                item.asset_class === "STOCK_BR" || item.asset_class === "ACAO"
+                                item.asset_class === "CRYPTO"
+                                  ? "CRYPTO"
+                                  : item.asset_class === "STOCK_BR" || item.asset_class === "ACAO"
                                   ? "BR"
                                   : item.asset_class === "STOCK_US" || item.asset_class === "STOCK"
                                     ? "US"
