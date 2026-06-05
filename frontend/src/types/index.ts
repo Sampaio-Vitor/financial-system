@@ -1,13 +1,14 @@
-export type AssetType = "STOCK" | "ACAO" | "FII" | "RF";
-export type AssetClass = "STOCK" | "ETF" | "FII" | "RF";
-export type Market = "BR" | "US" | "EU" | "UK";
+export type AssetType = "STOCK" | "ACAO" | "FII" | "RF" | "CRYPTO";
+export type AssetClass = "STOCK" | "ETF" | "FII" | "RF" | "CRYPTO";
+export type Market = "BR" | "US" | "EU" | "UK" | "CRYPTO";
 export type CurrencyCode = "BRL" | "USD" | "EUR" | "GBP";
 export type AllocationBucket =
   | "STOCK_BR"
   | "STOCK_US"
   | "ETF_INTL"
   | "FII"
-  | "RF";
+  | "RF"
+  | "CRYPTO";
 
 export type TesouroKind = "SELIC" | "IPCA+";
 

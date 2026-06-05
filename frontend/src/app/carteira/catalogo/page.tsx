@@ -23,6 +23,7 @@ const ALLOCATION_BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs (Exterior)",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -30,6 +31,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
+  CRYPTO: "Crypto",
 };
 
 const CURRENCY_LABELS: Record<CurrencyCode, string> = {
@@ -90,6 +92,7 @@ function CatalogoContent() {
     ETF_INTL: "0",
     FII: "25",
     RF: "25",
+    CRYPTO: "0",
   });
   const [saving, setSaving] = useState(false);
 

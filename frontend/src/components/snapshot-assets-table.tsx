@@ -13,6 +13,7 @@ const BUCKET_LABELS: Record<AllocationBucket, string> = {
   ETF_INTL: "ETFs Exterior",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 
 const BUCKET_COLORS: Record<AllocationBucket, string> = {
@@ -21,6 +22,7 @@ const BUCKET_COLORS: Record<AllocationBucket, string> = {
   ETF_INTL: "bg-cyan-500/20 text-cyan-400",
   FII: "bg-amber-500/20 text-amber-400",
   RF: "bg-violet-500/20 text-violet-400",
+  CRYPTO: "bg-teal-500/20 text-teal-400",
 };
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -28,6 +30,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETF",
   FII: "FII",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -35,6 +38,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
+  CRYPTO: "Crypto",
 };
 
 const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {
@@ -42,6 +46,7 @@ const FALLBACK_TYPE_TO_BUCKET: Record<string, AllocationBucket> = {
   ACAO: "STOCK_BR",
   FII: "FII",
   RF: "RF",
+  CRYPTO: "CRYPTO",
 };
 
 function getBucket(row: SnapshotAssetItem): AllocationBucket {

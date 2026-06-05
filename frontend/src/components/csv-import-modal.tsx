@@ -35,6 +35,7 @@ const LEGACY_TYPE_LABELS: Record<AssetType, string> = {
   ACAO: "Ações (Brasil)",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -42,6 +43,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETF",
   FII: "FII",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 
 const MARKET_LABELS: Record<Market, string> = {
@@ -49,6 +51,7 @@ const MARKET_LABELS: Record<Market, string> = {
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
+  CRYPTO: "Crypto",
 };
 
 function parseClassification(cols: string[], lineNum: number): { row?: ParsedRow; error?: string } {

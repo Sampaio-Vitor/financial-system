@@ -101,6 +101,11 @@ source.
   - Verification run: `PYTEST_ADDOPTS=--no-cov backend/.venv/bin/pytest backend/tests/integration/test_rebalancing_router.py backend/tests/integration/test_crypto_snapshots_movers.py -q`.
   - Verification run: `venv/bin/ruff check backend/app/services/rebalancing_service.py backend/app/services/snapshot_service.py backend/tests/integration/test_rebalancing_router.py backend/tests/integration/test_crypto_snapshots_movers.py`.
   - Verification run: `git diff --check`.
+- [x] Step 7 - Frontend Shared Types, Labels, And Formatting.
+  - Review result: approved.
+  - Verification run: `cd frontend && npm run build`.
+  - Verification run: `git diff --check`.
+  - Lint caveat: `cd frontend && npm run lint` prompts for initial ESLint setup because this repo has no ESLint config.
 
 ## Step 0 - Baseline Inventory
 
@@ -439,9 +444,13 @@ Review gate:
 - Reviewer checks crypto was added to planning intentionally, not accidentally to
   every stock-only path.
 
-## Step 7 - Frontend Shared Types, Labels, And Formatting
+## Step 7 - Frontend Shared Types, Labels, And Formatting - Completed
 
 Purpose: make TypeScript understand crypto before page-specific UI work.
+
+Status: completed and reviewed. Frontend shared enum types now include
+`CRYPTO`, `CurrencyCode` remains unchanged, and exhaustive label/color maps were
+updated without adding page-specific workflows.
 
 Edit:
 

@@ -37,6 +37,7 @@ const TYPE_LABELS: Record<AssetType, string> = {
   FII: "FIIs",
   STOCK: "Stocks",
   RF: "Tesouro Direto",
+  CRYPTO: "Crypto",
 };
 
 const itemKey = (item: { source: BastterItemSource; id: number }) =>
@@ -48,12 +49,14 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   ETF: "ETFs",
   FII: "FIIs",
   RF: "Renda Fixa",
+  CRYPTO: "Crypto",
 };
 const MARKET_LABELS: Record<Market, string> = {
   BR: "Brasil",
   US: "EUA",
   EU: "Europa",
   UK: "Reino Unido",
+  CRYPTO: "Crypto",
 };
 
 type TypeFilter = "" | AssetType;
