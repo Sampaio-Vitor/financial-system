@@ -44,7 +44,6 @@ In prod, only Caddy (80/443) is exposed; frontend/backend/db talk over the compo
 - `API_URL` baked at build time (Dockerfile ARG, defaults to `http://backend:8000`).
 - Use `Optional[T]` not `T | None` in SQLAlchemy `Mapped` types (Python 3.14 compat).
 - SQLAlchemy must be `>= 2.0.40` for Python 3.14.
-- **Always build locally before pushing:** `docker compose -f docker-compose.yml -f docker-compose.prod.yml build` to catch TS errors / missing fields.
 - When adding fields to shared types (`Asset` etc.), grep for manual constructions: `Asset[]`, `as Asset`, `: Asset =`.
 - No admin auto-seed; create users via `/api/auth/register` or direct DB insert.
 - Never commit unless explicitly asked.
@@ -142,10 +141,6 @@ gunzip -c backup_YYYY-MM-DD.sql.gz | \
 docker compose up --build               # build + run
 docker compose up                       # run (skip rebuild)
 docker compose logs -f backend          # tail
-
-# Prod-like build check (catches TS errors, missing fields, standalone bundling).
-# Run this BEFORE pushing to main — it mirrors what CI/CD does on the VPS.
-docker compose -f docker-compose.yml -f docker-compose.prod.yml build
 
 # DB shell
 docker exec -it portfolio_db mysql -uportfolio_user -pportfolio_pass portfolio
