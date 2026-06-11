@@ -530,6 +530,8 @@ class PriceService:
         )
         if market == Market.BR and asset_class.value in {"STOCK", "ETF", "FII"}:
             return f"{asset.ticker}.SA"
+        if market == Market.UK and asset_class.value in {"STOCK", "ETF"}:
+            return f"{asset.ticker}.L"
         return asset.ticker
 
     async def _fetch_historical_fx(
