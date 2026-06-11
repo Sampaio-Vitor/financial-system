@@ -132,8 +132,12 @@ class RebalancingService:
             if not assets_in_bucket:
                 continue
 
-            bucket_target_value = investable_pos_aporte * targets.get(
-                allocation_bucket, Decimal("0")
+            # Paused assets get no new contributions, but their held value still
+            # fills part of the bucket — subtract it from what active assets target
+            paused_value = await self._get_paused_value(allocation_bucket)
+            bucket_target_value = (
+                investable_pos_aporte * targets.get(allocation_bucket, Decimal("0"))
+                - paused_value
             )
             if bucket_target_value <= 0:
                 continue
@@ -354,6 +358,50 @@ class RebalancingService:
 
         val = await _get_system_setting(self.db, f"{currency.value.lower()}_brl_rate")
         return Decimal(val) if val else None
+
+    async def _get_paused_value(
+        self, allocation_bucket: AllocationBucket
+    ) -> Decimal:
+        positions = await self.db.execute(
+            select(
+                Asset.type,
+                Asset.asset_class,
+                Asset.market,
+                Asset.quote_currency,
+                Asset.current_price,
+                func.sum(Purchase.quantity).label("qty"),
+            )
+            .join(Asset, Purchase.asset_id == Asset.id)
+            .join(UserAsset, UserAsset.asset_id == Asset.id)
+            .where(
+                Purchase.user_id == self.user.id,
+                UserAsset.user_id == self.user.id,
+                UserAsset.paused.is_(True),
+            )
+            .group_by(
+                Asset.id,
+                Asset.type,
+                Asset.asset_class,
+                Asset.market,
+                Asset.quote_currency,
+                Asset.current_price,
+            )
+        )
+        total = Decimal("0")
+        for legacy_type, asset_class, market, quote_currency, price, qty in (
+            positions.all()
+        ):
+            if not price or not qty:
+                continue
+            resolved_class, resolved_market, _currency = resolve_asset_metadata(
+                legacy_type=legacy_type,
+                asset_class=asset_class,
+                market=market,
+                quote_currency=quote_currency,
+            )
+            if asset_bucket_for(resolved_class, resolved_market) == allocation_bucket:
+                total += price * qty
+        return total
 
     async def _get_assets_with_values(
         self,

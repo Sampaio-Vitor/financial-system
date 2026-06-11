@@ -478,9 +478,8 @@ async def get_rebalancing_info(
     # First pass: compute per-bucket explicit sum and implicit count using only non-paused assets
     bucket_explicit_sum: dict = {}
     bucket_implicit_count: dict = {}
+    bucket_paused_value: dict = {}
     for asset, paused, ua_target_pct in rows:
-        if paused:
-            continue
         asset_class, market, quote_currency = resolve_asset_metadata(
             legacy_type=asset.type,
             asset_class=asset.asset_class,
@@ -488,6 +487,13 @@ async def get_rebalancing_info(
             quote_currency=asset.quote_currency,
         )
         bucket = asset_bucket_for(asset_class, market)
+        if paused:
+            # Paused assets receive no new target, but their held value still
+            # fills part of the bucket — subtract it from what active assets target
+            bucket_paused_value[bucket] = bucket_paused_value.get(
+                bucket, Decimal("0")
+            ) + asset_values.get(asset.id, Decimal("0"))
+            continue
         if ua_target_pct is not None:
             bucket_explicit_sum[bucket] = (
                 bucket_explicit_sum.get(bucket, Decimal("0")) + ua_target_pct
@@ -506,7 +512,11 @@ async def get_rebalancing_info(
             quote_currency=asset.quote_currency,
         )
         bucket = asset_bucket_for(asset_class, market)
-        bucket_target_value = investable_total * targets.get(bucket, Decimal("0"))
+        bucket_target_value = max(
+            Decimal("0"),
+            investable_total * targets.get(bucket, Decimal("0"))
+            - bucket_paused_value.get(bucket, Decimal("0")),
+        )
         if ua_target_pct is not None:
             target_value = bucket_target_value * ua_target_pct
         else:
