@@ -37,3 +37,24 @@ class DividendEventResponse(BaseModel):
 class DividendEventListResponse(BaseModel):
     events: list[DividendEventResponse]
     total_count: int
+
+
+class AssetYieldItem(BaseModel):
+    asset_id: int
+    ticker: str
+    market_value: Decimal
+    dividends_12m: Decimal
+    dividends_annualized: Decimal
+    yield_pct: Decimal | None
+    yield_on_cost_pct: Decimal | None
+    months_held: int
+    is_annualized: bool
+
+
+class DividendYieldResponse(BaseModel):
+    portfolio_market_value: Decimal
+    portfolio_dividends_12m: Decimal
+    portfolio_dividends_annualized: Decimal
+    portfolio_yield_pct: Decimal | None
+    portfolio_yield_on_cost_pct: Decimal | None
+    assets: list[AssetYieldItem]

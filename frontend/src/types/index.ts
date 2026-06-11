@@ -549,6 +549,27 @@ export interface DividendEventListResponse {
   total_count: number;
 }
 
+export interface AssetYieldItem {
+  asset_id: number;
+  ticker: string;
+  market_value: number;
+  dividends_12m: number;
+  dividends_annualized: number;
+  yield_pct: number | null;
+  yield_on_cost_pct: number | null;
+  months_held: number;
+  is_annualized: boolean;
+}
+
+export interface DividendYieldResponse {
+  portfolio_market_value: number;
+  portfolio_dividends_12m: number;
+  portfolio_dividends_annualized: number;
+  portfolio_yield_pct: number | null;
+  portfolio_yield_on_cost_pct: number | null;
+  assets: AssetYieldItem[];
+}
+
 // --- Saved Plans ---
 
 export interface SavedPlanItem {

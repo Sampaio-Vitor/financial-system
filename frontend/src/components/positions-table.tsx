@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { formatBRL, formatCurrency, formatQuantity } from "@/lib/format";
-import { CurrencyCode, Market, PositionItem } from "@/types";
+import { AssetYieldItem, CurrencyCode, DividendYieldResponse, Market, PositionItem } from "@/types";
 import { apiFetch } from "@/lib/api";
 import TickerLogo from "@/components/ticker-logo";
 import MobileCard from "@/components/mobile-card";
@@ -25,13 +25,14 @@ interface PositionsTableProps {
   onRefresh?: () => void;
 }
 
-type SortKey = keyof PositionItem;
+type SortKey = keyof PositionItem | "yield_pct";
 
 const SORT_OPTIONS_FOCUS: { label: string; key: SortKey }[] = [
   { label: "Ticker", key: "ticker" },
   { label: "Valor na Carteira", key: "market_value" },
   { label: "Qtd", key: "quantity" },
   { label: "Custo Total", key: "total_cost" },
+  { label: "Yield 12m", key: "yield_pct" },
   { label: "Primeira Compra", key: "first_date" },
 ];
 
@@ -40,6 +41,7 @@ const SORT_OPTIONS_FULL: { label: string; key: SortKey }[] = [
   { label: "Valor Mercado", key: "market_value" },
   { label: "P&L (%)", key: "pnl_pct" },
   { label: "P&L (R$)", key: "pnl" },
+  { label: "Yield 12m", key: "yield_pct" },
   { label: "Qtd", key: "quantity" },
 ];
 
@@ -77,9 +79,27 @@ export default function PositionsTable({
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortAsc, setSortAsc] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [yields, setYields] = useState<Record<number, AssetYieldItem>>({});
   const [ignoredAnomalyPurchaseIds, setIgnoredAnomalyPurchaseIds] = useState<Set<number>>(
     () => new Set()
   );
+
+  useEffect(() => {
+    apiFetch<DividendYieldResponse>("/dividends/yield")
+      .then((data) => {
+        const map: Record<number, AssetYieldItem> = {};
+        for (const item of data.assets) map[item.asset_id] = item;
+        setYields(map);
+      })
+      .catch(() => setYields({}));
+  }, []);
+
+  const yieldOf = (p: PositionItem) => yields[p.asset_id]?.yield_pct ?? null;
+  const yieldLabel = (p: PositionItem) => {
+    const y = yields[p.asset_id];
+    if (!y || y.yield_pct == null) return "—";
+    return `${Number(y.yield_pct).toFixed(2).replace(".", ",")}%${y.is_annualized ? "*" : ""}`;
+  };
 
   const isNative = displayCurrency !== "BRL";
   const fmt = (value: number | null | undefined) =>
@@ -114,8 +134,8 @@ export default function PositionsTable({
   };
 
   const sorted = [...positions].sort((a, b) => {
-    const av = a[sortKey];
-    const bv = b[sortKey];
+    const av = sortKey === "yield_pct" ? yieldOf(a) : a[sortKey];
+    const bv = sortKey === "yield_pct" ? yieldOf(b) : b[sortKey];
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
@@ -128,6 +148,19 @@ export default function PositionsTable({
       : av < bv ? -1 : av > bv ? 1 : 0;
     return sortAsc ? cmp : -cmp;
   });
+
+  // Weighted yield of the positions shown (BRL values from the yield endpoint)
+  const groupYieldLabel = (() => {
+    let annualized = 0;
+    let market = 0;
+    for (const p of positions) {
+      const y = yields[p.asset_id];
+      if (y) annualized += Number(y.dividends_annualized);
+      if (p.market_value != null) market += Number(p.market_value);
+    }
+    if (!market || !annualized) return "—";
+    return `${((annualized / market) * 100).toFixed(2).replace(".", ",")}%`;
+  })();
 
   const colHeader = (label: string, key: SortKey) => (
     <th
@@ -262,6 +295,7 @@ export default function PositionsTable({
               bodyItems={[
                 { label: "Valor na Carteira", value: fmt(marketValueOf(p)) },
                 { label: "Quantidade", value: formatQuantity(p.quantity) },
+                { label: "Yield 12m", value: yieldLabel(p) },
               ]}
               expandedItems={[
                 { label: "Custo Total", value: fmt(totalCostOf(p)) },
@@ -317,6 +351,12 @@ export default function PositionsTable({
                 {fmt(totalCost)}
               </div>
             </div>
+            <div className="min-w-0">
+              <span className="block text-[11px] text-[var(--color-text-muted)]">Yield 12m</span>
+              <div className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
+                {groupYieldLabel}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -325,11 +365,12 @@ export default function PositionsTable({
       <div className="hidden md:block bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] shadow-sm">
         <table className="w-full text-sm table-fixed">
           <colgroup>
-            <col className="w-[25%]" />
+            <col className="w-[24%]" />
+            <col className="w-[13%]" />
+            <col className="w-[19%]" />
+            <col className="w-[18%]" />
+            <col className="w-[11%]" />
             <col className="w-[15%]" />
-            <col className="w-[20%]" />
-            <col className="w-[20%]" />
-            <col className="w-[20%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-[var(--color-border)]">
@@ -337,6 +378,7 @@ export default function PositionsTable({
               {colHeader("Quantidade", "quantity")}
               {colHeader("Valor na Carteira", "market_value")}
               {colHeader("Custo Total", "total_cost")}
+              {colHeader("Yield 12m", "yield_pct")}
               {colHeader("Primeira Compra", "first_date")}
             </tr>
             <tr className="border-b-2 border-[var(--color-border)] font-bold text-sm">
@@ -344,6 +386,7 @@ export default function PositionsTable({
               <td className="px-3 py-2"></td>
               <td className="px-3 py-2">{fmt(totalMarketValue)}</td>
               <td className="px-3 py-2">{fmt(totalCost)}</td>
+              <td className="px-3 py-2">{groupYieldLabel}</td>
               <td className="px-3 py-2"></td>
             </tr>
           </thead>
@@ -351,11 +394,12 @@ export default function PositionsTable({
         <div className="overflow-x-auto max-h-[792px] overflow-y-auto">
         <table className="w-full text-sm table-fixed">
           <colgroup>
-            <col className="w-[25%]" />
+            <col className="w-[24%]" />
+            <col className="w-[13%]" />
+            <col className="w-[19%]" />
+            <col className="w-[18%]" />
+            <col className="w-[11%]" />
             <col className="w-[15%]" />
-            <col className="w-[20%]" />
-            <col className="w-[20%]" />
-            <col className="w-[20%]" />
           </colgroup>
           <tbody>
             {sorted.map((p) => {
@@ -399,11 +443,21 @@ export default function PositionsTable({
                     <td className="px-3 py-2.5">{formatQuantity(p.quantity)}</td>
                     <td className="px-3 py-2.5">{fmt(marketValueOf(p))}</td>
                     <td className="px-3 py-2.5">{fmt(totalCostOf(p))}</td>
+                    <td
+                      className="px-3 py-2.5"
+                      title={
+                        yields[p.asset_id]?.is_annualized
+                          ? "Posição com menos de 12 meses — proventos anualizados"
+                          : undefined
+                      }
+                    >
+                      {yieldLabel(p)}
+                    </td>
                     <td className="px-3 py-2.5">{formatDate(p.first_date)}</td>
                   </tr>
                   {isExpanded && (
                     <tr className="border-b border-[var(--color-border)]/50">
-                      <td colSpan={5} className="p-0 bg-[var(--color-bg-main)]/40">
+                      <td colSpan={6} className="p-0 bg-[var(--color-bg-main)]/40">
                         <div className="border-b border-[var(--color-border)]/50 px-4 py-3 text-xs text-[var(--color-text-muted)]">
                           <span className="mr-4">
                             Mercado: {p.market ? MARKET_LABELS[p.market] : "—"}

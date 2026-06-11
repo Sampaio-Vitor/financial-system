@@ -16,10 +16,10 @@ import {
   Cell,
 } from "recharts";
 import Link from "next/link";
-import { Plug, CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Plug, CalendarDays, ChevronLeft, ChevronRight, X, Percent } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
-import { DividendEventListResponse, DividendEvent } from "@/types";
+import { DividendEventListResponse, DividendEvent, DividendYieldResponse } from "@/types";
 
 const MONTH_LABELS = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
@@ -67,6 +67,8 @@ export default function ProventosPage() {
   const [activeTab, setActiveTab] = useState<ProventosTab>("recebidos");
   const [year, setYear] = useState(currentYear);
   const [events, setEvents] = useState<DividendEvent[]>([]);
+  const [yieldData, setYieldData] = useState<DividendYieldResponse | null>(null);
+  const [yieldExpanded, setYieldExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tickerFilter, setTickerFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
@@ -157,6 +159,12 @@ export default function ProventosPage() {
     const sorted = Object.entries(byTicker).sort((a, b) => b[1] - a[1]);
     return sorted[0] ? { ticker: sorted[0][0], total: sorted[0][1] } : null;
   }, [scopedEvents]);
+
+  useEffect(() => {
+    apiFetch<DividendYieldResponse>("/dividends/yield")
+      .then(setYieldData)
+      .catch(() => setYieldData(null));
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -403,7 +411,7 @@ export default function ProventosPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
           <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">
             {activeTab === "recebidos" ? "Líquido Recebido" : "Líquido Previsto"}
@@ -427,6 +435,23 @@ export default function ProventosPage() {
             {topPayer && (
               <span className="text-sm text-[var(--color-text-muted)] ml-2">
                 Maior: {topPayer.ticker}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5">
+          <span className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">
+            Yield da Carteira (12m)
+          </span>
+          <div className="mt-1">
+            <span className="text-2xl font-bold text-[var(--color-accent)]">
+              {yieldData?.portfolio_yield_pct != null
+                ? `${Number(yieldData.portfolio_yield_pct).toFixed(2).replace(".", ",")}%`
+                : "—"}
+            </span>
+            {yieldData?.portfolio_yield_on_cost_pct != null && (
+              <span className="text-sm text-[var(--color-text-muted)] ml-2">
+                YOC {Number(yieldData.portfolio_yield_on_cost_pct).toFixed(2).replace(".", ",")}%
               </span>
             )}
           </div>
@@ -868,6 +893,96 @@ export default function ProventosPage() {
           </div>
           </div>
           )}
+
+          {/* Yield por ativo */}
+          {yieldData && yieldData.assets.length > 0 && (() => {
+            const fmtPct = (v: number | null) =>
+              v != null ? `${Number(v).toFixed(2).replace(".", ",")}%` : "—";
+            const visible = yieldExpanded ? yieldData.assets : yieldData.assets.slice(0, 8);
+            const maxYield = Math.max(
+              ...yieldData.assets.map((a) => Number(a.yield_pct ?? 0)),
+              0.01
+            );
+            const hasAnnualized = yieldData.assets.some((a) => a.is_annualized);
+            return (
+              <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] p-5 mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Percent size={15} className="text-[var(--color-accent)]" />
+                  <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
+                    Yield por Ativo (12 meses)
+                  </h3>
+                  {yieldData.portfolio_dividends_annualized > 0 && (
+                    <span className="ml-auto text-xs text-[var(--color-text-muted)]">
+                      Renda anual estimada:{" "}
+                      <span className="font-semibold text-[var(--color-positive)]">
+                        {formatBRL(Number(yieldData.portfolio_dividends_annualized))}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {hasAnnualized && (
+                  <p className="text-[11px] text-[var(--color-text-muted)] mb-3">
+                    * Ativos na carteira há menos de 12 meses têm os proventos anualizados
+                    (projetados para 1 ano) com base no período de posse.
+                  </p>
+                )}
+                <div className="space-y-1.5 mt-3">
+                  {visible.map((a) => {
+                    const pct = Number(a.yield_pct ?? 0);
+                    return (
+                      <button
+                        key={a.asset_id}
+                        type="button"
+                        onClick={() =>
+                          setTickerFilter((prev) =>
+                            prev.toUpperCase() === a.ticker ? "" : a.ticker
+                          )
+                        }
+                        className={`w-full grid grid-cols-[88px_1fr_auto] items-center gap-3 rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--color-bg-main)] ${
+                          tickerFilter.toUpperCase() === a.ticker
+                            ? "bg-[var(--color-bg-main)]"
+                            : ""
+                        }`}
+                        title={`${a.ticker}: ${formatBRL(Number(a.dividends_12m))} recebidos em 12m · YOC ${fmtPct(a.yield_on_cost_pct)}`}
+                      >
+                        <span className="text-xs font-medium text-[var(--color-text-secondary)] truncate">
+                          {a.ticker}
+                          {a.is_annualized && (
+                            <span className="text-[var(--color-text-muted)]">*</span>
+                          )}
+                        </span>
+                        <div className="h-2 rounded-full bg-[var(--color-bg-main)] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[var(--color-accent)]"
+                            style={{ width: `${Math.max((pct / maxYield) * 100, 2)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs tabular-nums text-right">
+                          <span className="font-semibold text-[var(--color-text-primary)]">
+                            {fmtPct(a.yield_pct)}
+                          </span>
+                          <span className="text-[var(--color-text-muted)] ml-2 hidden sm:inline">
+                            {formatBRL(Number(a.dividends_annualized))}/ano
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {yieldData.assets.length > 8 && (
+                  <button
+                    type="button"
+                    onClick={() => setYieldExpanded((v) => !v)}
+                    className="mt-2 text-xs text-[var(--color-accent)] hover:underline"
+                  >
+                    {yieldExpanded
+                      ? "Mostrar menos"
+                      : `Ver todos (${yieldData.assets.length})`}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Events table */}
           <div className="bg-[var(--color-bg-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden">
