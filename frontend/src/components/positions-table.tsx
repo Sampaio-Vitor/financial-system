@@ -149,13 +149,16 @@ export default function PositionsTable({
     return sortAsc ? cmp : -cmp;
   });
 
-  // Weighted yield of the positions shown (BRL values from the yield endpoint)
+  // Weighted yield of the positions shown, considering only assets that have
+  // dividend data — positions too young to have paid anything yet are left out
+  // of the denominator instead of being counted as 0%.
   const groupYieldLabel = (() => {
     let annualized = 0;
     let market = 0;
     for (const p of positions) {
       const y = yields[p.asset_id];
-      if (y) annualized += Number(y.dividends_annualized);
+      if (!y) continue;
+      annualized += Number(y.dividends_annualized);
       if (p.market_value != null) market += Number(p.market_value);
     }
     if (!market || !annualized) return "—";

@@ -112,6 +112,8 @@ async def get_dividend_yield(
             div_by_ticker[ticker] = div_by_ticker.get(ticker, Decimal("0")) + amount
 
     items: list[AssetYieldItem] = []
+    # Portfolio totals only include assets with dividend data — positions too
+    # young to have paid anything yet are excluded instead of counting as 0%.
     total_market = Decimal("0")
     total_cost = Decimal("0")
     total_received = Decimal("0")
@@ -122,6 +124,9 @@ async def get_dividend_yield(
         received = div_by_asset.get(asset_id, Decimal("0")) + div_by_ticker.get(
             ticker, Decimal("0")
         )
+
+        if received <= 0:
+            continue
 
         days_held = (today - first_date).days if first_date else 365
         # Annualize over the actual holding window (min 30 days to avoid
@@ -134,9 +139,6 @@ async def get_dividend_yield(
         total_cost += cost or Decimal("0")
         total_received += received
         total_annualized += annualized
-
-        if received <= 0:
-            continue
 
         items.append(
             AssetYieldItem(
