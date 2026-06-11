@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   ComposedChart,
-  AreaChart,
+  BarChart,
+  Bar,
   Area,
   Line,
   Scatter,
@@ -31,7 +32,7 @@ interface AssetDetailChartsProps {
 interface DividendPoint {
   date: string;
   label: string;
-  acumulado: number;
+  valor: number;
 }
 
 interface HistoricalPricePoint {
@@ -125,20 +126,25 @@ function buildDividendData(events: DividendEventListResponse["events"]): Dividen
     a.payment_date.localeCompare(b.payment_date)
   );
 
-  let acumulado = 0;
-  const points: DividendPoint[] = [];
+  // One bar per month, summing payments that land in the same month
+  const byMonth = new Map<string, DividendPoint>();
 
   for (const ev of sorted) {
-    acumulado += Number(ev.credited_amount);
-    const d = new Date(ev.payment_date + "T00:00:00");
-    points.push({
-      date: ev.payment_date,
-      label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
-      acumulado,
-    });
+    const monthKey = ev.payment_date.slice(0, 7);
+    const existing = byMonth.get(monthKey);
+    if (existing) {
+      existing.valor += Number(ev.credited_amount);
+    } else {
+      const d = new Date(ev.payment_date + "T00:00:00");
+      byMonth.set(monthKey, {
+        date: ev.payment_date,
+        label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+        valor: Number(ev.credited_amount),
+      });
+    }
   }
 
-  return points;
+  return [...byMonth.values()];
 }
 
 function buildPurchaseMarkers(purchases: Purchase[], ticker: string): PurchaseMarker[] {
@@ -854,16 +860,10 @@ export default function AssetDetailCharts({
         </ResponsiveContainer>
       )}
 
-      {/* Dividends accumulated area chart */}
+      {/* Dividends per-month bar chart */}
       {effectiveView === "dividendos" && hasDividends && (
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={dividendData}>
-            <defs>
-              <linearGradient id={`grad-div-${assetId}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-              </linearGradient>
-            </defs>
+          <BarChart data={dividendData}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
             <XAxis
               dataKey="label"
@@ -879,18 +879,12 @@ export default function AssetDetailCharts({
               width={80}
             />
             <Tooltip
-              formatter={(value: number) => [formatBRL(value), "Acumulado"]}
+              formatter={(value: number) => [formatBRL(value), "Recebido"]}
+              cursor={{ fill: "var(--color-border)", opacity: 0.3 }}
               {...tooltipStyle}
             />
-            <Area
-              type="monotone"
-              dataKey="acumulado"
-              stroke="#10b981"
-              fill={`url(#grad-div-${assetId})`}
-              strokeWidth={2}
-              dot={{ r: 3, fill: "#10b981" }}
-            />
-          </AreaChart>
+            <Bar dataKey="valor" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={32} />
+          </BarChart>
         </ResponsiveContainer>
       )}
     </div>
