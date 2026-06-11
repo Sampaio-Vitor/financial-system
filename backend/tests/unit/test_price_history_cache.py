@@ -292,6 +292,49 @@ async def test_price_history_cache_does_not_refetch_missing_current_day(
     ]
 
 
+@freeze_time("2026-05-29 12:00:00+00:00")
+async def test_price_history_cache_does_not_refetch_non_trading_leading_gap(
+    db, user, monkeypatch
+):
+    # Window starts on Sunday 2026-05-24; the first cached row is Monday.
+    # The leading "gap" has no trading session and must never hit yfinance.
+    asset = await make_asset(
+        db,
+        ticker="ITSA4",
+        asset_type=AssetType.ACAO,
+        asset_class=AssetClass.STOCK,
+        market=Market.BR,
+        quote_currency=CurrencyCode.BRL,
+    )
+    for day in range(25, 29):
+        db.add(
+            AssetPriceHistory(
+                asset_id=asset.id,
+                yf_ticker="ITSA4.SA",
+                date=datetime(2026, 5, day, tzinfo=timezone.utc).date(),
+                price_native=Decimal("10.000000"),
+                fx_rate_to_brl=Decimal("1"),
+                price_brl=Decimal("10.0000"),
+                quote_currency=CurrencyCode.BRL,
+            )
+        )
+    await db.commit()
+
+    async def fail_download(self, tickers, **kwargs):
+        raise AssertionError("non-trading leading gap should not trigger yfinance")
+
+    monkeypatch.setattr(PriceService, "_download_yf", fail_download)
+
+    points = await PriceService(db, user).get_asset_price_history(asset, days=5)
+
+    assert [p["date"] for p in points] == [
+        "2026-05-25",
+        "2026-05-26",
+        "2026-05-27",
+        "2026-05-28",
+    ]
+
+
 async def test_update_all_prices_skips_non_tesouro_fixed_income(db, user, monkeypatch):
     rf_asset = await make_asset(
         db,

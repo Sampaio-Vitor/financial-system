@@ -790,6 +790,7 @@ class PriceService:
             start_date,
             fetch_end_date,
             require_ohlc=False,
+            market=market,
         )
 
         for missing_start, missing_end in missing_ranges:
@@ -832,6 +833,7 @@ class PriceService:
             start_date,
             fetch_end_date,
             require_ohlc=False,
+            market=Market.CRYPTO,
         )
 
         for missing_start, missing_end in missing_ranges:
@@ -904,28 +906,36 @@ class PriceService:
         end_date: date,
         *,
         require_ohlc: bool,
+        market: Optional[Market] = None,
     ) -> list[tuple[date, date]]:
         if not cached:
-            return [(start_date, end_date)]
+            ranges = [(start_date, end_date)]
+        else:
+            cached_dates = [row.date for row in cached]
+            ranges = []
+            first_cached = min(cached_dates)
+            last_cached = max(cached_dates)
 
-        cached_dates = [row.date for row in cached]
-        ranges: list[tuple[date, date]] = []
-        first_cached = min(cached_dates)
-        last_cached = max(cached_dates)
-
-        if first_cached > start_date:
-            ranges.append((start_date, first_cached - timedelta(days=1)))
-        if last_cached < end_date:
-            ranges.append((last_cached + timedelta(days=1), end_date))
-        if require_ohlc:
-            missing_ohlc_dates = [
-                row.date
-                for row in cached
-                if row.low_native is None or row.high_native is None
-            ]
-            if missing_ohlc_dates:
-                ranges.append((min(missing_ohlc_dates), max(missing_ohlc_dates)))
-        return ranges
+            if first_cached > start_date:
+                ranges.append((start_date, first_cached - timedelta(days=1)))
+            if last_cached < end_date:
+                ranges.append((last_cached + timedelta(days=1), end_date))
+            if require_ohlc:
+                missing_ohlc_dates = [
+                    row.date
+                    for row in cached
+                    if row.low_native is None or row.high_native is None
+                ]
+                if missing_ohlc_dates:
+                    ranges.append((min(missing_ohlc_dates), max(missing_ohlc_dates)))
+        # Drop ranges with no trading session (e.g. a window starting on a
+        # holiday/weekend) — they can never be filled, so fetching them would
+        # hit the price provider on every single request.
+        return [
+            (range_start, range_end)
+            for range_start, range_end in ranges
+            if last_trading_day(market, range_end) >= range_start
+        ]
 
     async def _get_cached_asset_price_history(
         self, asset_id: int, start_date: date, end_date: date
@@ -1021,7 +1031,7 @@ class PriceService:
             asset.id, start_date, end_date
         )
         missing_ranges = self._missing_cache_ranges(
-            cached, start_date, end_date, require_ohlc=require_ohlc
+            cached, start_date, end_date, require_ohlc=require_ohlc, market=market
         )
         if _is_fixed_income_asset(asset):
             return cached
